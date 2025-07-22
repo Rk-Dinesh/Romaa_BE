@@ -1,4 +1,7 @@
 import { UserLevel } from "../../common/App.const.js";
+import { getUserFullDto, getUserToUserTokenDto } from "../../common/App.helperFunction.js";
+import { ErrorMessage } from "../../common/App.message.js";
+import { pagination } from "../../common/App.pagination.js";
 import logger from "../../config/logger.js";
 import UserService from "./user.service.js";
 
@@ -23,7 +26,10 @@ export const register = async (req, res) => {
 export const getAllUser = async (req, res) => {
   try {
     const level = req?.user?.level ?? UserLevel.ADMIN;
-    const pageParam = pageDto(req.query);
+    // In req.query,page,limit,sortBy,order,searchBy,search
+    const pageParam = pagination(req.query);
+    console.log("Page Parameters:", pageParam);
+    
     const usersData = await UserService.getUsersByPage(
       pageParam,
       level,
@@ -71,26 +77,28 @@ export const getUserDetail = async (req, res) => {
   try {
     const userId = req.params.id;
     const userDecode = req?.user;
+    
     if (!userDecode) {
       res.status(400).json({ message: ErrorMessage.INVALID_TOKEN });
     }
     const user = await UserService.getUserById(userId);
+  
+    
     if (!user) {
       res.status(404).json({ message: 'User not found' });
       return;
     }
     if (
-      (userDecode?.level === UserLevel.USER && userId !== userDecode?.id) ||
-      (userDecode?.level === UserLevel.ADMIN && user.organizationId !== userDecode?.organizationId)
+      (userDecode?.level !== UserLevel.ADMIN )
     ) {
       res.status(401).json({ message: ErrorMessage.UNAUTHORIZED_ACCESS });
       return;
     }
-    const userDetail = user.toObject ? getUserToUserTokenDto(user.toObject()) : [];
+    const userDetail = user.toObject ? getUserFullDto(user.toObject()) : {};
     res.status(200).json(userDetail);
   } catch (error) {
     logger.error('Error while Getting User Details' + error);
-    res.status(500).json('Error while Getting User Details');
+    res.status(500).json('Error while Getting User Details' + error.message);
   }
 };
 

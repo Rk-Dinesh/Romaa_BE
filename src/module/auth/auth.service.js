@@ -1,6 +1,6 @@
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
-import RoleService from "../role/role.service";
+import RoleService from "../role/role.service.js";
 import dotenv from "dotenv"
 dotenv.config()
 

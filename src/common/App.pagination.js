@@ -1,4 +1,4 @@
-import { PageConst } from "./App.const";
+import { PageConst } from "./App.const.js";
 
 export const pagination = () => {
   return {

@@ -2,11 +2,11 @@ import logger from "../../config/logger.js";
 import RoleService from "./role.service.js";
 
 
-export const createRole = async() => {
+export const createRole = async(req,res) => {
  try {
     const userRole = req.body;
     const newRole = await RoleService.addRole(userRole);
-    res.status(200).json({ message: 'User roles Created successfully' });
+    res.status(200).json({ message: 'User roles Created successfully',data: newRole });
  } catch (error) {
     res.status(500).json({ message: 'Error while adding the Roles' + error });
  }

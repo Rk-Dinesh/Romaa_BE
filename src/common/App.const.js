@@ -44,3 +44,8 @@ export const HttpMethod = {
   GET: 'GET',
   DELETE: 'DELETE',
 };
+
+export const ClientHeader = {
+  ADMIN: 'ADMIN',
+  MOBILE: 'MOBILE',
+}

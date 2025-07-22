@@ -1,14 +1,25 @@
 import bcrypt from "bcrypt";
 import logger from "../../config/logger.js";
 import UserModel from "./user.model.js";
+import { Status } from "../../common/App.const.js";
+import IdcodeServices from "../idcode/idcode.service.js";
 
 class UserService {
   static async register(userData) {
     try {
+      const idname = "EMPLOYEE";
+      const idcode = "EMP";
+      const generateCode = await IdcodeServices.addIdCode(idname, idcode);
+      const user_id = await IdcodeServices.generateCode(idname);
+      if (!user_id) {
+        throw new Error("Failed to generate user ID.");
+      }
+
       const hashedPassword = await bcrypt.hash(userData.password, 10);
 
       // Create and save user in DB
       const createUser = new UserModel({
+        user_id,
         ...userData,
         password: hashedPassword,
       });
@@ -22,7 +33,7 @@ class UserService {
       throw new Error("User registration failed.");
     }
   }
-    static async getUserByEmailOrMobile(identifier) {
+  static async getUserByEmailOrMobile(identifier) {
     try {
       const user = await UserModel.findOne({
         $or: [{ email: identifier }, { mobile: identifier }],
@@ -30,7 +41,7 @@ class UserService {
 
       return user;
     } catch (error) {
-      throw new Error('Error fetching user by email or mobile: ' + error);
+      throw new Error("Error fetching user by email or mobile: " + error);
     }
   }
   static async updateUserById(userId, updateData) {
@@ -38,11 +49,11 @@ class UserService {
       const updatedUser = await UserModel.findByIdAndUpdate(
         userId,
         { $set: updateData, $inc: { __v: 1 } },
-        { new: true },
+        { new: true }
       );
       return updatedUser;
     } catch (error) {
-      throw new Error('Error updating user by Id: ' + error);
+      throw new Error("Error updating user by Id: " + error);
     }
   }
   static async checkIfUserExistsByMail(email) {
@@ -123,7 +134,7 @@ class UserService {
       const { skip, limit, sortBy, order, search, searchBy } = pageData;
       const filter = getFilterQueryForAdmin(search, searchBy, level);
       const [data, total] = await Promise.all([
-        UserModel.find(filter).sort(sortOption).skip(skip).limit(limit),
+        UserModel.find(filter).sort().skip(skip).limit(limit),
         UserModel.countDocuments(filter),
       ]);
       const dataSet = {

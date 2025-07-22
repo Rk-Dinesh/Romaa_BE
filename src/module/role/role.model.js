@@ -2,12 +2,16 @@ import mongoose from "mongoose";
 
 const roleSchema = new mongoose.Schema(
   {
-    _id: { type: String },
-    roleName: { type: String, required: true },
-    permissions: { type: [String] },
-    description: { type: String },
-    access: { type: String },
-    level: { type: String },
+    role_id: String,
+    role_name: String,
+    accessLevels: [
+      {
+        feature: String,
+        permissions: [String],
+      },
+    ],
+    status: String,
+    created_by_user: String,
   },
   { timestamps: true }
 );
