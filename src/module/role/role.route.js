@@ -1,9 +1,10 @@
 import { Router } from 'express';
-import { createRole, getRoleById } from './role.controller.js';
+import {  createRole, getAllRoles, getRoleById } from './role.controller.js';
 
 const roleRoute = Router();
 
-roleRoute.post('/addrole',createRole);
-roleRoute.get('/getbyroleid/:id',getRoleById);
+roleRoute.post('/addrole',createRole); //working
+roleRoute.get('/getbyroleid',getRoleById); //working
+roleRoute.get('/getallroles',getAllRoles); //working
 
 export default roleRoute;

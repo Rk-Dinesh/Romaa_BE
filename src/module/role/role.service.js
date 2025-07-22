@@ -15,11 +15,11 @@ class RoleService {
       console.log("Error in creating Role");
     }
   }
-  static async getRolesById(role_id) {
+  static async getRolesById(roleId) {
     try {
-      return await RoleModel.findOne({ role_id: role_id });
+      return await RoleModel.findOne({ role_id: roleId });
     } catch (error) {
-      console.log("Error in creating Role");
+      console.log("Error in creating Role", error);
       logger.error("error while getting a role" + error);
     }
   }

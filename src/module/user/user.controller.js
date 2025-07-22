@@ -95,7 +95,11 @@ export const getUserDetail = async (req, res) => {
       return;
     }
     const userDetail = user.toObject ? getUserFullDto(user.toObject()) : {};
-    res.status(200).json(userDetail);
+    res.status(200).json({
+      status: true,
+      message: 'User details fetched successfully',
+      data: userDetail
+    });
   } catch (error) {
     logger.error('Error while Getting User Details' + error);
     res.status(500).json('Error while Getting User Details' + error.message);
@@ -118,8 +122,8 @@ export const deleteUser = async (req, res) => {
     }
 
     if (
-      (userDecode?.level === UserLevel.USER && userId !== userDecode?.id) ||
-      (userDecode?.level === UserLevel.ADMIN && user.organizationId !== userDecode?.organizationId)
+    
+      (userDecode?.level !== UserLevel.ADMIN )
     ) {
       res.status(401).json({ message: ErrorMessage.UNAUTHORIZED_ACCESS });
       return;
