@@ -10,6 +10,7 @@ import logger from './src/config/logger.js';
 import userRoute from './src/module/user/user.route.js';
 import authRoute from './src/module/auth/auth.route.js';
 import clientRoute from './src/module/clients/client.route.js';
+import employeeRoute from './src/module/employee/employee.route.js';
 
 dotenv.config();
 
@@ -39,6 +40,7 @@ app.use('/role',roleRoute);
 app.use('/user',userRoute)
 app.use('/auth', authRoute);
 app.use('/client',clientRoute);
+app.use('/employee', employeeRoute);
 
 
 app.get('/',(req,res)=>{
