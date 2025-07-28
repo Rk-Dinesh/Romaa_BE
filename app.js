@@ -9,6 +9,7 @@ import morgan from 'morgan';
 import logger from './src/config/logger.js';
 import userRoute from './src/module/user/user.route.js';
 import authRoute from './src/module/auth/auth.route.js';
+import clientRoute from './src/module/clients/client.route.js';
 
 dotenv.config();
 
@@ -37,6 +38,7 @@ logger.info('Server started successfully');
 app.use('/role',roleRoute);
 app.use('/user',userRoute)
 app.use('/auth', authRoute);
+app.use('/client',clientRoute);
 
 
 app.get('/',(req,res)=>{

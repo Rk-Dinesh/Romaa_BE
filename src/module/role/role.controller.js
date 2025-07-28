@@ -77,3 +77,36 @@ export const getAllRoles = async (req, res) => {
     res.status(500).json({ message: "Error while getting all roles" + error });
   }
 }
+
+export const updateRoleById = async (req, res) => {
+  const { roleId } = req.query;
+  try {
+    const update = req.body;
+    const updated = await RoleService.updateRole(roleId, update);
+    res.status(200).json({
+      status: true,
+      message: "Role updated successfully",
+      data: updated,
+    });
+  } catch (error) {
+    logger.error(`Error updating role: ${error.message}`);
+    res.status(500).json({ message: "Error updating role" + error });
+  }
+};
+
+export const deleteRoleById = async (req, res) => {
+  const { roleId } = req.query;
+  try {
+    const deleted = await RoleService.deleteRole(roleId);
+    if (!deleted) {
+      return res.status(404).json({ message: "Role not found" });
+    }
+    res.status(200).json({
+      status: true,
+      message: "Role deleted successfully",
+    });
+  } catch (error) {
+    logger.error(`Error deleting role: ${error.message}`);
+    res.status(500).json({ message: "Error deleting role" + error });
+  }
+}
