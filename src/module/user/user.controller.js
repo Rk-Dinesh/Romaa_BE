@@ -1,138 +1,178 @@
-import { UserLevel } from "../../common/App.const.js";
-import { getUserFullDto, getUserToUserTokenDto } from "../../common/App.helperFunction.js";
-import { ErrorMessage } from "../../common/App.message.js";
-import { pagination } from "../../common/App.pagination.js";
-import logger from "../../config/logger.js";
 import UserService from "./user.service.js";
 
 export const register = async (req, res) => {
   try {
-    const userData = req.body;
-    // Check if user already exists
-    const userExist = await UserService.checkIfUserExistsByMail(userData.email);
-    if (!userExist) {
-      logger.error(`Registration failed: Email already exist - ${userData.email}`);
-      res.status(409).json({ message: 'User email already exists' }); // Use 409 Conflict
-      return;
-    }
-    await UserService.register(userData);
-    logger.info(`User registered successfully: ${userData.email}`);
-    res.status(201).json({ message: 'User created successfully' });
+    const user = await UserService.register(req.body);
+    res.status(201).json({ status: true, message: "User registered successfully", data: user });
   } catch (error) {
-    logger.error(`Error in register: ${error.message}`);
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
-export const getAllUser = async (req, res) => {
+export const getUserByEmailOrMobile = async (req, res) => {
   try {
-    const level = req?.user?.level ?? UserLevel.ADMIN;
-    // In req.query,page,limit,sortBy,order,searchBy,search
-    const pageParam = pagination(req.query);
-    console.log("Page Parameters:", pageParam);
-    
-    const usersData = await UserService.getUsersByPage(
-      pageParam,
-      level,
-    );
-    res.status(200).json(usersData);
+    const user = await UserService.getUserByEmailOrMobile(req.params.identifier);
+    if (!user) return res.status(404).json({ status: false, message: "User not found" });
+    res.status(200).json({ status: true, data: user });
   } catch (error) {
-    logger.error(`Error fetching users: ${error.message}`);
-    res.status(500).json({ message: 'Error fetching users' });
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
+export const updateUserById = async (req, res) => {
+  try {
+    const updatedUser = await UserService.updateUserById(req.params.id, req.body);
+    if (!updatedUser) return res.status(404).json({ status: false, message: "User not found" });
+    res.status(200).json({ status: true, message: "User updated successfully", data: updatedUser });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const checkIfUserExistsByMail = async (req, res) => {
+  try {
+    const exists = await UserService.checkIfUserExistsByMail(req.params.email);
+    res.status(200).json({ status: true, available: exists });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const checkIfUserExistsByMobile = async (req, res) => {
+  try {
+    const exists = await UserService.checkIfUserExistsByMobile(req.params.mobile);
+    res.status(200).json({ status: true, available: exists });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
+export const addRefreshToken = async (req, res) => {
+  try {
+    const success = await UserService.addRefreshToken(req.body.refreshToken, req.params.id);
+    res.status(200).json({ status: true, updated: success });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
+export const revokeRefreshToken = async (req, res) => {
+  try {
+    const success = await UserService.revokeRefreshToken(req.params.id);
+    res.status(200).json({ status: true, revoked: success });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const getUserById = async (req, res) => {
+  try {
+    const user = await UserService.getUserById(req.params.id);
+    if (!user) return res.status(404).json({ status: false, message: "User not found" });
+    res.status(200).json({ status: true, data: user });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const getUserByMail = async (req, res) => {
+  try {
+    const user = await UserService.getUserByMail(req.params.email);
+    if (!user) return res.status(404).json({ status: false, message: "User not found" });
+    res.status(200).json({ status: true, data: user });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
+export const getUsersByPage = async (req, res) => {
+  try {
+    const pageData = {
+      skip: parseInt(req.query.skip) || 0,
+      limit: parseInt(req.query.limit) || 10,
+      search: req.query.search || "",
+      searchBy: req.query.searchBy || "",
+    };
+
+    const users = await UserService.getUsersByPage(pageData);
+    res.status(200).json({ status: true, data: users });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
+
+export const getUserByMobile = async (req, res) => {
+  try {
+    const user = await UserService.getUserByMobile(req.params.mobile);
+    if (!user) return res.status(404).json({ status: false, message: "User not found" });
+    res.status(200).json({ status: true, data: user });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
 export const updateUser = async (req, res) => {
   try {
-    const userData = req.body;
-    const { id: userId } = req.params;
-    const userDecode = req?.user;
-
-    if (!userDecode) {
-      res.status(400).json({ message: ErrorMessage.INVALID_TOKEN });
-    }
-
-    if (
-      (userDecode?.level === UserLevel.USER && userData.id !== userDecode?.id) ||
-      (userDecode?.level === UserLevel.ADMIN &&
-        userData.organizationId !== userDecode?.organizationId)
-    ) {
-      res.status(401).json({ message: ErrorMessage.UNAUTHORIZED_ACCESS });
-      return;
-    }
-    const dataSet = {
-      ...userData,
-    };
-    await UserService.updateUserById(userId, dataSet);
-    logger.info(
-      `User updated successfully: ${userData.name} (Email: ${userData.email}, Id: ${userId})`,
-    );
-    res.status(200).json({ message: 'User updated successfully' });
+    const result = await UserService.updateUser(req.body);
+    res.status(200).json({ status: true, message: "User updated", data: result });
   } catch (error) {
-    logger.error(`Error updating user: ${error.message}`);
-    res.status(500).json({ message: 'Error updating user' });
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
-export const getUserDetail = async (req, res) => {
-  try {
-    const userId = req.params.id;
-    const userDecode = req?.user;
-    
-    if (!userDecode) {
-      res.status(400).json({ message: ErrorMessage.INVALID_TOKEN });
-    }
-    const user = await UserService.getUserById(userId);
-  
-    
-    if (!user) {
-      res.status(404).json({ message: 'User not found' });
-      return;
-    }
-    if (
-      (userDecode?.level !== UserLevel.ADMIN )
-    ) {
-      res.status(401).json({ message: ErrorMessage.UNAUTHORIZED_ACCESS });
-      return;
-    }
-    const userDetail = user.toObject ? getUserFullDto(user.toObject()) : {};
-    res.status(200).json({
-      status: true,
-      message: 'User details fetched successfully',
-      data: userDetail
-    });
-  } catch (error) {
-    logger.error('Error while Getting User Details' + error);
-    res.status(500).json('Error while Getting User Details' + error.message);
-  }
-};
 
 export const deleteUser = async (req, res) => {
   try {
-    const userId = req.params.id;
-    const userDecode = req?.user;
-
-    if (!userDecode) {
-      res.status(400).json({ message: ErrorMessage.INVALID_TOKEN });
-    }
-
-    const user = await UserService.getUserById(userId);
-    if (!user) {
-      res.status(404).json({ message: 'User not found' });
-      return;
-    }
-
-    if (
-    
-      (userDecode?.level !== UserLevel.ADMIN )
-    ) {
-      res.status(401).json({ message: ErrorMessage.UNAUTHORIZED_ACCESS });
-      return;
-    }
-    await UserService.deleteUser(userId);
-    logger.info(`User deleted successfully: ${userId}`);
-    res.status(200).json({ message: `User deleted successfully ${userId}` });
+    const deleted = await UserService.deleteUser(req.params.id);
+    if (!deleted) return res.status(404).json({ status: false, message: "User not found" });
+    res.status(200).json({ status: true, message: "User deleted", data: deleted });
   } catch (error) {
-    logger.error(`Error deleting user ${JSON.stringify(req.params.id)}: ${error.message}`);
-    res.status(500).json({ message: `Error deleting user: ${error.message}` });
+    res.status(500).json({ status: false, message: error.message });
   }
 };
+
+export const assignRoleToUser = async (req, res) => {
+  try {
+    const { userId, role_id } = req.body; // userId = user record _id, role_id = from Roles collection
+    const updatedUser = await UserService.assignRoleToUser(userId, role_id);
+
+    if (!updatedUser) {
+      return res.status(404).json({ status: false, message: "User not found" });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "Role assigned successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
+export const updateUserRole = async (req, res) => {
+  try {
+    const { userId, role_id } = req.body;
+    const updatedUser = await UserService.updateUserRole(userId, role_id);
+
+    if (!updatedUser) {
+      return res.status(404).json({ status: false, message: "User not found" });
+    }
+
+    res.status(200).json({
+      status: true,
+      message: "User role updated successfully",
+      data: updatedUser,
+    });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+

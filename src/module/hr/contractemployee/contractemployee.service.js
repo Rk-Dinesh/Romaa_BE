@@ -1,0 +1,93 @@
+import ContractWorkerModel from "./contractemployee.model.js";
+import IdcodeServices from "../../idcode/idcode.service.js";
+
+class ContractWorkerService {
+  // Create worker
+  static async addWorker(workerData) {
+    const idname = "CONTRACTWORKER";
+    const idcode = "CW";
+    await IdcodeServices.addIdCode(idname, idcode);
+    const worker_id = await IdcodeServices.generateCode(idname);
+    if (!worker_id) throw new Error("Failed to generate worker ID");
+
+    const worker = new ContractWorkerModel({
+      worker_id,
+      ...workerData
+    });
+    return await worker.save();
+  }
+
+  // Get all workers
+  static async getAllWorkers() {
+    return await ContractWorkerModel.find();
+  }
+
+  // Get worker by worker_id
+  static async getWorkerById(worker_id) {
+    return await ContractWorkerModel.findOne({ worker_id });
+  }
+
+  // Get active workers
+  static async getActiveWorkers() {
+    return await ContractWorkerModel.find({ status: "ACTIVE" });
+  }
+
+  // Search
+  static async searchWorkers(keyword) {
+    return await ContractWorkerModel.find({
+      $or: [
+        { employee_name: { $regex: keyword, $options: "i" } },
+        { contractor_name: { $regex: keyword, $options: "i" } },
+        { contact_phone: { $regex: keyword, $options: "i" } },
+      ]
+    });
+  }
+
+  // Update worker info
+  static async updateWorker(worker_id, updateData) {
+    return await ContractWorkerModel.findOneAndUpdate(
+      { worker_id },
+      { $set: updateData },
+      { new: true }
+    );
+  }
+
+  // Delete worker
+  static async deleteWorker(worker_id) {
+    return await ContractWorkerModel.findOneAndDelete({ worker_id });
+  }
+
+  // Mark attendance (push if not exists for today)
+  static async markAttendance(worker_id, date, present, remarks = "") {
+    return await ContractWorkerModel.updateOne(
+      { worker_id, "daily_attendance.date": { $ne: date } },
+      { $push: { daily_attendance: { date, present, remarks } } }
+    );
+  }
+
+  // Update attendance for a given date
+  static async updateAttendance(worker_id, date, present, remarks = "") {
+    return await ContractWorkerModel.updateOne(
+      { worker_id, "daily_attendance.date": date },
+      { $set: { "daily_attendance.$.present": present, "daily_attendance.$.remarks": remarks } }
+    );
+  }
+
+  // Get attendance records for date range
+  static async getAttendance(worker_id, startDate, endDate) {
+    const worker = await ContractWorkerModel.findOne(
+      { worker_id },
+      { daily_attendance: 1, _id: 0 }
+    );
+
+    if (!worker) return null;
+
+    const filtered = worker.daily_attendance.filter(
+      att => att.date >= new Date(startDate) && att.date <= new Date(endDate)
+    );
+
+    return filtered;
+  }
+}
+
+export default ContractWorkerService;

@@ -129,29 +129,34 @@ class UserService {
     }
   }
 
-  static async getUsersByPage(pageData, level) {
-    try {
-      const { skip, limit, sortBy, order, search, searchBy } = pageData;
-      const filter = getFilterQueryForAdmin(search, searchBy, level);
-      const [data, total] = await Promise.all([
-        UserModel.find(filter).sort().skip(skip).limit(limit),
-        UserModel.countDocuments(filter),
-      ]);
-      const dataSet = {
-        data,
-        total,
-        limit,
-        sortBy,
-        order,
-        search,
-        searchBy,
-        totalPages: Math.ceil(total / limit),
-      };
-      return dataSet;
-    } catch (error) {
-      throw new Error("Error checking user existence: " + error);
-    }
+ static async getUsersByPage(pageData) {
+  try {
+    const { skip, limit, search, searchBy } = pageData;
+
+  ;
+
+    const [data, total] = await Promise.all([
+      UserModel.find(search ? { [searchBy]: new RegExp(search, "i") } : {})
+        .sort({ _id: 1 }) // Always ascending by _id
+        .skip(skip)
+        .limit(limit),
+      UserModel.countDocuments(filter),
+    ]);
+
+    return {
+      data,
+      total,
+      limit,
+      skip,
+      search,
+      searchBy,
+      totalPages: Math.ceil(total / limit),
+    };
+  } catch (error) {
+    throw new Error("Error fetching paginated users: " + error.message);
   }
+}
+
 
   static async getUserByMobile(mobile) {
     try {
@@ -186,6 +191,32 @@ class UserService {
       return await UserModel.findOneAndDelete(id);
     } catch (error) {
       throw new Error("Error deleting user: " + error);
+    }
+  }
+
+  static async assignRoleToUser(userId, role_id) {
+    try {
+      // Assuming userId is Mongo _id
+      return await UserModel.findByIdAndUpdate(
+        userId,
+        { $set: { roleId: role_id } },
+        { new: true }
+      );
+    } catch (error) {
+      throw new Error("Error assigning role to user: " + error.message);
+    }
+  }
+
+  // Update only the user's role
+  static async updateUserRole(userId, role_id) {
+    try {
+      return await UserModel.findByIdAndUpdate(
+        userId,
+        { $set: { roleId: role_id } },
+        { new: true }
+      );
+    } catch (error) {
+      throw new Error("Error updating user role: " + error.message);
     }
   }
 }

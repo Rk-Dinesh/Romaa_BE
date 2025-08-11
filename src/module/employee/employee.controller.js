@@ -119,3 +119,48 @@ export const deleteEmployeeById = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
+// 📅 Attendance APIs
+export const markAttendance = async (req, res) => {
+  try {
+    const { date, present, remarks } = req.body;
+    const result = await EmployeeService.markAttendance(
+      req.params.employee_id,
+      new Date(date),
+      present,
+      remarks
+    );
+    res.status(200).json({ status: true, message: "Attendance marked", result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const updateAttendance = async (req, res) => {
+  try {
+    const { date, present, remarks } = req.body;
+    const result = await EmployeeService.updateAttendance(
+      req.params.employee_id,
+      new Date(date),
+      present,
+      remarks
+    );
+    res.status(200).json({ status: true, message: "Attendance updated", result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const getAttendance = async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    const result = await EmployeeService.getAttendance(
+      req.params.employee_id,
+      startDate,
+      endDate
+    );
+    res.status(200).json({ status: true, data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};

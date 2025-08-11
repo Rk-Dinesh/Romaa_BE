@@ -1,12 +1,21 @@
 import mongoose from "mongoose";
 
+const dailyAttendanceSchema = new mongoose.Schema(
+  {
+    date: { type: Date, required: true },       // The day attendance is recorded
+    present: { type: Boolean, required: true }, // true = Present, false = Absent
+    remarks: String                             // Optional: late, leave, overtime, etc.
+  },
+  { _id: false }
+);
+
 const employeeSchema = new mongoose.Schema(
   {
-    employee_id: String,           // Unique employee code (alphanumeric/id generator)
-    name: String,                  // Full name
-    role: String,                  // Job title/role (e.g., Electrician, Laborer, Supervisor)
-    site_assigned: String,         // Site/project code or name employee is assigned to
-    status: String,                // e.g., ACTIVE, INACTIVE, ON_LEAVE
+    employee_id: { type: String, unique: true },
+    name: { type: String, required: true },
+    role: String,                  
+    site_assigned: String,         
+    status: String,                
     contact_phone: String,
     contact_email: String,
     address: {
@@ -22,9 +31,12 @@ const employeeSchema = new mongoose.Schema(
       relationship: String,
       phone: String,
     },
-    id_proof_type: String,        // e.g., Aadhaar, PAN, Driver’s License
+    id_proof_type: String,        
     id_proof_number: String,
     created_by_user: String,
+
+    // 📅 Attendance Added
+    daily_attendance: [dailyAttendanceSchema],
   },
   { timestamps: true }
 );

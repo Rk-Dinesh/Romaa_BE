@@ -1,18 +1,31 @@
-import { Router } from 'express';
+import { Router } from "express";
 import {
   createClient,
   getClientById,
   getAllClients,
-  updateClientById,
-  deleteClientById
-} from './client.controller.js';
+  getActiveClients,
+  updateClient,
+  deleteClient,
+  searchClients
+} from "./client.controller.js";
 
 const clientRoute = Router();
 
-clientRoute.post('/addclient', createClient); // Create
-clientRoute.get('/getbyclientid', getClientById); // Read single
-clientRoute.get('/getallclients', getAllClients); // Read all
-clientRoute.put('/updatebyclientid', updateClientById); // Update
-clientRoute.delete('/deletebyclientid', deleteClientById); // Delete
+// Create
+clientRoute.post("/addclient", createClient);
+
+// Read
+clientRoute.get("/getclient/:client_id", getClientById);
+clientRoute.get("/getallclients", getAllClients);
+clientRoute.get("/getactiveclients", getActiveClients);
+
+// Search
+clientRoute.get("/searchclients", searchClients);
+
+// Update
+clientRoute.put("/updateclient/:client_id", updateClient);
+
+// Delete
+clientRoute.delete("/deleteclient/:client_id", deleteClient);
 
 export default clientRoute;

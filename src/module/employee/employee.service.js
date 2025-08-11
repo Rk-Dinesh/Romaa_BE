@@ -51,6 +51,41 @@ class EmployeeService {
       throw error;
     }
   }
+
+  static async markAttendance(employee_id, date, present, remarks = "") {
+    return await EmployeeModel.updateOne(
+      { employee_id, "daily_attendance.date": { $ne: date } },
+      { $push: { daily_attendance: { date, present, remarks } } }
+    );
+  }
+
+  // 📌 Update existing attendance
+  static async updateAttendance(employee_id, date, present, remarks = "") {
+    return await EmployeeModel.updateOne(
+      { employee_id, "daily_attendance.date": date },
+      {
+        $set: {
+          "daily_attendance.$.present": present,
+          "daily_attendance.$.remarks": remarks
+        }
+      }
+    );
+  }
+
+  // 📌 Get attendance for date range
+  static async getAttendance(employee_id, startDate, endDate) {
+    const emp = await EmployeeModel.findOne(
+      { employee_id },
+      { daily_attendance: 1, _id: 0 }
+    );
+
+    if (!emp) return null;
+
+    return emp.daily_attendance.filter(
+      (att) =>
+        att.date >= new Date(startDate) && att.date <= new Date(endDate)
+    );
+  }
 }
 
 export default EmployeeService;
