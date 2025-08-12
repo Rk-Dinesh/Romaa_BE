@@ -6,7 +6,8 @@ import {
   getActiveVendors,
   updateVendor,
   deleteVendor,
-  searchVendors
+  searchVendors,
+  getVendorsPaginated
 } from "./vendor.controller.js";
 
 const vendorRoute = Router();
@@ -27,5 +28,7 @@ vendorRoute.put("/updatevendor/:vendor_id", updateVendor);
 
 // Delete
 vendorRoute.delete("/deletevendor/:vendor_id", deleteVendor);
+
+vendorRoute.get("/getvendors", getVendorsPaginated);
 
 export default vendorRoute;

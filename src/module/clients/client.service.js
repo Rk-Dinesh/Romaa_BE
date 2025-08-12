@@ -2,7 +2,7 @@ import ClientModel from "./client.model.js";
 import IdcodeServices from "../idcode/idcode.service.js";
 
 class ClientService {
-  // Create
+  // ✅ Create
   static async addClient(clientData) {
     try {
       const idname = "CLIENT";
@@ -11,78 +11,82 @@ class ClientService {
       const client_id = await IdcodeServices.generateCode(idname);
       if (!client_id) throw new Error("Failed to generate client ID");
 
-      const newClient = new ClientModel({
-        client_id,
-        ...clientData,
-      });
+      const newClient = new ClientModel({ client_id, ...clientData });
       return await newClient.save();
     } catch (error) {
       throw new Error("Error creating client: " + error.message);
     }
   }
 
-  // Get by client_id
+  // ✅ Get by ID
   static async getClientById(client_id) {
-    try {
-      return await ClientModel.findOne({ client_id });
-    } catch (error) {
-      throw new Error("Error fetching client: " + error.message);
-    }
+    return ClientModel.findOne({ client_id });
   }
 
-  // Get all
+  // ✅ Get All
   static async getAllClients() {
-    try {
-      return await ClientModel.find();
-    } catch (error) {
-      throw new Error("Error fetching clients: " + error.message);
-    }
+    return ClientModel.find();
   }
 
-  // Get active clients
+  // ✅ Get Active
   static async getActiveClients() {
-    try {
-      return await ClientModel.find({ status: "ACTIVE" });
-    } catch (error) {
-      throw new Error("Error fetching active clients: " + error.message);
+    return ClientModel.find({ status: "ACTIVE" });
+  }
+
+// 📌 Paginated, Search, and Date Filtered Service
+static async getClientsPaginated(page, limit, search, fromdate, todate) {
+  const query = {};
+
+  // Keyword Search
+  if (search) {
+    query.$or = [
+      { client_name: { $regex: search, $options: "i" } },
+      { contact_email: { $regex: search, $options: "i" } },
+      { contact_phone: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  // Date Filtering
+  if (fromdate || todate) {
+    query.createdAt = {};
+    if (fromdate) query.createdAt.$gte = new Date(fromdate);
+    if (todate) {
+      const endOfDay = new Date(todate);
+      endOfDay.setUTCHours(23, 59, 59, 999); // Include entire to-date day
+      query.createdAt.$lte = endOfDay;
     }
   }
 
-  // Update by client_id
+  const total = await ClientModel.countDocuments(query);
+  const clients = await ClientModel.find(query)
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .sort({ createdAt: -1 });
+
+  return { total, clients };
+}
+
+
+
+  // ✅ Update
   static async updateClient(client_id, updateData) {
-    try {
-      return await ClientModel.findOneAndUpdate(
-        { client_id },
-        { $set: updateData },
-        { new: true }
-      );
-    } catch (error) {
-      throw new Error("Error updating client: " + error.message);
-    }
+    return ClientModel.findOneAndUpdate({ client_id }, { $set: updateData }, { new: true });
   }
 
-  // Delete by client_id
+  // ✅ Delete
   static async deleteClient(client_id) {
-    try {
-      return await ClientModel.findOneAndDelete({ client_id });
-    } catch (error) {
-      throw new Error("Error deleting client: " + error.message);
-    }
+    return ClientModel.findOneAndDelete({ client_id });
   }
 
-  // Search
+  // ✅ Search (legacy)
   static async searchClients(keyword) {
-    try {
-      return await ClientModel.find({
-        $or: [
-          { client_name: { $regex: keyword, $options: "i" } },
-          { contact_email: { $regex: keyword, $options: "i" } },
-          { contact_phone: { $regex: keyword, $options: "i" } },
-        ],
-      });
-    } catch (error) {
-      throw new Error("Error searching clients: " + error.message);
-    }
+    return ClientModel.find({
+      $or: [
+        { client_name: { $regex: keyword, $options: "i" } },
+        { contact_email: { $regex: keyword, $options: "i" } },
+        { contact_phone: { $regex: keyword, $options: "i" } }
+      ]
+    });
   }
 }
 

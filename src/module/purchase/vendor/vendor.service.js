@@ -56,6 +56,42 @@ class VendorService {
       ]
     });
   }
+
+  // vendor.service.js
+
+// 📌 Paginated, Search, and Date Filtered Service
+static async getVendorsPaginated(page, limit, search, fromdate, todate) {
+  const query = {};
+
+  // Keyword Search
+  if (search) {
+    query.$or = [
+      { company_name: { $regex: search, $options: "i" } },
+      { contact_email: { $regex: search, $options: "i" } },
+      { contact_phone: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  // Date Filtering
+  if (fromdate || todate) {
+    query.createdAt = {};
+    if (fromdate) query.createdAt.$gte = new Date(fromdate);
+    if (todate) {
+      const endOfDay = new Date(todate);
+      endOfDay.setUTCHours(23, 59, 59, 999);
+      query.createdAt.$lte = endOfDay;
+    }
+  }
+
+  const total = await VendorModel.countDocuments(query);
+  const vendors = await VendorModel.find(query)
+    .skip((page - 1) * limit)
+    .limit(limit)
+    .sort({ createdAt: -1 });
+
+  return { total, vendors };
+}
+
 }
 
 export default VendorService;

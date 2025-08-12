@@ -72,3 +72,35 @@ export const searchVendors = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
+// vendor.controller.js
+
+// 📌 Get paginated vendors with search + date filter
+export const getVendorsPaginated = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || "";
+    const fromdate = req.query.fromdate || null;
+    const todate = req.query.todate || null;
+
+    const data = await VendorService.getVendorsPaginated(
+      page,
+      limit,
+      search,
+      fromdate,
+      todate
+    );
+
+    res.status(200).json({
+      status: true,
+      currentPage: page,
+      totalPages: Math.ceil(data.total / limit),
+      totalRecords: data.total,
+      data: data.vendors
+    });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+

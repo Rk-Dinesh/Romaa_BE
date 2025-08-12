@@ -1,6 +1,6 @@
 import ClientService from "./client.service.js";
 
-// Create
+// ✅ Create
 export const createClient = async (req, res) => {
   try {
     const result = await ClientService.addClient(req.body);
@@ -10,7 +10,7 @@ export const createClient = async (req, res) => {
   }
 };
 
-// Get by client_id
+// ✅ Get by ID
 export const getClientById = async (req, res) => {
   try {
     const client = await ClientService.getClientById(req.params.client_id);
@@ -21,7 +21,7 @@ export const getClientById = async (req, res) => {
   }
 };
 
-// Get all
+// ✅ Get All
 export const getAllClients = async (req, res) => {
   try {
     const clients = await ClientService.getAllClients();
@@ -31,7 +31,38 @@ export const getAllClients = async (req, res) => {
   }
 };
 
-// Get active clients
+// 📌 Paginated, Search, and Date Filtered Get Clients
+export const getClientsPaginated = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || "";
+    const fromdate = req.query.fromdate || null;
+    const todate = req.query.todate || null;
+
+    const data = await ClientService.getClientsPaginated(
+      page,
+      limit,
+      search,
+      fromdate,
+      todate
+    );
+
+    res.status(200).json({
+      status: true,
+      currentPage: page,
+      totalPages: Math.ceil(data.total / limit),
+      totalRecords: data.total,
+      data: data.clients
+    });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
+
+// ✅ Get Active Clients
 export const getActiveClients = async (req, res) => {
   try {
     const clients = await ClientService.getActiveClients();
@@ -41,7 +72,7 @@ export const getActiveClients = async (req, res) => {
   }
 };
 
-// Update
+// ✅ Update
 export const updateClient = async (req, res) => {
   try {
     const updated = await ClientService.updateClient(req.params.client_id, req.body);
@@ -52,18 +83,18 @@ export const updateClient = async (req, res) => {
   }
 };
 
-// Delete
+// ✅ Delete
 export const deleteClient = async (req, res) => {
   try {
     const deleted = await ClientService.deleteClient(req.params.client_id);
     if (!deleted) return res.status(404).json({ status: false, message: "Client not found" });
-    res.status(200).json({ status: true, message: "Client deleted", data: deleted });
+    res.status(200).json({ status: true, message: "Client deleted" });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// Search
+// ✅ Search (legacy)
 export const searchClients = async (req, res) => {
   try {
     const result = await ClientService.searchClients(req.query.q || "");
