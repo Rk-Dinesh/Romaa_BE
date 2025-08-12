@@ -7,7 +7,8 @@ import {
   updateClient,
   deleteClient,
   searchClients,
-  getClientsPaginated
+  getClientsPaginated,
+  getAllClientsNameId
 } from "./client.controller.js";
 
 const clientRoute = Router();
@@ -18,6 +19,8 @@ clientRoute.post("/addclient", createClient);
 // Read
 clientRoute.get("/getclient/:client_id", getClientById);
 clientRoute.get("/getallclients", getAllClients);
+clientRoute.get("/getallclientsdetails", getAllClientsNameId);
+
 clientRoute.get("/getactiveclients", getActiveClients);
 
 // Pagination + Search

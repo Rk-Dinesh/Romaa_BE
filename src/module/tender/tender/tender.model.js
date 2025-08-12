@@ -11,6 +11,18 @@ const tenderLocationSchema = new mongoose.Schema(
   { _id: false }
 );
 
+// ✅ Sub-schema for an important date item
+const followUpDateSchema = new mongoose.Schema(
+  {
+    title: { type: String, default: "" },   // e.g., Last Date of Document Purchase
+    date: { type: Date, default: null },    // e.g., 2025-06-12
+    time: { type: String, default: "" },    // e.g., "12:00 PM"
+    notes: { type: String, default: "" }, // e.g., "123 Street, Chennai"
+  },
+  { _id: false }
+);
+
+
 // ✅ Sub-schema for approved EMD details
 const approvedEmdDetailsSchema = new mongoose.Schema(
   {
@@ -97,10 +109,11 @@ const tenderSchema = new mongoose.Schema(
     tender_location: { type: tenderLocationSchema, default: () => ({}) },
     tender_start_date: { type: Date, default: null },
     tender_end_date: { type: Date, default: null },
+    tender_duration:{ type: String, default: "" },
     workOrder_id: { type: String, default: "" },
     workOrder_issued_date: { type: Date, default: null },
     workOrder_issued_by: { type: String, default: "" },
-    tender_status: { type: String, default: "OPEN" },
+    tender_status: { type: String, default: "PENDING" },
 
     boq_final_value: { type: Number, default: 0 },
     zeroCost_final_value: { type: Number, default: 0 },
@@ -119,7 +132,7 @@ const tenderSchema = new mongoose.Schema(
     tender_plan_documents_ids: { type: [String], default: [] },
     contractor_details: { type: [String], default: [] },
     vendor_details: { type: [String], default: [] },
-    follow_up_ids: { type: [String], default: [] },
+    follow_up_ids: { type: [followUpDateSchema], default: [] },
     BoQ_id: { type: String, default: "" },
     created_by_user: { type: String, default: "" }
   },

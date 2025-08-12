@@ -5,17 +5,24 @@ import {
   getTenderById,
   updateTender,
   deleteTender,
-  updateTenderStatusCheck
+  updateTenderStatusCheck,
+  getTendersPaginated,
+  getTenderForOverview,
+  addImportantDate
 } from "./tender.controller.js";
 
 const tenderrouter = Router();
 
 // CRUD
-tenderrouter.post("/add", createTender);
+tenderrouter.post("/addtender", createTender);
 tenderrouter.get("/all", getAllTenders);
-tenderrouter.get("/get/:tender_id", getTenderById);
-tenderrouter.put("/update/:tender_id", updateTender);
+tenderrouter.get("/gettender/:tender_id", getTenderById);
+tenderrouter.put("/updatetender/:tender_id", updateTender);
 tenderrouter.delete("/delete/:tender_id", deleteTender);
+tenderrouter.get("/gettenders", getTendersPaginated);
+tenderrouter.get("/getoverview/:tender_id", getTenderForOverview);
+tenderrouter.post("/addfollowup/:tender_id", addImportantDate);
+
 
 // Special endpoint for tender_status_check
 tenderrouter.put("/statuscheck/:tender_id", updateTenderStatusCheck);

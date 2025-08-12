@@ -28,6 +28,12 @@ class ClientService {
     return ClientModel.find();
   }
 
+  static async getAllClientsIDNAME() {
+    return ClientModel.find().select("client_id client_name");
+  }
+
+  
+
   // ✅ Get Active
   static async getActiveClients() {
     return ClientModel.find({ status: "ACTIVE" });

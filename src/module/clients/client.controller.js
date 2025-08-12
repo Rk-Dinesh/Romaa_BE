@@ -31,6 +31,15 @@ export const getAllClients = async (req, res) => {
   }
 };
 
+export const getAllClientsNameId = async (req, res) => {
+  try {
+    const clients = await ClientService.getAllClientsIDNAME();
+    res.status(200).json({ status: true, data: clients });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // 📌 Paginated, Search, and Date Filtered Get Clients
 export const getClientsPaginated = async (req, res) => {
   try {

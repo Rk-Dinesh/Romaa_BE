@@ -12,6 +12,7 @@ import authRoute from './src/module/auth/auth.route.js';
 import clientRoute from './src/module/clients/client.route.js';
 import employeeRoute from './src/module/employee/employee.route.js';
 import vendorRoute from './src/module/purchase/vendor/vendor.route.js';
+import tenderrouter from './src/module/tender/tender/tender.route.js';
 
 dotenv.config();
 
@@ -43,6 +44,7 @@ app.use('/auth', authRoute);
 app.use('/client',clientRoute);
 // app.use('/employee', employeeRoute);
 app.use('/vendor',vendorRoute);
+app.use('/tender', tenderrouter);
 
 
 app.get('/',(req,res)=>{
