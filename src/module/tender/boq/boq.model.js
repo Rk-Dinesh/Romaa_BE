@@ -2,7 +2,8 @@ import mongoose from "mongoose";
 
 const boqItemSchema = new mongoose.Schema(
   {
-    item_code: String,                  // Standard Work Classification Code
+    item_code: String,
+     item_name: String,                    // Standard Work Classification Code
     description: String,                // Work description (e.g., "Earthwork Excavation")
     specification: String,              // Relevant specifications or standards
     unit: String,                       // Unit of measurement (e.g., m3, Sqm, Kg)
@@ -22,13 +23,13 @@ const boqSchema = new mongoose.Schema(
   {
     boq_id: { type: String, unique: true },
     tender_id: String,                 // Reference to the Project
-    phase: String,                      // Phase/Stage: e.g., "Excavation", "Finishing"
+    phase: {type:String ,default:""},                      // Phase/Stage: e.g., "Excavation", "Finishing"
     revision: Number,
     status: String,                     // Draft, Verified, Finalized
     items: [boqItemSchema],             // Array of individual BOQ items
     total_amount: Number,               // Sum of all item amounts
-    prepared_by: String,
-    approved_by: String,
+    prepared_by: {type:String ,default:""},
+    approved_by: {type:String ,default:""},
     prepared_date: Date,
     approved_date: Date,
     attachments: [
@@ -38,7 +39,7 @@ const boqSchema = new mongoose.Schema(
         uploaded_at: Date,
       }
     ],
-    created_by_user: String,
+    created_by_user: {type:String ,default:"ADMIN"},
   },
   { timestamps: true }
 );

@@ -9,6 +9,24 @@ export const createBoq = async (req, res) => {
   }
 };
 
+export const addOrUpdateBoqItem = async (req, res) => {
+  try {
+    const result = await BoqService.addOrUpdateBoqItem(req.body);
+    res.status(200).json({
+      status: true,
+      message: "BOQ item(s) added/updated successfully",
+      data: result,
+    });
+  } catch (error) {
+    console.log(error.message);
+    
+    res.status(500).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
+
 export const getAllBoqs = async (req, res) => {
   try {
     const result = await BoqService.getAllBoqs();
@@ -59,6 +77,48 @@ export const deleteBoq = async (req, res) => {
   try {
     const result = await BoqService.deleteBoq(req.params.boq_id);
     res.status(200).json({ status: true, message: "BOQ deleted successfully", data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
+export const getBoqItemsPaginated = async (req, res) => {
+  try {
+    const tender_id = req.params.tender_id;  // from URL
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || "";
+
+    const data = await BoqService.getBoqItemsPaginated(
+      tender_id,
+      page,
+      limit,
+      search
+    );
+
+    res.status(200).json({
+      status: true,
+      currentPage: page,
+      totalPages: Math.ceil(data.total / limit),
+      totalRecords: data.total,
+      data: data.items
+    });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const getBoqByTenderId = async (req, res) => {
+  try {
+    const boq = await BoqService.findBoqByTenderId(req.params.tender_id);
+   if (!boq) {
+      return res.status(200).json({
+        status: true,
+        data: {} 
+      });
+    }
+    res.status(200).json({ status: true, data: boq });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

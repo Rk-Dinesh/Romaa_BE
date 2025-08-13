@@ -47,6 +47,101 @@ class BoqService {
     return savedBoq;
   }
 
+static async addOrUpdateBoqItem(boqData) {
+  const { tender_id, items = [], ...rest } = boqData;
+  if (!tender_id) throw new Error("tender_id is required");
+
+  // 🔹 Generate unique code for each new BOQ Item
+  const updatedItems = await Promise.all(
+    items.map(async (item) => {
+      // generate code for this item
+      const idname = "BOQ_ITEM";
+      const idcode = "ITEM";
+      await IdcodeServices.addIdCode(idname, idcode);
+      const item_code = await IdcodeServices.generateCode(idname);
+
+      return {
+        ...item,
+        item_code, // override or set new field
+        final_amount: item.quantity * (item.final_unit_rate || 0),
+        zero_cost_final_amount: item.quantity * (item.zero_cost_unit_rate || 0),
+      };
+    })
+  );
+
+  // 🔹 Check if BOQ already exists
+  let boq = await BoqModel.findOne({ tender_id });
+
+  if (boq) {
+    // Append with unique item codes
+    boq.items.push(...updatedItems);
+
+    // Recalc totals
+    boq.total_amount = boq.items.reduce((sum, i) => sum + (i.final_amount || 0), 0);
+
+    const savedBoq = await boq.save();
+
+    // Sync to Tender
+    await TenderModel.updateOne(
+      { tender_id },
+      {
+        $set: {
+          BoQ_id: savedBoq.boq_id,
+          boq_final_value: savedBoq.total_amount || 0,
+          zeroCost_final_value: savedBoq.items.reduce(
+            (sum, i) => sum + (i.zero_cost_final_amount || 0),
+            0
+          ),
+        },
+      }
+    );
+
+    return savedBoq;
+  } 
+  else {
+    // 🔹 Generate BOQ ID
+    const idname = "BOQ";
+    const idcode = "BOQ";
+    await IdcodeServices.addIdCode(idname, idcode);
+    const boq_id = await IdcodeServices.generateCode(idname);
+    if (!boq_id) throw new Error("Failed to generate BOQ ID");
+
+    // Calculate total
+    const total_amount = updatedItems.reduce((sum, i) => sum + (i.final_amount || 0), 0);
+
+    // Create new BOQ
+    const newBoq = new BoqModel({
+      boq_id,
+      tender_id,
+      items: updatedItems,
+      total_amount,
+      ...rest,
+    });
+
+    const savedBoq = await newBoq.save();
+
+    // Sync to Tender
+    await TenderModel.updateOne(
+      { tender_id },
+      {
+        $set: {
+          BoQ_id: boq_id,
+          boq_final_value: savedBoq.total_amount || 0,
+          zeroCost_final_value: savedBoq.items.reduce(
+            (sum, i) => sum + (i.zero_cost_final_amount || 0),
+            0
+          ),
+        },
+      }
+    );
+
+    return savedBoq;
+  }
+}
+
+
+
+
 
   // Get all BoQs
   static async getAllBoqs() {
@@ -154,6 +249,46 @@ class BoqService {
   static async deleteBoq(boq_id) {
     return await BoqModel.findOneAndDelete({ boq_id });
   }
+
+  static async getBoqItemsPaginated(tender_id, page, limit, search) {
+    // 1. Find the BOQ for the given tender_id, only selecting items array
+    const boq = await BoqModel.findOne(
+      { tender_id },
+      { items: 1, _id: 0 }
+    ).lean();
+
+    if (!boq || !boq.items) {
+      return { total: 0, items: [] };
+    }
+
+    let items = boq.items;
+
+    // 2. Optional search in items (by description, item_code, category, etc.)
+    if (search) {
+      const regex = new RegExp(search, "i");
+      items = items.filter(
+        (item) =>
+          regex.test(item.description) ||
+          regex.test(item.item_code) ||
+          regex.test(item.category)
+      );
+    }
+
+    // 3. Pagination calculation
+    const total = items.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedItems = items.slice(startIndex, startIndex + limit);
+
+    return { total, items: paginatedItems };
+  }
+  static async findBoqByTenderId(tender_id) {
+    return await BoqModel.findOne(
+      { tender_id },
+      { boq_id: 1, tender_id: 1, status: 1, _id: 0 } // ✅ Only minimal fields
+    ).lean();
+  }
+
+
 }
 
 export default BoqService;

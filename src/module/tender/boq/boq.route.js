@@ -6,13 +6,18 @@ import {
   updateBoq,
   addItemToBoq,
   removeItemFromBoq,
-  deleteBoq
+  deleteBoq,
+  addOrUpdateBoqItem,
+  getBoqItemsPaginated,
+  getBoqByTenderId
 } from "./boq.controller.js";
 
 const boqrouter = Router();
 
 // BoQ CRUD
 boqrouter.post("/add", createBoq);
+boqrouter.post("/addboq", addOrUpdateBoqItem);
+
 boqrouter.get("/all", getAllBoqs);
 boqrouter.get("/get/:boq_id", getBoqById);
 boqrouter.put("/update/:boq_id", updateBoq);
@@ -21,5 +26,7 @@ boqrouter.delete("/delete/:boq_id", deleteBoq);
 // Add/Remove single items
 boqrouter.post("/additem/:boq_id", addItemToBoq);
 boqrouter.delete("/removeitem/:boq_id/:item_code", removeItemFromBoq);
+boqrouter.get("/items/:tender_id", getBoqItemsPaginated);
+boqrouter.get("/by-tender/:tender_id", getBoqByTenderId);
 
 export default boqrouter;
