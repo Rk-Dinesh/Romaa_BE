@@ -6,7 +6,9 @@ import {
   updateEmdRecord,
   updateProposalInTender,
   removeProposalFromTender,
-  deleteEmdRecord
+  deleteEmdRecord,
+  getProposalsPaginated,
+  updateProposalWithApprovalRule
 } from "./emd.controller.js";
 
 const emdrouter = Router();
@@ -15,7 +17,7 @@ const emdrouter = Router();
 emdrouter.post("/addproposal/:tender_id", addProposalToTender);
 
 // Get EMD by tender
-emdrouter.get("/gettender/:tender_id", getEmdByTender);
+emdrouter.get("/getemd/:tender_id", getEmdByTender);
 
 // Get all EMDs
 emdrouter.get("/getall", getAllEmds);
@@ -24,12 +26,16 @@ emdrouter.get("/getall", getAllEmds);
 emdrouter.put("/update/:tender_id", updateEmdRecord);
 
 // Update single proposal inside a tender record
-emdrouter.put("/updateproposal/:tender_id/:company_name", updateProposalInTender);
+
+emdrouter.put("/updateproposal/:tender_id/:proposal_id", updateProposalWithApprovalRule);
 
 // Remove proposal from tender
-emdrouter.delete("/removeproposal/:tender_id/:company_name", removeProposalFromTender);
+emdrouter.delete("/removeproposal/:tender_id/:proposal_id", removeProposalFromTender);
 
 // Delete entire EMD record
 emdrouter.delete("/delete/:tender_id", deleteEmdRecord);
+
+emdrouter.get("/proposals/:tender_id", getProposalsPaginated);
+
 
 export default emdrouter;

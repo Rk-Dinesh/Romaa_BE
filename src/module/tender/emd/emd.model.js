@@ -2,17 +2,17 @@ import mongoose from "mongoose";
 
 const proposalSchema = new mongoose.Schema(
   {
-    
+    proposal_id:String,
     company_name: { type: String, required: true },   // Name of bidding company
     proposed_amount: { type: Number, required: true },// Tender bid value proposed by company
     emd_percentage: { type: Number, required: true }, // % of proposed amount for EMD
     emd_amount: { type: Number },                     // EMD amount = proposed_amount * emd_percentage / 100
     currency: { type: String, default: "INR" },
     payment_method: String,
-    payment_reference: String,
-    payment_date: Date,
+    payment_bank: String,
+    payment_date: {type:Date,default:new Date()},
     status: { type: String, required: true },         // PAID, REFUNDED, FORFEITED, PENDING
-    refund_date: Date,
+    refund_date:{type:Date,default:new Date()},
     refund_reference: String,
     level: String,                                    // General, Special, etc
     notes: String,
@@ -38,6 +38,7 @@ proposalSchema.pre("save", function (next) {
 const emdSchema = new mongoose.Schema(
   {
     tender_id: { type: String, required: true },
+    emd_id:String,
     proposals: [proposalSchema],                 // Multiple companies can be listed here
     created_by_user: String
   },

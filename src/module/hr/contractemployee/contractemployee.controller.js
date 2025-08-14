@@ -20,6 +20,15 @@ export const getAllWorkers = async (req, res) => {
   }
 };
 
+export const getAllEmployeeNameId = async (req, res) => {
+  try {
+    const clients = await ContractWorkerService.getAllEmployeeIDNAME();
+    res.status(200).json({ status: true, data: clients });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // Get worker by ID
 export const getWorkerById = async (req, res) => {
   try {

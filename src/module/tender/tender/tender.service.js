@@ -43,6 +43,11 @@ class TenderService {
     return await TenderModel.findOne({ tender_id });
   }
 
+    static async getTenderByIdemd(tender_id) {
+    return await TenderModel.findOne({ tender_id }).select("emd.emd_percentage emd.emd_validity emd.emd_amount");
+  }
+
+
   // Update tender (with recalculations)
   static async updateTender(tender_id, updateData) {
     if (updateData.tender_value && updateData.emd?.emd_percentage) {

@@ -8,7 +8,8 @@ import {
   updateTenderStatusCheck,
   getTendersPaginated,
   getTenderForOverview,
-  addImportantDate
+  addImportantDate,
+  getTenderByIdemd
 } from "./tender.controller.js";
 
 const tenderrouter = Router();
@@ -17,6 +18,7 @@ const tenderrouter = Router();
 tenderrouter.post("/addtender", createTender);
 tenderrouter.get("/all", getAllTenders);
 tenderrouter.get("/gettender/:tender_id", getTenderById);
+tenderrouter.get("/gettenderemd/:tender_id", getTenderByIdemd);
 tenderrouter.put("/updatetender/:tender_id", updateTender);
 tenderrouter.delete("/delete/:tender_id", deleteTender);
 tenderrouter.get("/gettenders", getTendersPaginated);

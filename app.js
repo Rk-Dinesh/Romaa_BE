@@ -14,6 +14,8 @@ import employeeRoute from './src/module/employee/employee.route.js';
 import vendorRoute from './src/module/purchase/vendor/vendor.route.js';
 import tenderrouter from './src/module/tender/tender/tender.route.js';
 import boqrouter from './src/module/tender/boq/boq.route.js';
+import permittedrouter from './src/module/tender/vendorpermitted/permittedvendor.route.js';
+import emdrouter from './src/module/tender/emd/emd.route.js';
 
 dotenv.config();
 
@@ -47,6 +49,8 @@ app.use('/employee', employeeRoute);
 app.use('/vendor',vendorRoute);
 app.use('/tender', tenderrouter);
 app.use('/boq',boqrouter);
+app.use('/permittedvendor',permittedrouter);
+app.use('/emd',emdrouter);
 
 
 app.get('/',(req,res)=>{

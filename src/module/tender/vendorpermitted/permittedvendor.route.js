@@ -3,7 +3,8 @@ import {
   addPermittedVendors,
   getPermittedVendors,
   updatePermittedVendor,
-  removePermittedVendor
+  removePermittedVendor,
+  getpaginatedVendor
 } from "./permittedvendor.controller.js";
 
 const permittedrouter = Router();
@@ -19,5 +20,7 @@ permittedrouter.put("/update/:tender_id/:vendor_id", updatePermittedVendor);
 
 // Remove permitted vendor (also removes from TenderModel)
 permittedrouter.delete("/remove/:tender_id/:vendor_id", removePermittedVendor);
+
+permittedrouter.get('/permitted-vendors/:tender_id',getpaginatedVendor)
 
 export default permittedrouter;

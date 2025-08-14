@@ -233,8 +233,8 @@ static async addOrUpdateBoqItem(boqData) {
   }
 
   // Remove item by item_code
-  static async removeItemFromBoq(boq_id, item_code) {
-    const boq = await BoqModel.findOne({ boq_id });
+  static async removeItemFromBoq(tender_id, item_code) {
+    const boq = await BoqModel.findOne({ tender_id });
     if (!boq) throw new Error("BOQ record not found");
 
     boq.items = boq.items.filter(item => item.item_code !== item_code);

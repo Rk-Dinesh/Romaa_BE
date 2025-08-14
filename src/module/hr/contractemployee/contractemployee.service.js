@@ -22,6 +22,10 @@ class ContractWorkerService {
     return await ContractWorkerModel.find();
   }
 
+    static async getAllEmployeeIDNAME() {
+      return ContractWorkerModel.find().select("worker_id employee_name");
+    }
+
   // Get worker by worker_id
   static async getWorkerById(worker_id) {
     return await ContractWorkerModel.findOne({ worker_id });

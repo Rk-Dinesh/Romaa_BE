@@ -97,11 +97,11 @@ export const updateProposalInTender = async (req, res) => {
 
 export const removeProposalFromTender = async (req, res) => {
   try {
-    const { tender_id, company_name } = req.params;
+    const { tender_id, proposal_id } = req.params;
 
     const result = await EmdService.removeProposalFromTender(
       tender_id,
-      company_name
+      proposal_id
     );
 
     res.status(200).json({
@@ -128,5 +128,54 @@ export const deleteEmdRecord = async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
+  }
+};
+export const getProposalsPaginated = async (req, res) => {
+  try {
+    const { tender_id } = req.params;
+    const { page = 1, limit = 10, search = "" } = req.query;
+
+    const result = await EmdService.getProposalsPaginated(
+      tender_id,
+      parseInt(page),
+      parseInt(limit),
+      search
+    );
+
+    res.json({
+      status: true,
+      total: result.total,
+      data: result.proposals
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const updateProposalWithApprovalRule = async (req, res) => {
+  try {
+    const { tender_id, proposal_id } = req.params;
+    const { status, level } = req.body;
+
+    // For logging, can get username from auth middleware
+    const updatedBy = req.user?.name || "System";
+
+    const result = await EmdService.updateProposalWithApprovalRule(
+      tender_id,
+      proposal_id,
+      status,
+      level,
+      updatedBy
+    );
+
+    res.json({
+      status: true,
+      message: "Proposal updated successfully",
+      data: result
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(400).json({ status: false, message: error.message });
   }
 };

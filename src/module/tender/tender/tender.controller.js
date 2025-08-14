@@ -34,6 +34,20 @@ export const getTenderById = async (req, res) => {
   }
 };
 
+export const getTenderByIdemd = async (req, res) => {
+  try {
+    const tender = await TenderService.getTenderByIdemd(req.params.tender_id);
+    if (!tender)
+      return res
+        .status(404)
+        .json({ status: false, message: "Tender not found" });
+
+    res.status(200).json({ status: true, data: tender });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 export const updateTender = async (req, res) => {
   try {
     const tender = await TenderService.updateTender(

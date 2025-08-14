@@ -66,7 +66,7 @@ export const addItemToBoq = async (req, res) => {
 
 export const removeItemFromBoq = async (req, res) => {
   try {
-    const result = await BoqService.removeItemFromBoq(req.params.boq_id, req.params.item_code);
+    const result = await BoqService.removeItemFromBoq(req.params.tender_id, req.params.item_code);
     res.status(200).json({ status: true, message: "Item removed from BOQ", data: result });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });

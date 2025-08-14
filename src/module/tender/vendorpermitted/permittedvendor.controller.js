@@ -59,3 +59,27 @@ export const removePermittedVendor = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
+
+export const getpaginatedVendor = async (req, res) => {
+  try {
+    const { tender_id } = req.params;
+    const { page = 1, limit = 10, search = "" } = req.query;
+
+    const result = await VendorPermittedService.getVendorsPaginated(
+      tender_id,
+      parseInt(page),
+      parseInt(limit),
+      search
+    );
+
+    res.json({
+      success: true,
+      total: result.total,
+      data: result.vendors,
+    });
+  } catch (error) {
+    console.error("Error fetching permitted vendors:", error);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
+};

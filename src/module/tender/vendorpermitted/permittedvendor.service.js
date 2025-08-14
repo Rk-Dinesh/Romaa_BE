@@ -1,6 +1,7 @@
-import VendorPermittedModel from "./vendorpermitted.mode.js";
+
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import TenderModel from "../tender/tender.model.js";
+import VendorPermittedModel from "./vendorpermitted.mode.js";
 
 class VendorPermittedService {
   /**
@@ -78,6 +79,41 @@ class VendorPermittedService {
 
     return result;
   }
+
+  static async getVendorsPaginated(tender_id, page = 1, limit = 10, search = "") {
+    // 1️⃣ Fetch only the vendor array for a given tender_id
+    const data = await VendorPermittedModel.findOne(
+      { tender_id },
+      { listOfPermittedVendors: 1, _id: 0 }
+    ).lean();
+
+    if (!data || !data.listOfPermittedVendors) {
+      return { total: 0, vendors: [] };
+    }
+
+    let vendors = data.listOfPermittedVendors;
+
+    // 2️⃣ Optional search filter
+    if (search) {
+      const regex = new RegExp(search, "i");
+      vendors = vendors.filter(
+        v =>
+          regex.test(v.vendor_id || "") ||
+          regex.test(v.vendor_name || "") ||
+          regex.test(v.permitted_by || "") ||
+          regex.test(v.permitted_status || "")
+      );
+    }
+
+    // 3️⃣ Pagination
+    const total = vendors.length;
+    const startIndex = (page - 1) * limit;
+    const paginatedVendors = vendors.slice(startIndex, startIndex + limit);
+
+    return { total, vendors: paginatedVendors };
+  }
+
+
 }
 
 export default VendorPermittedService;

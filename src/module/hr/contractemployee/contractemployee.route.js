@@ -9,7 +9,8 @@ import {
   deleteWorker,
   markAttendance,
   updateAttendance,
-  getAttendance
+  getAttendance,
+  getAllEmployeeNameId
 } from "./contractemployee.controller.js";
 
 const router = Router();
@@ -17,6 +18,7 @@ const router = Router();
 // CRUD
 router.post("/addworker", createWorker);
 router.get("/getallworkers", getAllWorkers);
+router.get('/getallContractorId',getAllEmployeeNameId)
 router.get("/getworker/:worker_id", getWorkerById);
 router.get("/getactiveworkers", getActiveWorkers);
 router.get("/searchworkers", searchWorkers);
@@ -31,7 +33,7 @@ router.get("/getattendance/:worker_id", getAttendance);
 export default router;
 
 
-POST /addworker
+// POST /addworker
 // {
 //   "employee_name": "John Doe",
 //   "contractor_name": "ABC Contractors",

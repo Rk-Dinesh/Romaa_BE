@@ -25,7 +25,7 @@ boqrouter.delete("/delete/:boq_id", deleteBoq);
 
 // Add/Remove single items
 boqrouter.post("/additem/:boq_id", addItemToBoq);
-boqrouter.delete("/removeitem/:boq_id/:item_code", removeItemFromBoq);
+boqrouter.delete("/removeitem/:tender_id/:item_code", removeItemFromBoq);
 boqrouter.get("/items/:tender_id", getBoqItemsPaginated);
 boqrouter.get("/by-tender/:tender_id", getBoqByTenderId);
 

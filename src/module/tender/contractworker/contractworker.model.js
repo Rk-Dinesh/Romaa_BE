@@ -5,6 +5,7 @@ const contractWorkerSchema = new mongoose.Schema({
   listOfContractWorkers: [
     {
       contractWorker_id: String,
+      contractWorker_name:String,
       contractStart_date: Date,
       contractEnd_date: Date,
       contratctSite: String,

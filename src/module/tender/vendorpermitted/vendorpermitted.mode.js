@@ -14,3 +14,7 @@ const vendorPermittedSchema = new mongoose.Schema({
     },
   ],
 });
+
+const VendorPermittedModel = mongoose.model("vendorPermitted", vendorPermittedSchema);
+
+export default VendorPermittedModel;
