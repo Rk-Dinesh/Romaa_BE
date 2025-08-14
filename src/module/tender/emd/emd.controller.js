@@ -156,7 +156,7 @@ export const getProposalsPaginated = async (req, res) => {
 export const updateProposalWithApprovalRule = async (req, res) => {
   try {
     const { tender_id, proposal_id } = req.params;
-    const { status, level } = req.body;
+    const { status, level,security_deposit } = req.body;
 
     // For logging, can get username from auth middleware
     const updatedBy = req.user?.name || "System";
@@ -166,6 +166,7 @@ export const updateProposalWithApprovalRule = async (req, res) => {
       proposal_id,
       status,
       level,
+      security_deposit,
       updatedBy
     );
 

@@ -43,10 +43,17 @@ class TenderService {
     return await TenderModel.findOne({ tender_id });
   }
 
-    static async getTenderByIdemd(tender_id) {
-    return await TenderModel.findOne({ tender_id }).select("emd.emd_percentage emd.emd_validity emd.emd_amount");
+  static async getTenderByIdforApprove(tender_id) {
+    return await TenderModel.findOne({ tender_id }).select(
+      "tender_id tender_name tender_start_date tender_type tender_location tender_contact_person tender_contact_phone tender_contact_email client_name"
+    );
   }
 
+  static async getTenderByIdemd(tender_id) {
+    return await TenderModel.findOne({ tender_id }).select(
+      "emd.emd_percentage emd.emd_validity emd.emd_amount"
+    );
+  }
 
   // Update tender (with recalculations)
   static async updateTender(tender_id, updateData) {
@@ -182,12 +189,12 @@ class TenderService {
           }
         : null,
       importantDates: (tender.follow_up_ids || []).map((fu) => ({
-      title: fu.title,
-      date: fu.date,
-      time: fu.time,
-      address: fu.address || "",
-      notes: fu.notes || ""
-    })),
+        title: fu.title,
+        date: fu.date,
+        time: fu.time,
+        address: fu.address || "",
+        notes: fu.notes || "",
+      })),
       tenderProcess: tender.tender_status_check || {},
     };
   }
@@ -198,6 +205,143 @@ class TenderService {
       { $push: { follow_up_ids: dateData } },
       { new: true }
     );
+  }
+
+  static async updateTenderStatusWithWorkOrder(
+    tender_id,
+    workOrder_id,
+    workOrderIssuedBy
+  ) {
+    const tender = await TenderModel.findOne({ tender_id });
+
+    if (!tender) {
+      throw new Error("Tender not found for the given tender_id");
+    }
+    tender.workOrder_id = workOrder_id;
+    tender.tender_status = "APPROVED";
+    tender.workOrder_issued_date = new Date();
+    tender.workOrder_issued_by = workOrderIssuedBy;
+
+    await tender.save();
+
+    return tender;
+  }
+
+  static async getTendersPaginatedWorkorder(
+    page,
+    limit,
+    search,
+    fromdate,
+    todate
+  ) {
+    const query = {};
+
+    // ✅ Ensure workOrder_id is not empty
+    query.workOrder_id = { $nin: [null, ""] };
+
+    // 🔍 Keyword Search
+    if (search) {
+      query.$or = [
+        { tender_name: { $regex: search, $options: "i" } },
+        { tender_id: { $regex: search, $options: "i" } },
+        { "tender_location.city": { $regex: search, $options: "i" } },
+        { "tender_location.state": { $regex: search, $options: "i" } },
+        { "tender_location.country": { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // 📅 Date Filtering (based on tender_start_date)
+    if (fromdate || todate) {
+      query.tender_start_date = {};
+      if (fromdate) query.tender_start_date.$gte = new Date(fromdate);
+      if (todate) {
+        const endOfDay = new Date(todate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        query.tender_start_date.$lte = endOfDay;
+      }
+    }
+
+    const total = await TenderModel.countDocuments(query);
+
+    const tenders = await TenderModel.find(query)
+      .select(
+        "tender_id tender_name tender_location tender_start_date tender_value tender_status tender_type client_id client_name tender_contact_person tender_contact_phone tender_contact_email tender_duration tender_end_date tender_description workOrder_id workOrder_issued_date emd.emd_percentage emd.emd_validity "
+      )
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    return { total, tenders };
+  }
+
+  static async getTendersPaginatedEMDSD(page, limit, search, fromdate, todate) {
+    const query = {};
+
+    // ✅ Ensure workOrder_id is not empty
+    query.workOrder_id = { $nin: [null, ""] };
+
+    // 🔍 Keyword Search
+    if (search) {
+      query.$or = [
+        { tender_name: { $regex: search, $options: "i" } },
+        { tender_id: { $regex: search, $options: "i" } },
+        { "tender_location.city": { $regex: search, $options: "i" } },
+        { "tender_location.state": { $regex: search, $options: "i" } },
+        { "tender_location.country": { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // 📅 Date Filtering (based on tender_start_date)
+    if (fromdate || todate) {
+      query.tender_start_date = {};
+      if (fromdate) query.tender_start_date.$gte = new Date(fromdate);
+      if (todate) {
+        const endOfDay = new Date(todate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        query.tender_start_date.$lte = endOfDay;
+      }
+    }
+
+    const total = await TenderModel.countDocuments(query);
+
+    const tenders = await TenderModel.find(query)
+      .select(
+        `
+  tender_id
+  tender_name
+  workOrder_id
+  workOrder_issued_date
+  emd.emd_validity
+  emd.emd_percentage
+  emd.approved_emd_details.emd_proposed_company
+  emd.approved_emd_details.emd_proposed_amount
+  emd.approved_emd_details.emd_proposed_date
+  emd.approved_emd_details.emd_approved
+  emd.approved_emd_details.emd_approved_date
+  emd.approved_emd_details.emd_approved_by
+  emd.approved_emd_details.emd_approved_amount
+  emd.approved_emd_details.emd_deposit_pendingAmount
+  emd.approved_emd_details.emd_deposit_amount_collected
+  emd.approved_emd_details.emd_approved_status
+  emd.approved_emd_details.emd_applied_bank
+  emd.approved_emd_details.emd_applied_bank_branch
+  emd.approved_emd_details.emd_level
+  emd.approved_emd_details.emd_note
+  emd.approved_emd_details.security_deposit_amount
+  emd.approved_emd_details.security_deposit_validity
+  emd.approved_emd_details.security_deposit_status
+  emd.approved_emd_details.security_deposit_approved_by
+  emd.approved_emd_details.security_deposit_approved_date
+  emd.approved_emd_details.security_deposit_amount_collected
+  emd.approved_emd_details.security_deposit_pendingAmount
+  emd.approved_emd_details.security_deposit_note
+  `
+      )
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    return { total, tenders };
   }
 }
 

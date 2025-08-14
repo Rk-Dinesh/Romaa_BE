@@ -6,7 +6,7 @@ const tenderLocationSchema = new mongoose.Schema(
     city: { type: String, default: "" },
     state: { type: String, default: "" },
     country: { type: String, default: "" },
-    pincode: { type: String, default: "" }
+    pincode: { type: String, default: "" },
   },
   { _id: false }
 );
@@ -14,14 +14,13 @@ const tenderLocationSchema = new mongoose.Schema(
 // ✅ Sub-schema for an important date item
 const followUpDateSchema = new mongoose.Schema(
   {
-    title: { type: String, default: "" },   // e.g., Last Date of Document Purchase
-    date: { type: Date, default: null },    // e.g., 2025-06-12
-    time: { type: String, default: "" },    // e.g., "12:00 PM"
+    title: { type: String, default: "" }, // e.g., Last Date of Document Purchase
+    date: { type: Date, default: null }, // e.g., 2025-06-12
+    time: { type: String, default: "" }, // e.g., "12:00 PM"
     notes: { type: String, default: "" }, // e.g., "123 Street, Chennai"
   },
   { _id: false }
 );
-
 
 // ✅ Sub-schema for approved EMD details
 const approvedEmdDetailsSchema = new mongoose.Schema(
@@ -33,6 +32,11 @@ const approvedEmdDetailsSchema = new mongoose.Schema(
     emd_approved_date: { type: Date, default: null },
     emd_approved_by: { type: String, default: "" },
     emd_approved_amount: { type: Number, default: 0 },
+    emd_deposit_amount_collected: { type: Number, default: 0 },
+    emd_deposit_pendingAmount: {
+      type: Number,
+      default: 0,
+    },
     emd_approved_status: { type: String, default: "" },
     emd_applied_bank: { type: String, default: "" },
     emd_applied_bank_branch: { type: String, default: "" },
@@ -46,9 +50,9 @@ const approvedEmdDetailsSchema = new mongoose.Schema(
     security_deposit_amount_collected: { type: Number, default: 0 },
     security_deposit_pendingAmount: {
       type: Number,
-      default: 0 // will be calculated in service
+      default: 0, // will be calculated in service
     },
-    security_deposit_note: { type: String, default: "" }
+    security_deposit_note: { type: String, default: "" },
   },
   { _id: false }
 );
@@ -59,7 +63,7 @@ const emdSchema = new mongoose.Schema(
     emd_percentage: { type: Number, default: 0 },
     emd_amount: { type: Number, default: 0 }, // calculated in service
     emd_validity: { type: Date, default: null },
-    approved_emd_details: { type: [approvedEmdDetailsSchema], default: [] }
+    approved_emd_details: { type: [approvedEmdDetailsSchema], default: [] },
   },
   { _id: false }
 );
@@ -69,7 +73,7 @@ const securityDepositSchema = new mongoose.Schema(
   {
     security_deposit_percentage: { type: Number, default: 0 },
     security_deposit_amount: { type: Number, default: 0 }, // calculated in service
-    security_deposit_validity: { type: Date, default: null }
+    security_deposit_validity: { type: Date, default: null },
   },
   { _id: false }
 );
@@ -88,7 +92,7 @@ const tenderStatusCheckSchema = new mongoose.Schema(
     work_agreement_signed: { type: Boolean, default: false },
     project_commencement: { type: Boolean, default: false },
     project_completion: { type: Boolean, default: false },
-    payment_received: { type: Boolean, default: false }
+    payment_received: { type: Boolean, default: false },
   },
   { _id: false }
 );
@@ -109,7 +113,7 @@ const tenderSchema = new mongoose.Schema(
     tender_location: { type: tenderLocationSchema, default: () => ({}) },
     tender_start_date: { type: Date, default: null },
     tender_end_date: { type: Date, default: null },
-    tender_duration:{ type: String, default: "" },
+    tender_duration: { type: String, default: "" },
     workOrder_id: { type: String, default: "" },
     workOrder_issued_date: { type: Date, default: null },
     workOrder_issued_by: { type: String, default: "" },
@@ -125,7 +129,7 @@ const tenderSchema = new mongoose.Schema(
 
     tender_status_check: {
       type: tenderStatusCheckSchema,
-      default: () => ({})
+      default: () => ({}),
     },
 
     project_documents_ids: { type: [String], default: [] },
@@ -134,7 +138,7 @@ const tenderSchema = new mongoose.Schema(
     vendor_details: { type: [String], default: [] },
     follow_up_ids: { type: [followUpDateSchema], default: [] },
     BoQ_id: { type: String, default: "" },
-    created_by_user: { type: String, default: "" }
+    created_by_user: { type: String, default: "" },
   },
   { timestamps: true }
 );
