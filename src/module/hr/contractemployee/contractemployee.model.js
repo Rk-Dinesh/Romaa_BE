@@ -18,7 +18,7 @@ const contractWorkerSchema = new mongoose.Schema(
     department: String,                       // e.g., Civil, Electrical, Plumbing
     role: String,                             // e.g., Mason, Helper, Fitter
     nmr_number: String,                       // Nominal Muster Roll No.
-    daily_wage: Number,
+    daily_wage: String,
     status: String,                           // ACTIVE, INACTIVE, LEFT, etc.
     contact_phone: String,
     gender: String,

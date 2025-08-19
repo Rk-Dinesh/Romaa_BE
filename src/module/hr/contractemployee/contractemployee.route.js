@@ -10,27 +10,30 @@ import {
   markAttendance,
   updateAttendance,
   getAttendance,
-  getAllEmployeeNameId
+  getAllEmployeeNameId,
+  getContractWorkersPaginated
 } from "./contractemployee.controller.js";
 
-const router = Router();
+const contractworkerrouter = Router();
 
 // CRUD
-router.post("/addworker", createWorker);
-router.get("/getallworkers", getAllWorkers);
-router.get('/getallContractorId',getAllEmployeeNameId)
-router.get("/getworker/:worker_id", getWorkerById);
-router.get("/getactiveworkers", getActiveWorkers);
-router.get("/searchworkers", searchWorkers);
-router.put("/updateworker/:worker_id", updateWorker);
-router.delete("/deleteworker/:worker_id", deleteWorker);
+contractworkerrouter.post("/addworker", createWorker);
+contractworkerrouter.get("/getallworkers", getAllWorkers);
+contractworkerrouter.get('/getallContractorId',getAllEmployeeNameId)
+contractworkerrouter.get("/getworker/:worker_id", getWorkerById);
+contractworkerrouter.get("/getactiveworkers", getActiveWorkers);
+contractworkerrouter.get("/searchworkers", searchWorkers);
+contractworkerrouter.put("/updateworker/:worker_id", updateWorker);
+contractworkerrouter.delete("/deleteworker/:worker_id", deleteWorker);
+
+contractworkerrouter.get("/getcontractworker",getContractWorkersPaginated );
 
 // Attendance
-router.post("/markattendance/:worker_id", markAttendance);
-router.put("/updateattendance/:worker_id", updateAttendance);
-router.get("/getattendance/:worker_id", getAttendance);
+contractworkerrouter.post("/markattendance/:worker_id", markAttendance);
+contractworkerrouter.put("/updateattendance/:worker_id", updateAttendance);
+contractworkerrouter.get("/getattendance/:worker_id", getAttendance);
 
-export default router;
+export default contractworkerrouter;
 
 
 // POST /addworker

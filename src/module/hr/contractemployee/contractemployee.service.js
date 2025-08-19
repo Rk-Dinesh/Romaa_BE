@@ -92,6 +92,42 @@ class ContractWorkerService {
 
     return filtered;
   }
+
+    static async getContractWorkersPaginated(page, limit, search, fromdate, todate) {
+    const query = {};
+
+    // Keyword Search on multiple fields
+    if (search) {
+      query.$or = [
+        { employee_name: { $regex: search, $options: "i" } },
+        { contractor_name: { $regex: search, $options: "i" } },
+        { contact_phone: { $regex: search, $options: "i" } },
+        { site_assigned: { $regex: search, $options: "i" } },
+      ];
+    }
+
+    // Date Filtering on createdAt
+    if (fromdate || todate) {
+      query.createdAt = {};
+      if (fromdate) query.createdAt.$gte = new Date(fromdate);
+      if (todate) {
+        const endOfDay = new Date(todate);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+        query.createdAt.$lte = endOfDay;
+      }
+    }
+
+    const total = await ContractWorkerModel.countDocuments(query);
+    const contractWorkers = await ContractWorkerModel.find(query)
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .sort({ createdAt: -1 });
+
+    return { total, contractWorkers };
+  }
 }
 
 export default ContractWorkerService;
+
+
+
