@@ -304,3 +304,49 @@ export const getTendersPaginatedEMDSD = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
+export const updateEmdDetails = async (req, res) => {
+  try {
+    const { tender_id } = req.params; 
+    const updatedEmd = await TenderService.updateEmdDetailsService(
+      tender_id,
+      req.body
+    );
+
+    res.json({
+      message: "EMD details updated successfully",
+      updatedEmd
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+export const updateSDDetails = async (req, res) => {
+  try {
+    const { tender_id } = req.params; 
+    const updatedEmd = await TenderService.updateSDDetailsService(
+      tender_id,
+      req.body
+    );
+
+    res.json({
+      message: "SD details updated successfully",
+      updatedEmd
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+export const getWorkOrdererForOverview = async (req, res) => {
+  try {
+    const data = await TenderService.getWorkorderForOverview(req.params.tender_id);
+    if (!data)
+      return res.status(404).json({ status: false, message: "Tender not found" });
+
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};

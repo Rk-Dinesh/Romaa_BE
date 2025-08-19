@@ -14,7 +14,10 @@ import {
   getTenderByIdforApprove,
   checkTenderApprovalStatus,
   getTendersPaginatedWorkerOrder,
-  getTendersPaginatedEMDSD
+  getTendersPaginatedEMDSD,
+  updateEmdDetails,
+  updateSDDetails,
+  getWorkOrdererForOverview
 } from "./tender.controller.js";
 
 const tenderrouter = Router();
@@ -31,9 +34,12 @@ tenderrouter.get("/gettenders", getTendersPaginated);
 tenderrouter.get("/gettendersworkorder", getTendersPaginatedWorkerOrder);
 tenderrouter.get("/gettendersemdsd", getTendersPaginatedEMDSD);
 tenderrouter.get("/getoverview/:tender_id", getTenderForOverview);
+tenderrouter.get("/getoverviewworkorder/:tender_id", getWorkOrdererForOverview);
 tenderrouter.post("/addfollowup/:tender_id", addImportantDate);
 tenderrouter.put("/update-workorder/:tender_id", updateTenderWorkOrderController);
 tenderrouter.get("/approval-status/:tender_id", checkTenderApprovalStatus);
+tenderrouter.post('/updateemdamount/:tender_id',updateEmdDetails);
+tenderrouter.post('/securitydepositamount/:tender_id',updateSDDetails);
 
 
 // Special endpoint for tender_status_check

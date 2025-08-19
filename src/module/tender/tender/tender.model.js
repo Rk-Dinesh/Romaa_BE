@@ -118,7 +118,6 @@ const tenderSchema = new mongoose.Schema(
     workOrder_issued_date: { type: Date, default: null },
     workOrder_issued_by: { type: String, default: "" },
     tender_status: { type: String, default: "PENDING" },
-
     boq_final_value: { type: Number, default: 0 },
     zeroCost_final_value: { type: Number, default: 0 },
     penalty_final_value: { type: Number, default: 0 },

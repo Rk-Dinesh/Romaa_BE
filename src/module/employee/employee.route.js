@@ -1,22 +1,40 @@
-import { Router } from 'express';
+import { Router } from "express";
 import {
   createEmployee,
-  getEmployeeById,
   getAllEmployees,
-  updateEmployeeById,
-  deleteEmployeeById,
+  getEmployeeById,
+  getActiveEmployees,
+  updateEmployee,
+  deleteEmployee,
+  searchEmployees,
+  getEmployeesPaginated,
   markAttendance,
   updateAttendance,
-  getAttendance,
-} from './employee.controller.js';
+  getAttendance
+} from "./employee.controller.js";
 
 const employeeRoute = Router();
 
-employeeRoute.post('/addemployee', createEmployee);              // CREATE
-employeeRoute.get('/getbyemployeeid', getEmployeeById);          // READ ONE
-employeeRoute.get('/getallemployees', getAllEmployees);          // READ ALL
-employeeRoute.put('/updatebyemployeeid', updateEmployeeById);    // UPDATE
-employeeRoute.delete('/deletebyemployeeid', deleteEmployeeById); // DELETE
+// Create
+employeeRoute.post("/add", createEmployee);
+
+// Read
+employeeRoute.get("/getallemployees", getAllEmployees);
+employeeRoute.get("/getemployee/:employee_id", getEmployeeById);
+employeeRoute.get("/getactiveemployees", getActiveEmployees);
+
+// Search
+employeeRoute.get("/searchemployees", searchEmployees);
+
+// Update
+employeeRoute.put("/updateemployee/:employee_id", updateEmployee);
+
+// Delete
+employeeRoute.delete("/deleteemployee/:employee_id", deleteEmployee);
+
+// Paginated, Search, Date filtered
+employeeRoute.get("/getemployees", getEmployeesPaginated);
+
 employeeRoute.post("/markattendance/:employee_id", markAttendance);
 employeeRoute.put("/updateattendance/:employee_id", updateAttendance);
 employeeRoute.get("/getattendance/:employee_id", getAttendance);

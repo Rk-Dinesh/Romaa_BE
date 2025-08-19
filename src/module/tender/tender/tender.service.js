@@ -343,6 +343,139 @@ class TenderService {
 
     return { total, tenders };
   }
+
+  static async updateEmdDetailsService(tender_id, updates) {
+    const { emd_note, emd_deposit_amount_collected } = updates;
+
+    // Find the tender
+    const tender = await TenderModel.findOne({ tender_id });
+
+    if (!tender) throw new Error("Tender not found");
+
+    // In your service function, add this check:
+    if (
+      !tender.emd.approved_emd_details ||
+      tender.emd.approved_emd_details.length === 0
+    ) {
+      throw new Error("No approved EMD details found to update");
+    }
+
+    const emdEntry = tender.emd.approved_emd_details[0];
+    console.log(emdEntry);
+
+    // Update fields if provided
+    if (emd_note !== undefined) emdEntry.emd_note = emd_note;
+    if (emd_deposit_amount_collected !== undefined) {
+      emdEntry.emd_deposit_amount_collected = emd_deposit_amount_collected;
+    }
+
+    // Auto-calculate pending amount
+    emdEntry.emd_deposit_pendingAmount =
+      emdEntry.emd_approved_amount - emdEntry.emd_deposit_amount_collected;
+
+    // Save changes
+    await tender.save();
+
+    return emdEntry;
+  }
+
+  static async updateSDDetailsService(tender_id, updates) {
+    const { security_deposit_note, security_deposit_amount_collected } =
+      updates;
+
+    // Find the tender
+    const tender = await TenderModel.findOne({ tender_id });
+
+    if (!tender) throw new Error("Tender not found");
+
+    // In your service function, add this check:
+    if (
+      !tender.emd.approved_emd_details ||
+      tender.emd.approved_emd_details.length === 0
+    ) {
+      throw new Error("No approved EMD details found to update");
+    }
+
+    const emdEntry = tender.emd.approved_emd_details[0];
+    console.log(emdEntry);
+
+    // Update fields if provided
+    if (security_deposit_note !== undefined)
+      emdEntry.security_deposit_note = security_deposit_note;
+    if (security_deposit_amount_collected !== undefined) {
+      emdEntry.security_deposit_amount_collected =
+        security_deposit_amount_collected;
+    }
+
+    // Auto-calculate pending amount
+    emdEntry.security_deposit_pendingAmount =
+      emdEntry.security_deposit_amount -
+      emdEntry.security_deposit_amount_collected;
+
+    // Save changes
+    await tender.save();
+
+    return emdEntry;
+  }
+
+  static async getWorkorderForOverview(tender_id) {
+    const tender = await TenderModel.findOne(
+      { tender_id },
+      {
+        tender_id: 1,
+        tender_name: 1,
+        tender_start_date: 1,
+        tender_type: 1,
+        tender_location: 1,
+        tender_contact_person: 1,
+        tender_contact_phone: 1,
+        tender_contact_email: 1,
+        tender_status_check: 1,
+        follow_up_ids: 1,
+        client_id: 1,
+        client_name: 1,
+        workOrder_id: 1,
+        workOrder_issued_date: 1,
+        tender_duration: 1,
+        tender_value: 1,
+      }
+    ).lean();
+
+    if (!tender) return null;
+
+    // Minimal client lookup
+    const client = await ClientModel.findOne(
+      { client_id: tender.client_id },
+      {
+        client_id: 1,
+        client_name: 1,
+        contact_phone: 1,
+        contact_email: 1,
+        address: 1,
+        pan_no: 1,
+        cin_no: 1,
+        gstin: 1,
+      }
+    ).lean();
+
+    return {
+      workOrderDetails: {
+        tender_id: tender.tender_id,
+        tender_published_date: tender.tender_start_date,
+        workOrder_id: tender.workOrder_id,
+        workOrder_issued_date: tender.workOrder_issued_date,
+        tender_name: tender.tender_name,
+        client_name: tender.client_name,
+        tender_type: tender.tender_type,
+        tender_duration: tender.tender_duration,
+        tender_value: tender.tender_value,
+        project_location: tender.tender_location,
+        contact_person: tender.tender_contact_person,
+        contact_phone: tender.tender_contact_phone,
+        contact_email: tender.tender_contact_email,
+      },
+    };
+  }
 }
 
 export default TenderService;

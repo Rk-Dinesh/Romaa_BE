@@ -1,121 +1,103 @@
-import logger from "../../config/logger.js";
-import IdcodeServices from "../idcode/idcode.service.js";
 import EmployeeService from "./employee.service.js";
 
+// Create Employee
 export const createEmployee = async (req, res) => {
   try {
-    const {
-      name,
-      role,
-      site_assigned,
-      status,
-      contact_phone,
-      contact_email,
-      address,
-      date_of_joining,
-      emergency_contact,
-      id_proof_type,
-      id_proof_number,
-      created_by_user,
-    } = req.body;
-
-    const idname = "Employee";
-    const idcode = "EMP";
-    await IdcodeServices.addIdCode(idname, idcode);
-    const employee_id = await IdcodeServices.generateCode(idname);
-    if (!employee_id) {
-      throw new Error("Failed to generate employee ID.");
-    }
-
-    const employeeData = {
-      employee_id,
-      name,
-      role,
-      site_assigned,
-      status,
-      contact_phone,
-      contact_email,
-      address,
-      date_of_joining,
-      emergency_contact,
-      id_proof_type,
-      id_proof_number,
-      created_by_user,
-    };
-
-    const result = await EmployeeService.addEmployee(employeeData);
-
-    res.status(200).json({
-      status: true,
-      message: "Employee created successfully",
-      data: result,
-    });
+    const data = await EmployeeService.addEmployee(req.body);
+    res.status(201).json({ status: true, message: "Employee created", data });
   } catch (error) {
-    logger.error(`Error creating employee: ${error.message}`);
-    res.status(500).json({
-      status: false,
-      message: "Error creating employee",
-      error: error.message,
-    });
-  }
-};
-
-export const getEmployeeById = async (req, res) => {
-  const { employee_id } = req.query;
-  try {
-    const employee = await EmployeeService.getEmployeeById(employee_id);
-    res.status(200).json({
-      status: true,
-      message: "Employee fetched successfully",
-      data: employee,
-    });
-  } catch (error) {
-    logger.error(`Error while getting employee: ${error.message}`);
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
+// Get All Employees
 export const getAllEmployees = async (req, res) => {
   try {
-    const employees = await EmployeeService.getAllEmployees();
-    res.status(200).json({
-      status: true,
-      message: "All employees fetched successfully",
-      data: employees,
-    });
+    const data = await EmployeeService.getAllEmployees();
+    res.status(200).json({ status: true, data });
   } catch (error) {
-    logger.error(`Error while getting all employees: ${error.message}`);
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-export const updateEmployeeById = async (req, res) => {
-  const { employee_id } = req.query;
+// Get Employee by ID
+export const getEmployeeById = async (req, res) => {
   try {
-    const update = req.body;
-    const updated = await EmployeeService.updateEmployeeById(employee_id, update);
-    res.status(200).json({
-      status: true,
-      message: "Employee updated successfully",
-      data: updated,
-    });
+    const data = await EmployeeService.getEmployeeById(req.params.employee_id);
+    if (!data) return res.status(404).json({ status: false, message: "Employee not found" });
+    res.status(200).json({ status: true, data });
   } catch (error) {
-    logger.error(`Error while updating employee: ${error.message}`);
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-export const deleteEmployeeById = async (req, res) => {
-  const { employee_id } = req.query;
+// Get Active Employees
+export const getActiveEmployees = async (req, res) => {
   try {
-    const deleted = await EmployeeService.deleteEmployeeById(employee_id);
+    const data = await EmployeeService.getActiveEmployees();
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// Update Employee
+export const updateEmployee = async (req, res) => {
+  try {
+    const data = await EmployeeService.updateEmployee(req.params.employee_id, req.body);
+    if (!data) return res.status(404).json({ status: false, message: "Employee not found" });
+    res.status(200).json({ status: true, message: "Employee updated", data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// Delete Employee
+export const deleteEmployee = async (req, res) => {
+  try {
+    const data = await EmployeeService.deleteEmployee(req.params.employee_id);
+    if (!data) return res.status(404).json({ status: false, message: "Employee not found" });
+    res.status(200).json({ status: true, message: "Employee deleted" });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// Search Employees
+export const searchEmployees = async (req, res) => {
+  try {
+    const data = await EmployeeService.searchEmployees(req.query.q || "");
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// 📌 Get paginated employees with search + date filter
+export const getEmployeesPaginated = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+    const search = req.query.search || "";
+    const fromdate = req.query.fromdate || null;
+    const todate = req.query.todate || null;
+
+    const data = await EmployeeService.getEmployeesPaginated(
+      page,
+      limit,
+      search,
+      fromdate,
+      todate
+    );
+
     res.status(200).json({
       status: true,
-      message: "Employee deleted successfully",
-      data: deleted,
+      currentPage: page,
+      totalPages: Math.ceil(data.total / limit),
+      totalRecords: data.total,
+      data: data.employees
     });
   } catch (error) {
-    logger.error(`Error while deleting employee: ${error.message}`);
     res.status(500).json({ status: false, message: error.message });
   }
 };
@@ -164,3 +146,4 @@ export const getAttendance = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
