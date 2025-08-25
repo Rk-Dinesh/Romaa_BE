@@ -14,14 +14,13 @@ class EmdService {
     // 🔹 Find tender first
     const tender = await TenderModel.findOne({ tender_id });
     if (!tender) throw new Error("Tender not found");
-    if (!tender.emd?.emd_percentage)
-      throw new Error("Tender does not have emd_percentage set");
+   
 
     // Fill calculated fields
-    proposal.emd_percentage = tender.emd.emd_percentage;
-    proposal.emd_amount =
-      (proposal.proposed_amount * tender.emd.emd_percentage) / 100;
-    proposal.emd_validity = tender.emd.emd_validity;
+    // proposal.emd_percentage = tender.emd.emd_percentage;
+    // proposal.emd_amount =
+    //   (proposal.proposed_amount * tender.emd.emd_percentage) / 100;
+    // proposal.emd_validity = tender.emd.emd_validity;
 
     // 🔹 Generate unique Proposal ID
     const proposalIdName = "PROPOSAL";
@@ -242,9 +241,9 @@ class EmdService {
     // If approving, calculate deposit & update Tender doc
     if (status === "APPROVED") {
       const emdAmount = proposalToUpdate.proposed_amount || 0;
-      const depositPercentage =
-        Number(security_deposit?.security_deposit_percentage) || 0;
-      const depositAmount = (emdAmount * depositPercentage) / 100 || 0;
+      // const depositPercentage =
+      //   Number(security_deposit?.security_deposit_percentage) || 0;
+      // const depositAmount = (emdAmount * depositPercentage) / 100 || 0;
 
       const approvedEntry = {
         emd_proposed_company: proposalToUpdate.company_name || "",
@@ -263,8 +262,8 @@ class EmdService {
         emd_deposit_pendingAmount: 0,
 
         // ✅ New calculation
-        security_deposit_percentage: depositPercentage,
-        security_deposit_amount: depositAmount,
+        security_deposit_percentage: 0,
+        security_deposit_amount: security_deposit?.security_deposit_amount || null,
         security_deposit_validity:
           security_deposit?.security_deposit_validity || null,
         security_deposit_status: "",
@@ -293,8 +292,8 @@ class EmdService {
         {
           $set: {
             security_deposit: {
-              security_deposit_percentage: depositPercentage,
-              security_deposit_amount: depositAmount,
+              security_deposit_percentage: 0,
+              security_deposit_amount:  security_deposit?.security_deposit_amount || null,
               security_deposit_validity:
                 security_deposit?.security_deposit_validity || null,
             },

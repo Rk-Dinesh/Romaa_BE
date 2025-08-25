@@ -10,21 +10,21 @@ class TenderService {
     await IdcodeServices.addIdCode(idname, idcode);
     const tender_id = await IdcodeServices.generateCode(idname);
 
-    // Auto calculations
-    if (tenderData.tender_value && tenderData.emd?.emd_percentage) {
-      tenderData.emd.emd_amount =
-        (tenderData.tender_value * tenderData.emd.emd_percentage) / 100;
-    }
+    // // Auto calculations
+    // if (tenderData.tender_value && tenderData.emd?.emd_percentage) {
+    //   tenderData.emd.emd_amount =
+    //     (tenderData.tender_value * tenderData.emd.emd_percentage) / 100;
+    // }
 
-    if (
-      tenderData.tender_value &&
-      tenderData.security_deposit?.security_deposit_percentage
-    ) {
-      tenderData.security_deposit.security_deposit_amount =
-        (tenderData.tender_value *
-          tenderData.security_deposit.security_deposit_percentage) /
-        100;
-    }
+    // if (
+    //   tenderData.tender_value &&
+    //   tenderData.security_deposit?.security_deposit_percentage
+    // ) {
+    //   tenderData.security_deposit.security_deposit_amount =
+    //     (tenderData.tender_value *
+    //       tenderData.security_deposit.security_deposit_percentage) /
+    //     100;
+    // }
 
     const tender = new TenderModel({
       tender_id,
@@ -57,20 +57,20 @@ class TenderService {
 
   // Update tender (with recalculations)
   static async updateTender(tender_id, updateData) {
-    if (updateData.tender_value && updateData.emd?.emd_percentage) {
-      updateData.emd.emd_amount =
-        (updateData.tender_value * updateData.emd.emd_percentage) / 100;
-    }
+    // if (updateData.tender_value && updateData.emd?.emd_percentage) {
+    //   updateData.emd.emd_amount =
+    //     (updateData.tender_value * updateData.emd.emd_percentage) / 100;
+    // }
 
-    if (
-      updateData.tender_value &&
-      updateData.security_deposit?.security_deposit_percentage
-    ) {
-      updateData.security_deposit.security_deposit_amount =
-        (updateData.tender_value *
-          updateData.security_deposit.security_deposit_percentage) /
-        100;
-    }
+    // if (
+    //   updateData.tender_value &&
+    //   updateData.security_deposit?.security_deposit_percentage
+    // ) {
+    //   updateData.security_deposit.security_deposit_amount =
+    //     (updateData.tender_value *
+    //       updateData.security_deposit.security_deposit_percentage) /
+    //     100;
+    // }
 
     return await TenderModel.findOneAndUpdate(
       { tender_id },
@@ -136,6 +136,7 @@ class TenderService {
       {
         tender_id: 1,
         tender_name: 1,
+        tender_value: 1,
         tender_start_date: 1,
         tender_type: 1,
         tender_location: 1,
@@ -171,6 +172,8 @@ class TenderService {
         tender_id: tender.tender_id,
         tender_published_date: tender.tender_start_date,
         tender_type: tender.tender_type,
+        tender_value: tender.tender_value,
+        tender_name: tender.tender_name,
         project_location: tender.tender_location,
         contact_person: tender.tender_contact_person,
         contact_phone: tender.tender_contact_phone,

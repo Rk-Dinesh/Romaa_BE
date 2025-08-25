@@ -5,11 +5,12 @@ const proposalSchema = new mongoose.Schema(
     proposal_id:String,
     company_name: { type: String, required: true },   // Name of bidding company
     proposed_amount: { type: Number, required: true },// Tender bid value proposed by company
-    emd_percentage: { type: Number, required: true }, // % of proposed amount for EMD
+    emd_percentage: { type: Number, default:0 }, // % of proposed amount for EMD
     emd_amount: { type: Number },                     // EMD amount = proposed_amount * emd_percentage / 100
     currency: { type: String, default: "INR" },
     payment_method: String,
     payment_bank: String,
+    dd_no:String,
     payment_date: {type:Date,default:new Date()},
     status: { type: String, required: true },         // PAID, REFUNDED, FORFEITED, PENDING
     refund_date:{type:Date,default:new Date()},

@@ -20,6 +20,16 @@ export const getAllVendors = async (req, res) => {
   }
 };
 
+export const getAllVendorsSelect = async (req, res) => {
+  try {
+    const type = req.query.type || "";
+    const data = await VendorService.getAllVendorsSelect(type);
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // Get Vendor by ID
 export const getVendorById = async (req, res) => {
   try {

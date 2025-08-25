@@ -7,7 +7,8 @@ import {
   updateVendor,
   deleteVendor,
   searchVendors,
-  getVendorsPaginated
+  getVendorsPaginated,
+  getAllVendorsSelect
 } from "./vendor.controller.js";
 
 const vendorRoute = Router();
@@ -17,6 +18,7 @@ vendorRoute.post("/addvendor", createVendor);
 
 // Read
 vendorRoute.get("/getallvendors", getAllVendors);
+vendorRoute.get("/getallvendorsselect", getAllVendorsSelect);
 vendorRoute.get("/getvendor/:vendor_id", getVendorById);
 vendorRoute.get("/getactivevendors", getActiveVendors);
 

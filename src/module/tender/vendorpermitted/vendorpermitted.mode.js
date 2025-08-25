@@ -5,6 +5,7 @@ const vendorPermittedSchema = new mongoose.Schema({
   listOfPermittedVendors: [
     {
       vendor_id: String,
+      type:String,
       vendor_name: String,
       agreement_start: Date, // Date of onboarding or agreement
       agreement_end: Date, // Date of agreement expiry (if any)

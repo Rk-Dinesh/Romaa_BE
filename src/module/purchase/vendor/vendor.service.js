@@ -21,7 +21,9 @@ class VendorService {
   static async getAllVendors() {
     return await VendorModel.find();
   }
-
+ static async getAllVendorsSelect(type) {
+    return await VendorModel.find({type}).select("vendor_id type  company_name ");
+  }
   // Get vendor by ID
   static async getVendorById(vendor_id) {
     return await VendorModel.findOne({ vendor_id });
