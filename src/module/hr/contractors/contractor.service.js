@@ -23,6 +23,10 @@ class ContractorService {
     return await ContractorModel.find();
   }
 
+    static async getAllContractorsSelect() {
+    return await ContractorModel.find().select("contractor_id  company_name ");
+  }
+
   // Get contractor by contractor_id
   static async getContractorById(contractor_id) {
     return await ContractorModel.findOne({ contractor_id });

@@ -7,7 +7,8 @@ import {
   updateContractor,
   deleteContractor,
   searchContractors,
-  getContractorsPaginated
+  getContractorsPaginated,
+  getAllContractorsSelect
 } from "./contractor.controller.js";
 
 const contractorRoute = Router();
@@ -17,6 +18,7 @@ contractorRoute.post("/add", createContractor);
 
 // Read
 contractorRoute.get("/getall", getAllContractors);
+contractorRoute.get("/getallselect", getAllContractorsSelect);
 contractorRoute.get("/get/:contractor_id", getContractorById);
 contractorRoute.get("/getactive", getActiveContractors);
 

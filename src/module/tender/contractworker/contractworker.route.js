@@ -3,14 +3,16 @@ import {
   addContractWorkers,
   getContractWorkers,
   updateContractWorker,
-  removeContractWorker
+  removeContractWorker,
+  getpaginatedContractor
 } from "./contractworker.controller.js";
 
-const contractworkerrouter = Router();
+const permittedcontractworkerrouter = Router();
 
-contractworkerrouter.post("/add", addContractWorkers);
-contractworkerrouter.get("/gettender/:tender_id", getContractWorkers);
-contractworkerrouter.put("/update/:tender_id/:worker_id", updateContractWorker);
-contractworkerrouter.delete("/remove/:tender_id/:worker_id", removeContractWorker);
+permittedcontractworkerrouter.post("/add", addContractWorkers);
+permittedcontractworkerrouter.get("/gettender/:tender_id", getContractWorkers);
+permittedcontractworkerrouter.put("/update/:tender_id/:worker_id", updateContractWorker);
+permittedcontractworkerrouter.delete("/remove/:tender_id/:worker_id", removeContractWorker);
+permittedcontractworkerrouter.get('/permitted-contractor/:tender_id',getpaginatedContractor)
 
-export default contractworkerrouter;
+export default permittedcontractworkerrouter;

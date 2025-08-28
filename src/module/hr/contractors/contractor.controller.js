@@ -20,6 +20,15 @@ export const getAllContractors = async (req, res) => {
   }
 };
 
+export const getAllContractorsSelect = async (req, res) => {
+  try {
+    const data = await ContractorService.getAllContractorsSelect();
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // Get contractor by ID
 export const getContractorById = async (req, res) => {
   try {

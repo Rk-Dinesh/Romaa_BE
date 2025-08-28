@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const contractWorkerSchema = new mongoose.Schema({
+const permittedcontractWorkerSchema = new mongoose.Schema({
   tender_id: String,
   listOfContractWorkers: [
     {
@@ -14,8 +14,8 @@ const contractWorkerSchema = new mongoose.Schema({
   ],
 });
 
-const contractWorkerModel = mongoose.model(
-  "contractWorker",
-  contractWorkerSchema
+const PermiitedcontractWorkerModel = mongoose.model(
+  "PermittedcontractWorker",
+  permittedcontractWorkerSchema
 );
-export default contractWorkerModel;
+export default PermiitedcontractWorkerModel;

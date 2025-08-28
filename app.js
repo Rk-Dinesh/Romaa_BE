@@ -18,6 +18,10 @@ import permittedrouter from './src/module/tender/vendorpermitted/permittedvendor
 import emdrouter from './src/module/tender/emd/emd.route.js';
 import contractorRoute from './src/module/hr/contractors/contractor.route.js';
 import contractworkerrouter from './src/module/hr/contractemployee/contractemployee.route.js';
+import permittedcontractworkerrouter from './src/module/tender/contractworker/contractworker.route.js';
+import tenderDocRouter from './src/module/documents/tenderdocuments/tenderdocument.route.js';
+
+
 
 dotenv.config();
 
@@ -52,9 +56,11 @@ app.use('/vendor',vendorRoute);
 app.use('/tender', tenderrouter);
 app.use('/boq',boqrouter);
 app.use('/permittedvendor',permittedrouter);
+app.use ('/permittedcontractor',permittedcontractworkerrouter)
 app.use('/emd',emdrouter);
 app.use('/contractor',contractorRoute);
 app.use('/contractworker',contractworkerrouter);
+app.use ("/document",tenderDocRouter)
 
 
 app.get('/',(req,res)=>{

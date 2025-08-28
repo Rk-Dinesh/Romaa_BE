@@ -6,6 +6,8 @@ import VendorPermittedService from "./permittedvendor.service.js";
 export const addPermittedVendors = async (req, res) => {
   try {
     const { tender_id, vendors } = req.body;
+    console.log("Received vendors:", vendors);
+    
     const result = await VendorPermittedService.addPermittedVendors(tender_id, vendors);
     res.status(201).json({
       status: true,

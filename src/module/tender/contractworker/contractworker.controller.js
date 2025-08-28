@@ -44,3 +44,34 @@ export const removeContractWorker = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+export const removePermittedContractor = async (req, res) => {
+  try {
+    const { tender_id, contractWorker_id } = req.params;
+    const result = await ContractWorkerService.removePermittedContractor(tender_id, contractWorker_id);
+    res.status(200).json({ status: true, message: "Contractor removed from tender", data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+export const getpaginatedContractor = async (req, res) => {
+  try {
+    const { tender_id } = req.params;
+    const { page = 1, limit = 10, search = "" } = req.query;
+
+    const result = await ContractWorkerService.getcontractorPaginated(
+      tender_id,
+      parseInt(page),
+      parseInt(limit),
+      search
+    );
+
+    res.json({
+      success: true,
+      total: result.total,
+      data: result.contractors,
+    });
+  } catch (error) {
+    console.error("Error fetching permitted contractors:", error);
+    res.status(500).json({ success: false, message: "Server Error" });
+  }
+};
