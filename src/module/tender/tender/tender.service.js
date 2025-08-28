@@ -191,14 +191,6 @@ class TenderService {
             gstin: client.gstin,
           }
         : null,
-      importantDates: (tender.follow_up_ids || []).map((fu) => ({
-        title: fu.title,
-        date: fu.date,
-        time: fu.time,
-        address: fu.address || "",
-        notes: fu.notes || "",
-      })),
-      tenderProcess: tender.tender_status_check || {},
     };
   }
 
@@ -478,6 +470,57 @@ class TenderService {
         contact_email: tender.tender_contact_email,
       },
     };
+  }
+
+   static async getTenderProcess(tender_id) {
+    const tender = await TenderModel.findOne({ tender_id }, { tender_process: 1 });
+    console.log(tender);
+    
+    if (!tender) throw new Error("Tender not found");
+    return tender.tender_process;
+  }
+
+  // Update/save a single step data and mark completed
+  static async saveTenderProcessStep(tender_id, stepData) {
+    const tender = await TenderModel.findOne({ tender_id });
+    if (!tender) throw new Error("Tender not found");
+
+    const index = tender.tender_process.findIndex(s => s.key === stepData.step_key);
+    if (index === -1) throw new Error("Step not found");
+
+    // Update step fields and mark completed
+    tender.tender_process[index] = {
+      ...tender.tender_process[index]._doc, // existing fields
+      notes: stepData.notes || "",
+      date: stepData.date || null,
+      time: stepData.time || "",
+      file_name: stepData.file_name || "",
+      completed: true
+    };
+
+    await tender.save();
+    return tender.tender_process;
+  }
+
+  static async saveTenderProcessStepaws(tender_id, stepData) {
+    const tender = await TenderModel.findOne({ tender_id });
+    if (!tender) throw new Error("Tender not found");
+
+    const index = tender.tender_process.findIndex(s => s.key === stepData.step_key);
+    if (index === -1) throw new Error("Step not found");
+
+    tender.tender_process[index] = {
+      ...tender.tender_process[index]._doc,
+      notes: stepData.notes || "",
+      date: stepData.date || null,
+      time: stepData.time || "",
+      file_name: stepData.file_name || "",
+      file_url: stepData.file_url || "",
+      completed: true,
+    };
+
+    await tender.save();
+    return tender.tender_process;
   }
 }
 

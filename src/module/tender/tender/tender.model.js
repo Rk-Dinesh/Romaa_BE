@@ -11,6 +11,18 @@ const tenderLocationSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const tenderProcessDataTemplate = [
+  { label: "Site Investigation", key: "site_investigation" },
+  { label: "Pre bid Meeting", key: "pre_bid_meeting" },
+  { label: "Bid Submit", key: "bid_submission" },
+  { label: "Technical Bid Opening", key: "technical_bid_opening" },
+  { label: "Commercial Bid Opening", key: "commercial_bid_opening" },
+  { label: "Negotiations", key: "negotiation" },
+  { label: "Work Order", key: "work_order" },
+  { label: "Agreement", key: "agreement" },
+];
+
+
 // ✅ Sub-schema for an important date item
 const followUpDateSchema = new mongoose.Schema(
   {
@@ -97,6 +109,17 @@ const tenderStatusCheckSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const tenderProcessStepSchema = new mongoose.Schema({
+  key: { type: String, required: true },
+  label: { type: String, required: true },
+  notes: { type: String, default: "" },
+  date: { type: Date, default: null },
+  time: { type: String, default: "" },
+  file_name: { type: String, default: "" },
+  file_url: { type: String, default: "" },
+  completed: { type: Boolean, default: false }
+}, { _id: false });
+
 // ✅ Main schema
 const tenderSchema = new mongoose.Schema(
   {
@@ -130,6 +153,18 @@ const tenderSchema = new mongoose.Schema(
       type: tenderStatusCheckSchema,
       default: () => ({}),
     },
+     tender_process: {
+    type: [tenderProcessStepSchema],
+    default: () => tenderProcessDataTemplate.map(step => ({
+      key: step.key,
+      label: step.label,
+      notes: "",
+      date: null,
+      time: "",
+      file_name: "",
+      completed: false
+    }))
+  },
 
     project_documents_ids: { type: [String], default: [] },
     tender_plan_documents_ids: { type: [String], default: [] },

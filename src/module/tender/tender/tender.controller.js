@@ -1,5 +1,8 @@
+import { uploadFileToS3 } from "../../../../utils/helperfunction.js";
 import TenderModel from "./tender.model.js";
 import TenderService from "./tender.service.js";
+import dotenv from "dotenv";
+dotenv.config();
 
 export const createTender = async (req, res) => {
   try {
@@ -348,5 +351,72 @@ export const getWorkOrdererForOverview = async (req, res) => {
     res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const getTenderProcess = async (req, res) => {
+  try {
+    const processData = await TenderService.getTenderProcess(req.params.tender_id);
+    res.status(200).json({ status: true, processData });
+  } catch (err) {
+    if (err.message === "Tender not found")
+      return res.status(404).json({ status: false, message: err.message });
+    res.status(500).json({ status: false, message: err.message });
+  }
+};
+
+
+export const saveTenderProcessStep = async (req, res) => {
+  try {
+    const updatedProcess = await TenderService.saveTenderProcessStep(req.body.tender_id, req.body);
+    res.status(200).json({ status: true, message: "Step saved", processData: updatedProcess });
+  } catch (err) {
+    if (err.message === "Tender not found" || err.message === "Step not found")
+      return res.status(404).json({ status: false, message: err.message });
+    res.status(500).json({ status: false, message: err.message });
+  }
+};
+
+
+export const saveTenderProcessStepaws = async (req, res) => {
+  const file = req.file; 
+  const { tender_id, step_key, notes, date, time } = req.body;
+
+  if (!tender_id || !step_key) {
+    return res.status(400).json({ status: false, message: "tender_id and step_key are required" });
+  }
+
+  try {
+    let file_name = "";
+    let file_url = "";
+    if (file) {
+      // Upload file buffer to S3
+      const uploadResult = await uploadFileToS3(file, process.env.AWS_S3_BUCKET);
+       file_url = `https://${uploadResult.Bucket}.s3.${process.env.AWS_REGION}.amazonaws.com/${uploadResult.Key}`;
+
+      file_name = uploadResult.Key; // Store the S3 object key
+    }
+
+    const stepData = {
+      tender_id,
+      step_key,
+      notes,
+      date,
+      time,
+      file_name,
+      file_url
+    };
+
+    const updatedProcess = await TenderService.saveTenderProcessStepaws(tender_id, stepData);
+
+    res.status(200).json({
+      status: true,
+      message: "Step saved",
+      processData: updatedProcess,
+    });
+  } catch (err) {
+    if (err.message === "Tender not found" || err.message === "Step not found")
+      return res.status(404).json({ status: false, message: err.message });
+    res.status(500).json({ status: false, message: err.message });
   }
 };

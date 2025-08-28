@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import {
   createTender,
   getAllTenders,
@@ -17,8 +18,13 @@ import {
   getTendersPaginatedEMDSD,
   updateEmdDetails,
   updateSDDetails,
-  getWorkOrdererForOverview
+  getWorkOrdererForOverview,
+  getTenderProcess,
+  saveTenderProcessStep,
+  saveTenderProcessStepaws
 } from "./tender.controller.js";
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 const tenderrouter = Router();
 
@@ -40,6 +46,11 @@ tenderrouter.put("/update-workorder/:tender_id", updateTenderWorkOrderController
 tenderrouter.get("/approval-status/:tender_id", checkTenderApprovalStatus);
 tenderrouter.post('/updateemdamount/:tender_id',updateEmdDetails);
 tenderrouter.post('/securitydepositamount/:tender_id',updateSDDetails);
+
+tenderrouter.get("/process/:tender_id", getTenderProcess);
+tenderrouter.post("/process/step", saveTenderProcessStep);
+tenderrouter.post("/processaws/step", upload.single("file"), saveTenderProcessStepaws);
+
 
 
 // Special endpoint for tender_status_check
