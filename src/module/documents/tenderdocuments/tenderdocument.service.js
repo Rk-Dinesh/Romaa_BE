@@ -1,5 +1,6 @@
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import logger from "../../../config/logger.js";
+import TenderDocumentModel from "./tenderdocument.model.js";
 
 const s3Client = new S3Client({
   region: process.env.AWS_REGION,
@@ -31,6 +32,9 @@ class S3Service {
       logger.error("Error uploading file to S3: " + error.message);
       throw new Error("Failed to upload file to S3");
     }
+  }
+   static async getTenderDocumentByTenderId(tender_id) {
+    return await TenderDocumentModel.findOne({ tender_id });
   }
 }
 

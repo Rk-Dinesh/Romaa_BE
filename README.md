@@ -29,3 +29,19 @@ class S3Service {
 }
 
 export default S3Service;
+
+
+{
+	"Version": "2012-10-17",
+	"Statement": [
+		{
+			"Sid": "AllowRootAccess",
+			"Effect": "Allow",
+			"Principal": {
+				"AWS": "arn:aws:iam::096863133185:root"
+			},
+			"Action": "s3:GetObject",
+			"Resource": "arn:aws:s3:::romaafiles/*"
+		}
+	]
+}
