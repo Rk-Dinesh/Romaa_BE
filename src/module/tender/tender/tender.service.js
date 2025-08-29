@@ -589,6 +589,26 @@ class TenderService {
     return await TenderModel.find({}, { tender_id: 1, tender_name: 1,tender_value:1,tender_type:1, penalty_final_value: 1 }).lean();
   }
 
+  static async getGeneralSetup(tender_id) {
+    const tender = await TenderModel.findOne({ tender_id }, {
+      tender_id: 1,
+      tender_project_division: 1,
+      tender_project_type: 1,
+      tender_bussiness_type: 1,
+      tender_project_name: 1,
+    });
+    if (!tender) throw new Error("Tender not found");
+    return tender;
+  }
+
+  static async updateGenerlSetup(tender_id, updateData) {
+    return await TenderModel.findOneAndUpdate(
+      { tender_id },
+      { $set: updateData },
+      { new: true }
+    );
+  }
+
   
 }
 
