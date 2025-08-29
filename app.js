@@ -20,6 +20,8 @@ import contractorRoute from './src/module/hr/contractors/contractor.route.js';
 import contractworkerrouter from './src/module/hr/contractemployee/contractemployee.route.js';
 import permittedcontractworkerrouter from './src/module/tender/contractworker/contractworker.route.js';
 import tenderDocRouter from './src/module/documents/tenderdocuments/tenderdocument.route.js';
+import workOrderDocRouter from './src/module/documents/workorderdocuments/workorderdoc.route.js';
+import penaltyRouter from './src/module/tender/penalties/penalities.route.js';
 
 
 
@@ -60,7 +62,9 @@ app.use ('/permittedcontractor',permittedcontractworkerrouter)
 app.use('/emd',emdrouter);
 app.use('/contractor',contractorRoute);
 app.use('/contractworker',contractworkerrouter);
-app.use ("/document",tenderDocRouter)
+app.use ("/document",tenderDocRouter);
+app.use ("/workorderdocument",workOrderDocRouter);
+app.use("/penalty",penaltyRouter);
 
 
 app.get('/',(req,res)=>{

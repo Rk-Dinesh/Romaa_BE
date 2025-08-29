@@ -485,3 +485,33 @@ export const savePreliminarySiteWorkaws = async (req, res) => {
     res.status(500).json({ status: false, message: err.message });
   }
 };
+
+export const getFinancialGenerals = async (req, res) => {
+  try {
+    const data = await TenderService.getFinancialGenerals(req.params.tender_id,req.params.workOrder_id);
+    if (!data)
+      return res.status(404).json({ status: false, message: "Tender not found" });
+
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
+export const updateFinancialGenerals = async (req, res) => {
+  try {
+    const { tender_id ,workOrder_id} = req.params; 
+    const updatedFinancialGenerals = await TenderService.financialGeneralsUpdate(
+      tender_id,
+      workOrder_id,
+      req.body
+    );
+
+    res.json({
+      message: "Financial generals updated successfully",
+      updatedFinancialGenerals
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+}

@@ -168,6 +168,17 @@ const preliminarySiteWorkSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const financialGeneralsSchema = new mongoose.Schema({
+  mobilization_advance_percentage: { type: Number, default: 0 },
+  mobilization_advance_amount: { type: Number, default: 0 }, // calculated
+  mobilization_advance_recovery_percentage: { type: Number, default: 0 },
+  mobilization_advance_recovery_amount: { type: Number, default: 0 }, // calculated
+  retention_percentage: { type: Number, default: 0 },
+  retention_amount: { type: Number, default: 0 }, // calculated
+  retention_release_percentage: { type: Number, default: 0 },
+  retention_release_amount: { type: Number, default: 0 }, // calculated
+}, { _id: false})
+
 // ✅ Main schema
 const tenderSchema = new mongoose.Schema(
   {
@@ -227,6 +238,7 @@ const tenderSchema = new mongoose.Schema(
           completed: false,
         })),
     },
+    financial_generals: { type: financialGeneralsSchema, default: () => ({}) },
     project_documents_ids: { type: [String], default: [] },
     tender_plan_documents_ids: { type: [String], default: [] },
     contractor_details: { type: [String], default: [] },

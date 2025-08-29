@@ -569,6 +569,20 @@ class TenderService {
     await tender.save();
     return tender.preliminary_site_work;
   }
+
+  static async financialGeneralsUpdate(tender_id,workOrder_id, updateData) {
+    return await TenderModel.findOneAndUpdate(
+      { tender_id, workOrder_id },
+      { $set: { financial_generals: updateData } },
+      { new: true }
+    );
+  }
+
+  static async getFinancialGenerals(tender_id,workOrder_id) {
+    const tender = await TenderModel.findOne({ tender_id ,workOrder_id}, { financial_generals: 1 });
+    if (!tender) throw new Error("Tender not found");
+    return tender.financial_generals;  
+  }
 }
 
 export default TenderService;
