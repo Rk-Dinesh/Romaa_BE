@@ -26,7 +26,8 @@ import {
   savePreliminarySiteWork,
   savePreliminarySiteWorkaws,
   getFinancialGenerals,
-  updateFinancialGenerals
+  updateFinancialGenerals,
+  getTenderPenalityValue
 } from "./tender.controller.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -61,6 +62,8 @@ tenderrouter.post("/preliminaryaws/step", upload.single("file"), savePreliminary
 
 tenderrouter.get("/getfinancialgenerals/:tender_id/:workOrder_id", getFinancialGenerals);
 tenderrouter.put("/updatefinancialgenerals/:tender_id/:workOrder_id", updateFinancialGenerals);
+
+tenderrouter.get("/tenderpenalty", getTenderPenalityValue);
 
 
 

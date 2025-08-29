@@ -259,7 +259,7 @@ class TenderService {
 
     const tenders = await TenderModel.find(query)
       .select(
-        "tender_id tender_name tender_location tender_start_date tender_value tender_status tender_type client_id client_name tender_contact_person tender_contact_phone tender_contact_email tender_duration tender_end_date tender_description workOrder_id workOrder_issued_date emd.emd_percentage emd.emd_validity "
+        "tender_id tender_name tender_location tender_start_date tender_value tender_status tender_type client_id client_name tender_contact_person tender_contact_phone tender_contact_email tender_duration tender_end_date tender_description workOrder_id workOrder_issued_date emd.emd_percentage emd.emd_validity penalty_final_value"
       )
       .skip((page - 1) * limit)
       .limit(limit)
@@ -432,6 +432,7 @@ class TenderService {
         workOrder_issued_date: 1,
         tender_duration: 1,
         tender_value: 1,
+        penalty_final_value: 1,
       }
     ).lean();
 
@@ -583,6 +584,12 @@ class TenderService {
     if (!tender) throw new Error("Tender not found");
     return tender.financial_generals;  
   }
+
+  static async getTenderPenalityValue(){
+    return await TenderModel.find({}, { tender_id: 1, tender_name: 1,tender_value:1,tender_type:1, penalty_final_value: 1 }).lean();
+  }
+
+  
 }
 
 export default TenderService;

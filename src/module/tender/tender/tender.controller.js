@@ -515,3 +515,12 @@ export const updateFinancialGenerals = async (req, res) => {
     res.status(400).json({ message: error.message });
   }
 }
+
+export const getTenderPenalityValue = async (req, res) => {
+  try {
+    const tenders = await TenderService.getTenderPenalityValue();
+    res.status(200).json({ status: true, data: tenders });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
