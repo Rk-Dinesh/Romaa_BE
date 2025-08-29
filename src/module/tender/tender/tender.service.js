@@ -522,6 +522,54 @@ class TenderService {
     await tender.save();
     return tender.tender_process;
   }
+
+  static async getPreliminarySiteWork(tender_id) {
+    const tender = await TenderModel.findOne({ tender_id }, { preliminary_site_work: 1 });
+    if (!tender) throw new Error("Tender not found");
+    return tender.preliminary_site_work;  
+  }
+
+  static async savePreliminarySiteWork(tender_id, stepData) {
+    const tender = await TenderModel.findOne({ tender_id });
+    if (!tender) throw new Error("Tender not found");
+
+     const index = tender.preliminary_site_work.findIndex(s => s.key === stepData.step_key);
+    if (index === -1) throw new Error("Step not found");
+
+    tender.preliminary_site_work[index]= {
+      ...tender.preliminary_site_work[index]._doc,
+      notes: stepData.notes || "",
+      date: stepData.date || null,
+      time: stepData.time || "",
+      file_name: stepData.file_name || "",
+      file_url: stepData.file_url || "",
+      completed: true
+    };
+
+    await tender.save();
+    return tender.preliminary_site_work;
+  }
+
+  static async savePreliminarySiteWorkaws(tender_id, stepData) {
+    const tender = await TenderModel.findOne({ tender_id });
+    if (!tender) throw new Error("Tender not found");
+
+     const index = tender.preliminary_site_work.findIndex(s => s.key === stepData.step_key);
+    if (index === -1) throw new Error("Step not found");
+
+     tender.preliminary_site_work[index]= {
+      ...tender.preliminary_site_work[index]._doc,
+      notes: stepData.notes || "",
+      date: stepData.date || null,
+      time: stepData.time || "",
+      file_name: stepData.file_name || "",
+      file_url: stepData.file_url || "",
+      completed: true,
+    };
+
+    await tender.save();
+    return tender.preliminary_site_work;
+  }
 }
 
 export default TenderService;

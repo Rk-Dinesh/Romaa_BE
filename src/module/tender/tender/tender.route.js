@@ -21,7 +21,10 @@ import {
   getWorkOrdererForOverview,
   getTenderProcess,
   saveTenderProcessStep,
-  saveTenderProcessStepaws
+  saveTenderProcessStepaws,
+  getPreliminarySiteWork,
+  savePreliminarySiteWork,
+  savePreliminarySiteWorkaws
 } from "./tender.controller.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -50,6 +53,9 @@ tenderrouter.post('/securitydepositamount/:tender_id',updateSDDetails);
 tenderrouter.get("/process/:tender_id", getTenderProcess);
 tenderrouter.post("/process/step", saveTenderProcessStep);
 tenderrouter.post("/processaws/step", upload.single("file"), saveTenderProcessStepaws);
+tenderrouter.get("/preliminary/:tender_id", getPreliminarySiteWork);
+tenderrouter.post("/preliminary/step", savePreliminarySiteWork);
+tenderrouter.post("/preliminaryaws/step", upload.single("file"), savePreliminarySiteWorkaws);
 
 
 

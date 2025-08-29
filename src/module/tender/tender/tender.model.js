@@ -1,16 +1,5 @@
 import mongoose from "mongoose";
 
-// ✅ Sub-schema for tender location
-const tenderLocationSchema = new mongoose.Schema(
-  {
-    city: { type: String, default: "" },
-    state: { type: String, default: "" },
-    country: { type: String, default: "" },
-    pincode: { type: String, default: "" },
-  },
-  { _id: false }
-);
-
 const tenderProcessDataTemplate = [
   { label: "Site Investigation", key: "site_investigation" },
   { label: "Pre bid Meeting", key: "pre_bid_meeting" },
@@ -22,6 +11,48 @@ const tenderProcessDataTemplate = [
   { label: "Agreement", key: "agreement" },
 ];
 
+const preliminarySiteWorkTemplate = [
+  { label: "Site Visit & Reconnaissance", key: "site_visit_reconnaissance" },
+  {
+    label: "Site Approach & Accessibility",
+    key: "site_approach_accessibility",
+  },
+  { label: "Site Hurdles Identification", key: "site_hurdles_identification" },
+  {
+    label: "Labour Shed Location and Feasibility",
+    key: "labour_shed_location_feasibility",
+  },
+  { label: "Temporary EB Connection", key: "temporary_eb_connection" },
+  {
+    label: "Water Source Identification & Connection",
+    key: "water_source_identification_connection",
+  },
+  {
+    label: "Office, Labour and Materials Shed Setup",
+    key: "office_labour_materials_shed_setup",
+  },
+  {
+    label: "Yard for Steel and Bulk Materials",
+    key: "yard_steel_bulk_materials",
+  },
+  { label: "Office Setup & Facilities", key: "office_setup_facilities" },
+  {
+    label: "Sub Contractors Identification",
+    key: "sub_contractors_identification",
+  },
+  { label: "Vendor Identification", key: "vendor_identification" },
+];
+
+// ✅ Sub-schema for tender location
+const tenderLocationSchema = new mongoose.Schema(
+  {
+    city: { type: String, default: "" },
+    state: { type: String, default: "" },
+    country: { type: String, default: "" },
+    pincode: { type: String, default: "" },
+  },
+  { _id: false }
+);
 
 // ✅ Sub-schema for an important date item
 const followUpDateSchema = new mongoose.Schema(
@@ -109,16 +140,33 @@ const tenderStatusCheckSchema = new mongoose.Schema(
   { _id: false }
 );
 
-const tenderProcessStepSchema = new mongoose.Schema({
-  key: { type: String, required: true },
-  label: { type: String, required: true },
-  notes: { type: String, default: "" },
-  date: { type: Date, default: null },
-  time: { type: String, default: "" },
-  file_name: { type: String, default: "" },
-  file_url: { type: String, default: "" },
-  completed: { type: Boolean, default: false }
-}, { _id: false });
+const tenderProcessStepSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true },
+    label: { type: String, required: true },
+    notes: { type: String, default: "" },
+    date: { type: Date, default: null },
+    time: { type: String, default: "" },
+    file_name: { type: String, default: "" },
+    file_url: { type: String, default: "" },
+    completed: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
+
+const preliminarySiteWorkSchema = new mongoose.Schema(
+  {
+    key: { type: String, required: true },
+    label: { type: String, required: true },
+    notes: { type: String, default: "" },
+    date: { type: Date, default: null },
+    time: { type: String, default: "" },
+    file_name: { type: String, default: "" },
+    file_url: { type: String, default: "" },
+    completed: { type: Boolean, default: false },
+  },
+  { _id: false }
+);
 
 // ✅ Main schema
 const tenderSchema = new mongoose.Schema(
@@ -153,19 +201,32 @@ const tenderSchema = new mongoose.Schema(
       type: tenderStatusCheckSchema,
       default: () => ({}),
     },
-     tender_process: {
-    type: [tenderProcessStepSchema],
-    default: () => tenderProcessDataTemplate.map(step => ({
-      key: step.key,
-      label: step.label,
-      notes: "",
-      date: null,
-      time: "",
-      file_name: "",
-      completed: false
-    }))
-  },
-
+    tender_process: {
+      type: [tenderProcessStepSchema],
+      default: () =>
+        tenderProcessDataTemplate.map((step) => ({
+          key: step.key,
+          label: step.label,
+          notes: "",
+          date: null,
+          time: "",
+          file_name: "",
+          completed: false,
+        })),
+    },
+    preliminary_site_work: {
+      type: [preliminarySiteWorkSchema],
+      default: () =>
+        preliminarySiteWorkTemplate.map((step) => ({
+          key: step.key,
+          label: step.label,
+          notes: "",
+          date: null,
+          time: "",
+          file_name: "",
+          completed: false,
+        })),
+    },
     project_documents_ids: { type: [String], default: [] },
     tender_plan_documents_ids: { type: [String], default: [] },
     contractor_details: { type: [String], default: [] },
