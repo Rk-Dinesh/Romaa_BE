@@ -524,3 +524,33 @@ export const getTenderPenalityValue = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 }
+
+export const getGenerlSetup = async (req, res) => {
+  try {
+    const { tender_id } = req.params; 
+    const generlSetup = await TenderService.getGeneralSetup(tender_id);
+    if (!generlSetup)
+      return res.status(404).json({ status: false, message: "Tender not found" });
+
+    res.status(200).json({ status: true, data: generlSetup });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
+export const updateGenerlSetup = async (req, res) => {
+  try {
+    const { tender_id } = req.params; 
+    const updatedGenerlSetup = await TenderService.updateGenerlSetup(
+      tender_id,
+      req.body
+    );
+
+    res.json({
+      message: "General setup updated successfully",
+      updatedGenerlSetup
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+}

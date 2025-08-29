@@ -184,9 +184,13 @@ const tenderSchema = new mongoose.Schema(
   {
     tender_id: { type: String, required: true, unique: true },
     tender_name: { type: String, required: true },
+    tender_project_name: { type: String, default: "" },
     client_id: { type: String, default: "" },
     client_name: { type: String, default: "" },
     tender_type: { type: String, default: "" },
+    tender_project_division: { type: String, default: "" },
+    tender_project_type: { type: String, default: "" },
+    tender_bussiness_type: { type: String, default: "" },
     tender_value: { type: Number, default: 0 },
     tender_contact_person: { type: String, default: "" },
     tender_contact_phone: { type: String, default: "" },
