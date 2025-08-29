@@ -139,10 +139,6 @@ static async addOrUpdateBoqItem(boqData) {
   }
 }
 
-
-
-
-
   // Get all BoQs
   static async getAllBoqs() {
     return await BoqModel.find();
@@ -287,6 +283,95 @@ static async addOrUpdateBoqItem(boqData) {
       { boq_id: 1, tender_id: 1, status: 1, _id: 0 } // ✅ Only minimal fields
     ).lean();
   }
+
+static async bulkInsert(csvRows, createdByUser, tender_id, phase = "", parsedRevision = 1, prepared_by = "", approved_by = "") {
+  const idname = "BOQ_ITEM";
+  const idcode = "ITEM";
+  await IdcodeServices.addIdCode(idname, idcode);
+
+  // Step 1: Generate unique item_codes sequentially
+  const itemCodes = [];
+  for (let i = 0; i < csvRows.length; i++) {
+    const code = await IdcodeServices.generateCode(idname);
+    if (!code) throw new Error("Failed to generate unique item_code");
+    itemCodes.push(code);
+  }
+
+  // Step 2: Map CSV rows to BOQ items with unique codes
+  const items = csvRows.map((row, idx) => {
+    const quantity = Number(row.quantity);
+    const final_unit_rate = Number(row.final_unit_rate);
+    const zero_cost_unit_rate = Number(row.zero_cost_unit_rate);
+
+    return {
+      item_code: itemCodes[idx],
+      item_name: row.item_name,
+      description: row.description,
+      specification: row.specification,
+      unit: row.unit,
+      quantity,
+      final_unit_rate,
+      zero_cost_unit_rate,
+      final_amount: quantity * final_unit_rate,
+      zero_cost_final_amount: quantity * zero_cost_unit_rate,
+      category: row.category,
+      remarks: row.remarks,
+      work_section: row.work_section,
+    };
+  });
+
+  // Check if BOQ for tender already exists
+  let boq = await BoqModel.findOne({ tender_id });
+
+  if (boq) {
+    // Append new items
+    boq.items.push(...items);
+    boq.total_amount = boq.items.reduce((sum, i) => sum + (i.final_amount || 0), 0);
+    boq.phase = phase || boq.phase;
+    boq.revision = parsedRevision || boq.revision;
+    boq.status = boq.status || "Draft";
+    boq.prepared_by = prepared_by || boq.prepared_by;
+    boq.approved_by = approved_by || boq.approved_by;
+    boq.created_by_user = createdByUser || boq.created_by_user;
+  } else {
+    const idNameBoq = "BOQ";
+    const idCodeBoq = "BOQ";
+    await IdcodeServices.addIdCode(idNameBoq, idCodeBoq);
+    const boq_id = await IdcodeServices.generateCode(idNameBoq);
+    if (!boq_id) throw new Error("Failed to generate BOQ ID");
+
+    boq = new BoqModel({
+      boq_id,
+      tender_id,
+      phase,
+      revision: parsedRevision,
+      status: "Draft",
+      items,
+      total_amount: items.reduce((sum, i) => sum + (i.final_amount || 0), 0),
+      prepared_by,
+      approved_by,
+      created_by_user: createdByUser,
+      prepared_date: new Date(),
+      approved_date: new Date(),
+    });
+  }
+
+  const savedBoq = await boq.save();
+
+  // Sync to Tender collection
+  await TenderModel.updateOne(
+    { tender_id },
+    {
+      $set: {
+        BoQ_id: savedBoq.boq_id,
+        boq_final_value: savedBoq.total_amount || 0,
+        zeroCost_final_value: savedBoq.items.reduce((sum, i) => sum + (i.zero_cost_final_amount || 0), 0),
+      },
+    }
+  );
+
+  return savedBoq;
+}
 
 
 }

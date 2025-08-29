@@ -30,8 +30,8 @@ const boqSchema = new mongoose.Schema(
     total_amount: Number,               // Sum of all item amounts
     prepared_by: {type:String ,default:""},
     approved_by: {type:String ,default:""},
-    prepared_date: Date,
-    approved_date: Date,
+    prepared_date: {type:Date ,default:Date.now()},
+    approved_date: {type:Date ,default:Date.now()},
     attachments: [
       {
         file_name: String,

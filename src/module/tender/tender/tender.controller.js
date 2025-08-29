@@ -188,9 +188,9 @@ export const updateTenderWorkOrderController = async (req, res) => {
   try {
     
    const { tender_id } = req.params;
-    const { workOrder_id,workOrder_issued_by } = req.body;
+    const { workOrder_id,workOrder_issued_date } = req.body;
 
-    if (!tender_id || !workOrder_issued_by ||!workOrder_id) {
+    if (!tender_id || !workOrder_issued_date ||!workOrder_id) {
       return res.status(400).json({
         success: false,
         message: "tender_id and workOrder_issued_by are required"
@@ -200,7 +200,7 @@ export const updateTenderWorkOrderController = async (req, res) => {
     const updatedTender = await TenderService.updateTenderStatusWithWorkOrder(
       tender_id,
       workOrder_id,
-      workOrder_issued_by
+      workOrder_issued_date
     );
 
     res.status(200).json({

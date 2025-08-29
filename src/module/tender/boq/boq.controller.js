@@ -1,4 +1,10 @@
 import BoqService from "./boq.service.js";
+import csvParser from "csv-parser";
+import fs from "fs";
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export const createBoq = async (req, res) => {
   try {
@@ -121,5 +127,44 @@ export const getBoqByTenderId = async (req, res) => {
     res.status(200).json({ status: true, data: boq });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const uploadBoqCSV = async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    
+
+
+    const { created_by_user, tender_id, phase, revision, prepared_by, approved_by } = req.body;
+
+    if (!created_by_user) return res.status(400).json({ error: "created_by_user is required" });
+    if (!tender_id) return res.status(400).json({ error: "tender_id is required" });
+        const parsedRevision = revision ? Number(revision.toString().trim()) : 0;
+if (isNaN(parsedRevision)) {
+  return res.status(400).json({ error: "revision must be a valid number" });
+}
+
+
+    const csvRows = [];
+    const filePath = path.join(__dirname, "../../../../uploads", req.file.filename);
+
+    fs.createReadStream(filePath)
+      .pipe(csvParser())
+      .on("data", (row) => {
+        csvRows.push(row);
+      })
+      .on("end", async () => {
+        try {
+          const result = await BoqService.bulkInsert(csvRows, created_by_user, tender_id, phase, prepared_by, approved_by);
+          res.status(200).json({ status: true, message: "CSV data uploaded successfully", data: result });
+        } catch (error) {
+          next(error);
+        } finally {
+          fs.unlinkSync(filePath); // Delete file after processing
+        }
+      });
+  } catch (error) {
+    next(error);
   }
 };

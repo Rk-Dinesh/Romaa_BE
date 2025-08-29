@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import {
   createBoq,
   getAllBoqs,
@@ -9,10 +10,12 @@ import {
   deleteBoq,
   addOrUpdateBoqItem,
   getBoqItemsPaginated,
-  getBoqByTenderId
+  getBoqByTenderId,
+  uploadBoqCSV
 } from "./boq.controller.js";
 
 const boqrouter = Router();
+const upload = multer({ dest: "uploads/" });
 
 // BoQ CRUD
 boqrouter.post("/add", createBoq);
@@ -28,5 +31,6 @@ boqrouter.post("/additem/:boq_id", addItemToBoq);
 boqrouter.delete("/removeitem/:tender_id/:item_code", removeItemFromBoq);
 boqrouter.get("/items/:tender_id", getBoqItemsPaginated);
 boqrouter.get("/by-tender/:tender_id", getBoqByTenderId);
+boqrouter.post("/uploadcsv", upload.single("file"), uploadBoqCSV);
 
 export default boqrouter;

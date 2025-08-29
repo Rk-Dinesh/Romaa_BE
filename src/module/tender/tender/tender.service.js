@@ -205,7 +205,7 @@ class TenderService {
   static async updateTenderStatusWithWorkOrder(
     tender_id,
     workOrder_id,
-    workOrderIssuedBy
+    workOrder_issued_date
   ) {
     const tender = await TenderModel.findOne({ tender_id });
 
@@ -214,9 +214,8 @@ class TenderService {
     }
     tender.workOrder_id = workOrder_id;
     tender.tender_status = "APPROVED";
-    tender.workOrder_issued_date = new Date();
-    tender.workOrder_issued_by = workOrderIssuedBy;
-
+    tender.workOrder_issued_date = workOrder_issued_date;
+    
     await tender.save();
 
     return tender;
