@@ -52,6 +52,7 @@ static async addPenalty(penaltyData) {
     const record = await PenaltyModel.findOne({ tender_id });
     if (!record) return null;
     return { tender_id: record.tender_id, penalties: record.listOfPenalties };
+    
   }
 
   /**
