@@ -122,7 +122,7 @@ class TenderService {
 
     const tenders = await TenderModel.find(query)
       .select(
-        "tender_id tender_name tender_location tender_start_date tender_value tender_status tender_type client_id client_name tender_contact_person  tender_contact_phone tender_contact_email tender_duration tender_end_date tender_description emd.emd_percentage emd.emd_validity"
+        "tender_id tender_name tender_location tender_start_date tender_value tender_status tender_type client_id client_name tender_contact_person  tender_contact_phone tender_contact_email tender_duration tender_end_date tender_description emd.emd_percentage emd.emd_validity emd.emd_amount"
       ) // ✅ only required fields
       .skip((page - 1) * limit)
       .limit(limit)

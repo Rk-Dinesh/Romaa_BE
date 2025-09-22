@@ -207,11 +207,8 @@ const tenderSchema = new mongoose.Schema(
     boq_final_value: { type: Number, default: 0 },
     zeroCost_final_value: { type: Number, default: 0 },
     penalty_final_value: { type: Number, default: 0 },
-
     emd: { type: emdSchema, default: () => ({}) },
-
     security_deposit: { type: securityDepositSchema, default: () => ({}) },
-
     tender_status_check: {
       type: tenderStatusCheckSchema,
       default: () => ({}),
