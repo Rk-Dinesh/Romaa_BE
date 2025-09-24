@@ -1,56 +1,42 @@
 import mongoose from "mongoose";
 
-const RateLineSchema = new mongoose.Schema({
+// Line schema for individual line items grouped by category
+const LineSchema = new mongoose.Schema({
+  description: { type: String, required: true },
+  unit: { type: String, default: "" },
+  quantity: { type: Number, default: null },
+  output: { type: Number, default: null },
+  rate: { type: Number, default: null },
+  amount: { type: Number, default: null },
+  finalRate: { type: Number, default: null }
+}, { _id: false });
+
+const LinesByCategorySchema = new mongoose.Schema({
   category: {
     type: String,
     enum: ['MAIN_ITEM', 'MACHINERIES', 'MATERIALS', 'FUEL', 'SUBCONTRACTOR', 'MANPOWER', 'MAIN'],
-    required: true,
+    required: true
   },
-  subCategory: {
-    type: String, // e.g. “Equipment”, “Material”, “S/C Work”
-  },
-  description: {
-    type: String,
-    required: true,
-  },
-  unit: {
-    type: String, // e.g. “Cum”, “Month”, “Lit”, etc.
-  },
-  quantity: {
-    type: Number,
-  },
-  output: {
-    type: Number, // output quantity (only MAIN_ITEM rows)
-  },
-  rate: {
-    type: Number, // unit rate
-  },
-  amount: {
-    type: Number, // total amount
-  },
-  finalRate: {
-    type: Number, // per‐unit final rate
-  },
+  sub: {
+    type: [LineSchema],
+    default: []
+  }
 }, { _id: false });
 
 const WorkItemSchema = new mongoose.Schema({
-  itemNo: {
-    type: Number,
-    required: true,
-    index: true,
-  },
-  workItem: {
-    type: String,
-    required: true, // e.g. “Earthwork”
-  },
-  lines: {
-    type: [RateLineSchema],
-    default: [],
-  },
-}, {
-  timestamps: true,
-});
+  itemNo: { type: Number, required: true, index: true },
+  workItem: { type: String, required: true },
+  unit: { type: String, default: null },
+  output: { type: Number, default: null },
+  finalRate: { type: Number, default: null },
+  lines: { type: [LinesByCategorySchema], default: [] },
+}, { _id: false });
 
-const WorkItemModel = mongoose.model("WorkItems", WorkItemSchema);
+const MainSchema = new mongoose.Schema({
+  tender_id: { type: String, required: true },
+  work_items: { type: [WorkItemSchema], default: [] }
+}, { timestamps: true });
+
+const WorkItemModel = mongoose.model("WorkItems", MainSchema);
 
 export default WorkItemModel;

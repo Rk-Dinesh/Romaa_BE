@@ -14,6 +14,7 @@ const employeeSchema = new mongoose.Schema(
     employee_id: { type: String, unique: true },
     name: { type: String, required: true },
     role: {type:String,default:""},                  
+    role_id: {type:String,default:""},                  
     site_assigned: String,         
     status: { type: String, default: "ACTIVE" },              
     contact_phone: String,

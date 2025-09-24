@@ -35,6 +35,17 @@ export const getWorkItemById = async (req, res) => {
   }
 };
 
+export const getWorkItemsByTenderId = async (req, res) => {
+  try {
+    const { tender_id } = req.query;
+    const item = await WorkItemService.getWorkItemsByTenderId(tender_id);
+    if (!item) return res.status(404).json({ status: false, message: 'WorkItems not found for this tender_id' });
+    res.status(200).json({ status: true, data: item });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+}
+
 export const updateWorkItem = async (req, res) => {
   try {
     const updated = await WorkItemService.updateWorkItem(req.params.id, req.body);
@@ -52,12 +63,15 @@ export const deleteWorkItem = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
-export const uploadWorkItemsCSV = async (req, res, next) => {
+export const uploadWorkItemsCSV1 = async (req, res, next) => {
   try {
+    const { tender_id } = req.body;
+    if (!tender_id) return res.status(400).json({ error: "tender_id is required" });
+
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
     const csvRows = [];
-    const filePath = path.join(__dirname, "../../../uploads", req.file.filename);
+    const filePath = path.join(process.cwd(), "uploads", req.file.filename);
 
     fs.createReadStream(filePath)
       .pipe(csvParser())
@@ -66,10 +80,7 @@ export const uploadWorkItemsCSV = async (req, res, next) => {
       })
       .on("end", async () => {
         try {
-          // Use the service bulkInsert that returns formatted result
-          const result = await WorkItemService.bulkInsert(csvRows);
-
-          // Send response exactly in the required format
+          const result = await WorkItemService.bulkInsert1(csvRows, tender_id);
           res.status(200).json(result);
         } catch (e) {
           next(e);
@@ -81,31 +92,3 @@ export const uploadWorkItemsCSV = async (req, res, next) => {
     next(error);
   }
 };
-
-
-// export const uploadWorkItemsCSV = async (req, res, next) => {
-//   try {
-//     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-//     const csvRows = [];
-//     const filePath = path.join(__dirname, "../../../uploads", req.file.filename);
-
-//     fs.createReadStream(filePath)
-//       .pipe(csvParser())
-//       .on("data", (row) => {
-//         csvRows.push(row);
-//       })
-//       .on("end", async () => {
-//         try {
-//           const result = await WorkItemService.bulkInsert(csvRows);
-//           res.status(200).json({ status: true, message: "CSV uploaded successfully", data: result });
-//         } catch (e) {
-//           next(e);
-//         } finally {
-//           fs.unlinkSync(filePath);
-//         }
-//       });
-//   } catch (error) {
-//     next(error);
-//   }
-// };
