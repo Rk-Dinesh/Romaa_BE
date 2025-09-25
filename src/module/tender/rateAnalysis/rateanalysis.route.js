@@ -7,7 +7,8 @@ import {
   updateWorkItem,
   deleteWorkItem,
   uploadWorkItemsCSV1,
-  getWorkItemsByTenderId
+  getWorkItemsByTenderId,
+  uploadWorkItemsCSVAndSyncBoq
 } from './rateanalysis.controller.js';
 
 const rateanalysisrouter = Router();
@@ -15,11 +16,12 @@ const upload = multer({ dest: "uploads/" });
 
 rateanalysisrouter.post('/add', addWorkItem);
 rateanalysisrouter.get('/all', getAllWorkItems);
-rateanalysisrouter.get('/:id', getWorkItemById);
-rateanalysisrouter.get('/getbytender_id', getWorkItemsByTenderId);
+rateanalysisrouter.get('/getbytenderId', getWorkItemsByTenderId);
+rateanalysisrouter.get('getbyid/:id', getWorkItemById);
 rateanalysisrouter.put('/update/:id', updateWorkItem);
 rateanalysisrouter.delete('/delete/:id', deleteWorkItem);
-rateanalysisrouter.post('/uploadcsv', upload.single('file'), uploadWorkItemsCSV1);
+rateanalysisrouter.post('/uploadcsv1', upload.single('file'), uploadWorkItemsCSV1);
+rateanalysisrouter.post('/uploadcsv', upload.single('file'), uploadWorkItemsCSVAndSyncBoq);
 
 
 export default rateanalysisrouter;

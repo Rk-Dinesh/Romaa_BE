@@ -156,7 +156,7 @@ static async addOrUpdateBoqItem(boqData) {
       updateData.items = updateData.items.map(item => ({
         ...item,
         final_amount: item.quantity * (item.final_unit_rate || 0),
-        zero_cost_final_amount: item.quantity * (item.zero_cost_unit_rate || 0)
+      
       }));
 
       updateData.total_amount = updateData.items.reduce(
@@ -178,10 +178,6 @@ static async addOrUpdateBoqItem(boqData) {
         {
           $set: {
             boq_final_value: updatedBoq.total_amount || 0,
-            zeroCost_final_value: updatedBoq.items.reduce(
-              (sum, i) => sum + (i.zero_cost_final_amount || 0),
-              0
-            )
           }
         }
       );
@@ -301,7 +297,7 @@ static async bulkInsert(csvRows, createdByUser, tender_id, phase = "", parsedRev
   const items = csvRows.map((row, idx) => {
     const quantity = Number(row.quantity);
     const final_unit_rate = Number(row.final_unit_rate);
-    const zero_cost_unit_rate = Number(row.zero_cost_unit_rate);
+
 
     return {
       item_code: itemCodes[idx],
@@ -311,9 +307,7 @@ static async bulkInsert(csvRows, createdByUser, tender_id, phase = "", parsedRev
       unit: row.unit,
       quantity,
       final_unit_rate,
-      zero_cost_unit_rate,
       final_amount: quantity * final_unit_rate,
-      zero_cost_final_amount: quantity * zero_cost_unit_rate,
       category: row.category,
       remarks: row.remarks,
       work_section: row.work_section,
@@ -365,7 +359,6 @@ static async bulkInsert(csvRows, createdByUser, tender_id, phase = "", parsedRev
       $set: {
         BoQ_id: savedBoq.boq_id,
         boq_final_value: savedBoq.total_amount || 0,
-        zeroCost_final_value: savedBoq.items.reduce((sum, i) => sum + (i.zero_cost_final_amount || 0), 0),
       },
     }
   );
