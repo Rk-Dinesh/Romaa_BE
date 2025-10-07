@@ -1,6 +1,7 @@
 import TenderModel from "./tender.model.js";
 import IdcodeServices from "../../idcode/idcode.service.js";
 import ClientModel from "../../clients/client.model.js";
+import DetailedEstimateModel from "../detailedestimate/detailedestimate.model.js";
 
 class TenderService {
   // Create new tender
@@ -10,26 +11,21 @@ class TenderService {
     await IdcodeServices.addIdCode(idname, idcode);
     const tender_id = await IdcodeServices.generateCode(idname);
 
-    // // Auto calculations
-    // if (tenderData.tender_value && tenderData.emd?.emd_percentage) {
-    //   tenderData.emd.emd_amount =
-    //     (tenderData.tender_value * tenderData.emd.emd_percentage) / 100;
-    // }
-
-    // if (
-    //   tenderData.tender_value &&
-    //   tenderData.security_deposit?.security_deposit_percentage
-    // ) {
-    //   tenderData.security_deposit.security_deposit_amount =
-    //     (tenderData.tender_value *
-    //       tenderData.security_deposit.security_deposit_percentage) /
-    //     100;
-    // }
-
     const tender = new TenderModel({
       tender_id,
       ...tenderData,
     });
+
+    const detailedEstimate = new DetailedEstimateModel({ tender_id });
+        if (detailedEstimate.detailed_estimate.length === 0) {
+      // If empty, push a new default object
+      detailedEstimate.detailed_estimate.push({
+        generalabstract: [],
+        billofqty: []
+      });
+    }
+    await detailedEstimate.save();
+
     return await tender.save();
   }
 
@@ -215,7 +211,7 @@ class TenderService {
     tender.workOrder_id = workOrder_id;
     tender.tender_status = "APPROVED";
     tender.workOrder_issued_date = workOrder_issued_date;
-    
+
     await tender.save();
 
     return tender;
@@ -472,10 +468,13 @@ class TenderService {
     };
   }
 
-   static async getTenderProcess(tender_id) {
-    const tender = await TenderModel.findOne({ tender_id }, { tender_process: 1 });
+  static async getTenderProcess(tender_id) {
+    const tender = await TenderModel.findOne(
+      { tender_id },
+      { tender_process: 1 }
+    );
     console.log(tender);
-    
+
     if (!tender) throw new Error("Tender not found");
     return tender.tender_process;
   }
@@ -485,7 +484,9 @@ class TenderService {
     const tender = await TenderModel.findOne({ tender_id });
     if (!tender) throw new Error("Tender not found");
 
-    const index = tender.tender_process.findIndex(s => s.key === stepData.step_key);
+    const index = tender.tender_process.findIndex(
+      (s) => s.key === stepData.step_key
+    );
     if (index === -1) throw new Error("Step not found");
 
     // Update step fields and mark completed
@@ -495,7 +496,7 @@ class TenderService {
       date: stepData.date || null,
       time: stepData.time || "",
       file_name: stepData.file_name || "",
-      completed: true
+      completed: true,
     };
 
     await tender.save();
@@ -506,7 +507,9 @@ class TenderService {
     const tender = await TenderModel.findOne({ tender_id });
     if (!tender) throw new Error("Tender not found");
 
-    const index = tender.tender_process.findIndex(s => s.key === stepData.step_key);
+    const index = tender.tender_process.findIndex(
+      (s) => s.key === stepData.step_key
+    );
     if (index === -1) throw new Error("Step not found");
 
     tender.tender_process[index] = {
@@ -524,40 +527,24 @@ class TenderService {
   }
 
   static async getPreliminarySiteWork(tender_id) {
-    const tender = await TenderModel.findOne({ tender_id }, { preliminary_site_work: 1 });
+    const tender = await TenderModel.findOne(
+      { tender_id },
+      { preliminary_site_work: 1 }
+    );
     if (!tender) throw new Error("Tender not found");
-    return tender.preliminary_site_work;  
+    return tender.preliminary_site_work;
   }
 
   static async savePreliminarySiteWork(tender_id, stepData) {
     const tender = await TenderModel.findOne({ tender_id });
     if (!tender) throw new Error("Tender not found");
 
-     const index = tender.preliminary_site_work.findIndex(s => s.key === stepData.step_key);
+    const index = tender.preliminary_site_work.findIndex(
+      (s) => s.key === stepData.step_key
+    );
     if (index === -1) throw new Error("Step not found");
 
-    tender.preliminary_site_work[index]= {
-      ...tender.preliminary_site_work[index]._doc,
-      notes: stepData.notes || "",
-      date: stepData.date || null,
-      time: stepData.time || "",
-      file_name: stepData.file_name || "",
-      file_url: stepData.file_url || "",
-      completed: true
-    };
-
-    await tender.save();
-    return tender.preliminary_site_work;
-  }
-
-  static async savePreliminarySiteWorkaws(tender_id, stepData) {
-    const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
-
-     const index = tender.preliminary_site_work.findIndex(s => s.key === stepData.step_key);
-    if (index === -1) throw new Error("Step not found");
-
-     tender.preliminary_site_work[index]= {
+    tender.preliminary_site_work[index] = {
       ...tender.preliminary_site_work[index]._doc,
       notes: stepData.notes || "",
       date: stepData.date || null,
@@ -571,7 +558,30 @@ class TenderService {
     return tender.preliminary_site_work;
   }
 
-  static async financialGeneralsUpdate(tender_id,workOrder_id, updateData) {
+  static async savePreliminarySiteWorkaws(tender_id, stepData) {
+    const tender = await TenderModel.findOne({ tender_id });
+    if (!tender) throw new Error("Tender not found");
+
+    const index = tender.preliminary_site_work.findIndex(
+      (s) => s.key === stepData.step_key
+    );
+    if (index === -1) throw new Error("Step not found");
+
+    tender.preliminary_site_work[index] = {
+      ...tender.preliminary_site_work[index]._doc,
+      notes: stepData.notes || "",
+      date: stepData.date || null,
+      time: stepData.time || "",
+      file_name: stepData.file_name || "",
+      file_url: stepData.file_url || "",
+      completed: true,
+    };
+
+    await tender.save();
+    return tender.preliminary_site_work;
+  }
+
+  static async financialGeneralsUpdate(tender_id, workOrder_id, updateData) {
     return await TenderModel.findOneAndUpdate(
       { tender_id, workOrder_id },
       { $set: { financial_generals: updateData } },
@@ -579,24 +589,39 @@ class TenderService {
     );
   }
 
-  static async getFinancialGenerals(tender_id,workOrder_id) {
-    const tender = await TenderModel.findOne({ tender_id ,workOrder_id}, { financial_generals: 1 });
+  static async getFinancialGenerals(tender_id, workOrder_id) {
+    const tender = await TenderModel.findOne(
+      { tender_id, workOrder_id },
+      { financial_generals: 1 }
+    );
     if (!tender) throw new Error("Tender not found");
-    return tender.financial_generals;  
+    return tender.financial_generals;
   }
 
-  static async getTenderPenalityValue(){
-    return await TenderModel.find({}, { tender_id: 1, tender_name: 1,tender_value:1,tender_type:1, penalty_final_value: 1 }).lean();
+  static async getTenderPenalityValue() {
+    return await TenderModel.find(
+      {},
+      {
+        tender_id: 1,
+        tender_name: 1,
+        tender_value: 1,
+        tender_type: 1,
+        penalty_final_value: 1,
+      }
+    ).lean();
   }
 
   static async getGeneralSetup(tender_id) {
-    const tender = await TenderModel.findOne({ tender_id }, {
-      tender_id: 1,
-      tender_project_division: 1,
-      tender_project_type: 1,
-      tender_bussiness_type: 1,
-      tender_project_name: 1,
-    });
+    const tender = await TenderModel.findOne(
+      { tender_id },
+      {
+        tender_id: 1,
+        tender_project_division: 1,
+        tender_project_type: 1,
+        tender_bussiness_type: 1,
+        tender_project_name: 1,
+      }
+    );
     if (!tender) throw new Error("Tender not found");
     return tender;
   }
@@ -608,8 +633,6 @@ class TenderService {
       { new: true }
     );
   }
-
-  
 }
 
 export default TenderService;

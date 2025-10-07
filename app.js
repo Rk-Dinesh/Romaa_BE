@@ -23,6 +23,7 @@ import tenderDocRouter from './src/module/documents/tenderdocuments/tenderdocume
 import workOrderDocRouter from './src/module/documents/workorderdocuments/workorderdoc.route.js';
 import penaltyRouter from './src/module/tender/penalties/penalities.route.js';
 import rateanalysisrouter from './src/module/tender/rateAnalysis/rateanalysis.route.js';
+import detailedestrouter from './src/module/tender/detailedestimate/detailedestimate.route.js';
 
 
 
@@ -66,7 +67,8 @@ app.use('/contractworker',contractworkerrouter);
 app.use ("/document",tenderDocRouter);
 app.use ("/workorderdocument",workOrderDocRouter);
 app.use("/penalty",penaltyRouter);
-app.use("/rateanalysis",rateanalysisrouter)
+app.use("/rateanalysis",rateanalysisrouter);
+app.use('/detailedestimate',detailedestrouter);
 
 
 app.get('/',(req,res)=>{
