@@ -80,6 +80,9 @@ static async bulkInsertCustomHeadingsFromCsv(tender_id, nametype, csvRows) {
         quantity: Number(row.quantity) || 0,
         rate: Number(row.rate) || 0,
         amount: Number(row.amount) || 0,
+        balance_quantity: Number(row.quantity) || 0,
+        balance_amount: Number(row.amount) || 0,
+        phase_breakdown: [] // Initialize empty phase breakdown
       });
     } else if (type === "detailed") {
       dataArray.push({
@@ -146,6 +149,7 @@ static async  getCustomHeadingsByTenderAndNameTypeService(tender_id, nametype) {
 
   return headingObj[key];
 }
+
 static async bulkInsert(tender_id, nametype, csvRows) {
   if (!tender_id) throw new Error("tender_id is required");
   if (!nametype) throw new Error("nametype is required");
@@ -221,6 +225,93 @@ static async  getHeadingsByTenderAndNameTypeService(tender_id, nametype) {
 
   return headingObj;
 }
+
+static async addPhaseBreakdownToAbstractService(tender_id, nametype, description, phase, quantity) {
+  if (!tender_id) throw new Error("tender_id is required");
+  if (!nametype) throw new Error("nametype is required");
+  if (!description) throw new Error("description is required");
+  if (!phase) throw new Error("phase is required");
+  if (typeof quantity !== "number" || quantity <= 0) throw new Error("Valid quantity required");
+
+  const match = nametype.match(/^(.*)(abstract)$/i);
+  if (!match) throw new Error("nametype must end with 'abstract'");
+
+  const baseHeading = match[1].toLowerCase();
+  const key = nametype.toLowerCase();
+
+  const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
+  if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
+  if (!detailedEstimate.detailed_estimate.length) throw new Error("No detailed estimates available");
+
+  const estimate = detailedEstimate.detailed_estimate[0];
+  if (!estimate.customheadings || !estimate.customheadings.length) throw new Error("No custom headings found");
+
+  const headingObj = estimate.customheadings.find(h => h.heading === baseHeading);
+  if (!headingObj || !headingObj[key]) throw new Error(`No data found for ${nametype}`);
+
+  // Find index of the abstract with matching description
+  const abstractIndex = headingObj[key].findIndex(item => item.description === description);
+  if (abstractIndex === -1) throw new Error("Abstract item with given description not found");
+
+  const abstractItem = headingObj[key][abstractIndex];
+  const rate = abstractItem.rate;
+  const totalQty = abstractItem.quantity;
+
+  if (!rate) throw new Error("Rate not defined in abstract item");
+
+  // Ensure phase_breakdown is an array
+  if (!Array.isArray(abstractItem.phase_breakdown)) abstractItem.phase_breakdown = [];
+
+  // Compute sum of all phase quantities except (if exists) the current phase's old value
+  let currentSum = abstractItem.phase_breakdown.reduce((acc, pb) =>
+    pb.phase !== phase ? acc + pb.quantity : acc, 0);
+
+  // If updating existing phase, allow replacement; otherwise, check for exceeding allocation
+  let phaseEntry = abstractItem.phase_breakdown.find(pb => pb.phase === phase);
+  if (phaseEntry) {
+    if (currentSum + quantity > totalQty) {
+      throw new Error(`Total allocated quantity (${currentSum + quantity}) exceeds available quantity (${totalQty})`);
+    }
+    phaseEntry.quantity = quantity;
+    phaseEntry.amount = quantity * rate;
+  } else {
+    if (currentSum + quantity > totalQty) {
+      throw new Error(`Total allocated quantity (${currentSum + quantity}) exceeds available quantity (${totalQty})`);
+    }
+    abstractItem.phase_breakdown.push({ phase, quantity, amount: quantity * rate });
+  }
+
+  // Recalculate phase sum and re-calculate balances
+  const finalSum = abstractItem.phase_breakdown.reduce((acc, pb) => acc + pb.quantity, 0);
+  const finalAmount = abstractItem.phase_breakdown.reduce((acc, pb) => acc + pb.amount, 0);
+
+  // Update balances
+  abstractItem.balance_quantity = Math.max(totalQty - finalSum, 0);
+  abstractItem.balance_amount = Math.max(abstractItem.amount - finalAmount, 0);
+
+  // Disallow further additions if fully allocated
+  if (abstractItem.balance_quantity === 0) {
+    // Optionally set a flag or customize behavior
+    // throw new Error("All quantity allocated; further allocation not allowed.");
+  }
+
+  // Mark modified
+  const estimateIndex = 0; // Assuming only the first detailed_estimate
+  const customHeadingsIndex = estimate.customheadings.findIndex(h => h.heading === baseHeading);
+  const path = `detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIndex}.${key}.${abstractIndex}.phase_breakdown`;
+  detailedEstimate.markModified(path);
+  detailedEstimate.markModified(`detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIndex}.${key}.${abstractIndex}.balance_quantity`);
+  detailedEstimate.markModified(`detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIndex}.${key}.${abstractIndex}.balance_amount`);
+
+  await detailedEstimate.save();
+
+  return {
+    phase_breakdown: abstractItem.phase_breakdown,
+    balance_quantity: abstractItem.balance_quantity,
+    balance_amount: abstractItem.balance_amount
+  };
+}
+
 
 
 }

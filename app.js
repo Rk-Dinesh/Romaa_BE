@@ -24,6 +24,7 @@ import workOrderDocRouter from './src/module/documents/workorderdocuments/workor
 import penaltyRouter from './src/module/tender/penalties/penalities.route.js';
 import rateanalysisrouter from './src/module/tender/rateAnalysis/rateanalysis.route.js';
 import detailedestrouter from './src/module/tender/detailedestimate/detailedestimate.route.js';
+import bidRouter from './src/module/tender/bid/bid.route.js';
 
 
 
@@ -59,6 +60,7 @@ app.use('/employee', employeeRoute);
 app.use('/vendor',vendorRoute);
 app.use('/tender', tenderrouter);
 app.use('/boq',boqrouter);
+app.use('/bid',bidRouter);
 app.use('/permittedvendor',permittedrouter);
 app.use ('/permittedcontractor',permittedcontractworkerrouter)
 app.use('/emd',emdrouter);

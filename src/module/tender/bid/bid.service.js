@@ -40,8 +40,8 @@ class BidService {
   }
 
   // Get Bid by ID
-  static async getBidById(bid_id) {
-    return await BidModel.findOne({ bid_id });
+  static async getBidById(tender_id) {
+    return await BidModel.findOne({ tender_id });
   }
 
   // Update Bid

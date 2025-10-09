@@ -17,7 +17,7 @@ const bidRouter = Router();
 
 bidRouter.post("/add", createBid);
 bidRouter.get("/all", getAllBids);
-bidRouter.get("/get/:bid_id", getBidById);
+bidRouter.get("/get", getBidById);
 bidRouter.put("/update/:bid_id", updateBid);
 bidRouter.delete("/delete/:bid_id", deleteBid);
 

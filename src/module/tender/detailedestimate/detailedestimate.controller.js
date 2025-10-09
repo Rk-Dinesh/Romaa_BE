@@ -140,3 +140,26 @@ export const getHeadingsByTenderAndNameTypeController = async (req, res, next) =
     });
   }
 };
+
+export const addPhaseBreakdownToAbstractController = async (req, res) => {
+  try {
+    const { tender_id, nametype } = req.query;
+    const { description, phase, quantity } = req.body;
+
+    const data = await detailedestimateService.addPhaseBreakdownToAbstractService(
+      tender_id, nametype, description, phase, quantity
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Phase breakdown updated successfully",
+      data,
+    });
+  } catch (error) {
+    return res.status(400).json({
+      status: false,
+      message: error.message,
+    });
+  }
+};
+

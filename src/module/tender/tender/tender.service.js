@@ -14,6 +14,7 @@ class TenderService {
     const tender = new TenderModel({
       tender_id,
       ...tenderData,
+      tender_project_name: "Tender No" + " " + tender_id,
     });
 
     const detailedEstimate = new DetailedEstimateModel({ tender_id });
@@ -255,7 +256,7 @@ class TenderService {
 
     const tenders = await TenderModel.find(query)
       .select(
-        "tender_id tender_name tender_location tender_start_date tender_value tender_status tender_type client_id client_name tender_contact_person tender_contact_phone tender_contact_email tender_duration tender_end_date tender_description workOrder_id workOrder_issued_date emd.emd_percentage emd.emd_validity penalty_final_value"
+        "tender_id tender_name tender_location tender_start_date tender_value tender_status tender_type client_id client_name tender_contact_person tender_contact_phone tender_contact_email tender_duration tender_end_date tender_description workOrder_id workOrder_issued_date emd.emd_percentage emd.emd_validity penalty_final_value tender_project_name"
       )
       .skip((page - 1) * limit)
       .limit(limit)

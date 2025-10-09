@@ -28,7 +28,7 @@ export const getAllWorkItems = async (req, res) => {
 export const getWorkItemById = async (req, res) => {
   try {
     const item = await WorkItemService.getWorkItemById(req.params.id);
-    if (!item) return res.status(404).json({ status: false, message: 'WorkItem not found' });
+   // if (!item) return res.status(404).json({ status: false, message: 'WorkItem not found' });
     res.status(200).json({ status: true, data: item });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -39,7 +39,7 @@ export const getWorkItemsByTenderId = async (req, res) => {
   try {
     const { tenderId } = req.query;
     const item = await WorkItemService.getWorkItemsByTenderId(tenderId);
-    if (!item) return res.status(404).json({ status: false, message: 'WorkItems not found for this tender_id' });
+   // if (!item) return res.status(404).json({ status: false, message: 'WorkItems not found for this tender_id' });
     res.status(200).json({ status: true, data: item });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });

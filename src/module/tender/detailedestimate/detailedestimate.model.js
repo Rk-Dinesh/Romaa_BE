@@ -1,12 +1,22 @@
 import mongoose from "mongoose";
 
+const WorkPhaseBreakdownSchema = new mongoose.Schema({
+    phase: { type: String, required: true }, // E.g., "Foundation", "Slab", "Walls"
+    quantity: { type: Number, required: true }, // Quantity allocated to this phase
+    amount: { type: Number, required: true }  // Cost for this phase (quantity * rate)
+}, { _id: false });
+
 // Abstract Schema
 const AbstractSchema = new mongoose.Schema({
     description: { type: String, required: true },
     unit: { type: String, default: "" },
     quantity: { type: Number, default: '' },
     rate: { type: Number, default: "" },
-    amount: { type: Number, default: "" }
+    amount: { type: Number, default: "" },
+    balance_quantity: { type: Number, default: 0 },
+    balance_amount: { type: Number, default: 0 },
+    phase_breakdown: { type: [WorkPhaseBreakdownSchema], default: [] },
+  
 }, { _id: false });
 
 // Detailed Schema

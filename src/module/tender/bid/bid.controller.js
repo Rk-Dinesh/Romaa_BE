@@ -27,7 +27,7 @@ export const getAllBids = async (req, res) => {
 
 export const getBidById = async (req, res) => {
   try {
-    const result = await BidService.getBidById(req.params.bid_id);
+    const result = await BidService.getBidById(req.query.tender_id);
     if (!result) return res.status(404).json({ status: false, message: "Bid not found" });
     res.status(200).json({ status: true, data: result });
   } catch (error) {
