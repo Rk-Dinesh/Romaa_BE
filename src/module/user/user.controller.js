@@ -11,6 +11,7 @@ export const register = async (req, res) => {
 
 export const getUserByEmailOrMobile = async (req, res) => {
   try {
+    const {email }= req.query
     const user = await UserService.getUserByEmailOrMobile(req.params.identifier);
     if (!user) return res.status(404).json({ status: false, message: "User not found" });
     res.status(200).json({ status: true, data: user });
