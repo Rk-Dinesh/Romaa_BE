@@ -39,3 +39,30 @@ export const uploadMultiFilesToS3 = async (files, bucketName) => {
   return uploadResults;
 };
 
+// Utility functions for date ranges
+export const getCurrentWeekRange = () => {
+  const curr = new Date();
+  const first = curr.getDate() - curr.getDay();
+  const last = first + 6;
+  return {
+    start: new Date(curr.setDate(first)),
+    end: new Date(curr.setDate(last)),
+  };
+}
+
+export const getCurrentMonthRange = ()=> {
+  const curr = new Date();
+  return {
+    start: new Date(curr.getFullYear(), curr.getMonth(), 1),
+    end: new Date(curr.getFullYear(), curr.getMonth() + 1, 0),
+  };
+}
+
+export const getCurrentYearRange = () => {
+  const curr = new Date();
+  return {
+    start: new Date(curr.getFullYear(), 0, 1),
+    end: new Date(curr.getFullYear(), 11, 31),
+  };
+}
+

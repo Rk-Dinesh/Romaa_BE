@@ -3,6 +3,7 @@ import csvParser from "csv-parser";
 import fs from "fs";
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { getCurrentMonthRange, getCurrentWeekRange, getCurrentYearRange } from "../../../../utils/helperfunction.js";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -40,3 +41,56 @@ export const uploadScheduleCSV = async (req, res, next) => {
         next(err);
     }
 };
+
+export const getSchedules = async (req, res, next) => {
+  try {
+    const {
+      tenderId,
+      startDate,
+      endDate,
+      particularDate,
+      currentWeek,
+      currentMonth,
+      currentYear,
+    } = req.query;
+
+    if (!tenderId)
+      return res.status(400).json({ error: "tenderId query param is required" });
+
+    let dateFilter = {};
+
+    if (startDate && endDate) {
+      dateFilter = {
+        $gte: new Date(startDate),
+        $lte: new Date(endDate),
+      };
+    } else if (particularDate) {
+      const d = new Date(particularDate);
+      dateFilter = d;
+    } else if (currentWeek === "true") {
+      const { start, end } = getCurrentWeekRange();
+      dateFilter = { $gte: start, $lte: end };
+    } else if (currentMonth === "true") {
+      const { start, end } = getCurrentMonthRange();
+      dateFilter = { $gte: start, $lte: end };
+    } else if (currentYear === "true") {
+      const { start, end } = getCurrentYearRange();
+      dateFilter = { $gte: start, $lte: end };
+    }
+
+    const data = await ScheduleService.findSchedulesFiltered(
+      tenderId,
+      dateFilter,
+      particularDate
+    );
+    res.json({
+      status: true,
+      message: "Schedules fetched successfully",
+      data,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+
