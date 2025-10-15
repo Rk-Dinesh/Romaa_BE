@@ -3,7 +3,8 @@ import csvParser from "csv-parser";
 import fs from "fs";
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { getCurrentMonthRange, getCurrentWeekRange, getCurrentYearRange } from "../../../../utils/helperfunction.js";
+import { getWeekRangeOfMonth, monthsMap } from "../../../../utils/helperfunction.js";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -42,47 +43,56 @@ export const uploadScheduleCSV = async (req, res, next) => {
     }
 };
 
+export const updateScheduleReportDate = async (req, res, next) => {
+  try {
+    const { tenderId, reportDate } = req.body;
+    if (!tenderId || !reportDate) {
+      return res.status(400).json({ error: "tenderId and reportDate are required" });
+    }
+    const schedule = await ScheduleService.updateReportDateAndDaysRemaining(tenderId, reportDate);
+    if (!schedule) {
+      return res.status(404).json({ error: "Schedule not found" });
+    }
+    res.json({
+      status: true,
+      message: "Report date updated and daysRemaining recalculated successfully",
+      data: schedule,
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
 export const getSchedules = async (req, res, next) => {
   try {
-    const {
-      tenderId,
-      startDate,
-      endDate,
-      particularDate,
-      currentWeek,
-      currentMonth,
-      currentYear,
-    } = req.query;
+    const { tenderId, week, month, year, particularDate, startDate, endDate } = req.query;
 
     if (!tenderId)
       return res.status(400).json({ error: "tenderId query param is required" });
 
-    let dateFilter = {};
+    let dateFilter = null;
+    const selectedYear = year ? parseInt(year) : new Date().getFullYear();
 
-    if (startDate && endDate) {
-      dateFilter = {
-        $gte: new Date(startDate),
-        $lte: new Date(endDate),
-      };
+    if (week && month && year) {
+      const monthIdx = monthsMap[month.toLowerCase()];
+      const { start, end } = getWeekRangeOfMonth(week, selectedYear, monthIdx);
+      dateFilter = { $gte: start, $lte: end };
+    } else if (month && year) {
+      const monthIdx = monthsMap[month.toLowerCase()];
+      const start = new Date(selectedYear, monthIdx, 1);
+      const end = new Date(selectedYear, monthIdx + 1, 0);
+      dateFilter = { $gte: start, $lte: end };
+    } else if (startDate && endDate) {
+      dateFilter = { $gte: new Date(startDate), $lte: new Date(endDate) };
     } else if (particularDate) {
-      const d = new Date(particularDate);
-      dateFilter = d;
-    } else if (currentWeek === "true") {
-      const { start, end } = getCurrentWeekRange();
-      dateFilter = { $gte: start, $lte: end };
-    } else if (currentMonth === "true") {
-      const { start, end } = getCurrentMonthRange();
-      dateFilter = { $gte: start, $lte: end };
-    } else if (currentYear === "true") {
-      const { start, end } = getCurrentYearRange();
+      dateFilter = new Date(particularDate);
+    } else if (year) {
+      const start = new Date(selectedYear, 0, 1);
+      const end = new Date(selectedYear, 11, 31);
       dateFilter = { $gte: start, $lte: end };
     }
 
-    const data = await ScheduleService.findSchedulesFiltered(
-      tenderId,
-      dateFilter,
-      particularDate
-    );
+    const data = await ScheduleService.findSchedulesFiltered(tenderId, dateFilter, particularDate);
     res.json({
       status: true,
       message: "Schedules fetched successfully",
@@ -92,5 +102,3 @@ export const getSchedules = async (req, res, next) => {
     next(err);
   }
 };
-
-
