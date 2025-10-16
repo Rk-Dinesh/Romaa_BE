@@ -93,7 +93,60 @@ class ScheduleService {
     return schedule.toObject();
   }
 
-   static async findSchedulesFiltered(tenderId, dateFilter, particularDate) {
+
+
+static async findSchedulesFiltered1(tenderId, dateFilter, particularDate) {
+  const schedules = await ScheduleModel.find({ tenderId }).lean();
+
+  const filterSchedule = (schedule) => {
+    schedule.majorHeadings = schedule.majorHeadings
+      .map((major) => {
+        major.subheadings = major.subheadings
+          .map((sub) => {
+            sub.subworks = sub.subworks
+              .map((subwork) => {
+                // Filter workDetails
+                if (Array.isArray(subwork.workDetails)) {
+                  subwork.workDetails = subwork.workDetails.filter((wd) => {
+                    if (!wd.startDate || !wd.endDate) return false;
+                    const wdStart = new Date(wd.startDate);
+                    const wdEnd = new Date(wd.endDate);
+
+                    if (particularDate) {
+                      const pd = new Date(particularDate);
+                      return pd >= wdStart && pd <= wdEnd;
+                    } else if (dateFilter && dateFilter.$gte && dateFilter.$lte) {
+                      return wdStart <= dateFilter.$lte && wdEnd >= dateFilter.$gte;
+                    } else if (dateFilter instanceof Date) {
+                      return dateFilter >= wdStart && dateFilter <= wdEnd;
+                    }
+                    return true;
+                  });
+                }
+
+                // If workDetails is non-empty, or if subwork has startDate & endDate, include subwork
+                if ((subwork.workDetails && subwork.workDetails.length > 0) ||
+                  (subwork.startDate && subwork.endDate)) {
+                  return subwork;
+                }
+                return null;
+              })
+              .filter(sw => sw);
+            // Only subheadings that have subworks after pruning
+            return sub.subworks.length > 0 ? sub : null;
+          })
+          .filter(s => s);
+        // Only major headings that have subheadings after pruning
+        return major.subheadings.length > 0 ? major : null;
+      })
+      .filter(m => m);
+    return schedule;
+  };
+
+  return schedules.map(filterSchedule).filter(sc => sc.majorHeadings.length > 0);
+} // worstcase scenario 
+
+static async findSchedulesFiltered(tenderId, dateFilter, particularDate) {
     const schedules = await ScheduleModel.find({ tenderId }).lean();
 
     const filterSchedule = (schedule) => {
@@ -103,9 +156,8 @@ class ScheduleService {
             .map((sub) => {
               sub.subworks = sub.subworks
                 .map((subwork) => {
-                  subwork.workDetails = subwork.workDetails.filter((wd) => {
+                  subwork.workDetails = (subwork.workDetails || []).filter((wd) => {
                     if (!wd.startDate || !wd.endDate) return false;
-
                     const wdStart = new Date(wd.startDate);
                     const wdEnd = new Date(wd.endDate);
 
@@ -113,14 +165,34 @@ class ScheduleService {
                       const pd = new Date(particularDate);
                       return pd >= wdStart && pd <= wdEnd;
                     } else if (dateFilter && dateFilter.$gte && dateFilter.$lte) {
-                      // Correct overlap check
                       return wdStart <= dateFilter.$lte && wdEnd >= dateFilter.$gte;
                     } else if (dateFilter instanceof Date) {
                       return dateFilter >= wdStart && dateFilter <= wdEnd;
                     }
                     return true;
                   });
-                  return subwork.workDetails.length > 0 ? subwork : null;
+
+                  // Include subwork if it has workDetails OR the subwork itself falls in date range
+                  if (
+                    (subwork.workDetails && subwork.workDetails.length > 0) ||
+                    (subwork.startDate && subwork.endDate && (() => {
+                      const swStart = new Date(subwork.startDate);
+                      const swEnd = new Date(subwork.endDate);
+
+                      if (particularDate) {
+                        const pd = new Date(particularDate);
+                        return pd >= swStart && pd <= swEnd;
+                      } else if (dateFilter && dateFilter.$gte && dateFilter.$lte) {
+                        return swStart <= dateFilter.$lte && swEnd >= dateFilter.$gte;
+                      } else if (dateFilter instanceof Date) {
+                        return dateFilter >= swStart && dateFilter <= swEnd;
+                      }
+                      return false;
+                    })())
+                  ) {
+                    return subwork;
+                  }
+                  return null;
                 })
                 .filter(sw => sw);
               return sub.subworks.length > 0 ? sub : null;
@@ -134,6 +206,7 @@ class ScheduleService {
 
     return schedules.map(filterSchedule).filter(sc => sc.majorHeadings.length > 0);
   }
+
 }
 
 export default ScheduleService;

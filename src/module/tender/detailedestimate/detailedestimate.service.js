@@ -385,12 +385,5 @@ static async addPhaseBreakdownToDetailedService(tender_id, nametype, description
     balance_quantity: detailedItem.balance_quantity
   };
 }
-
-
 }
-
 export default detailedestimateService;
-
-
-
-
