@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { addPhaseBreakdownToAbstractController, bulkInsertCustomHeadingsController, bulkInsertHeadingsController, detailedEstimateCustomHeading, extractHeadingInpairs, getCustomHeadingsByTenderAndNameTypeController, getHeadingsByTenderAndNameTypeController } from "./detailedestimate.controller.js";
+import { addPhaseBreakdownToAbstractController, addPhaseBreakdownToDetailedController, bulkInsertCustomHeadingsController, bulkInsertHeadingsController, detailedEstimateCustomHeading, extractHeadingInpairs, getCustomHeadingsByTenderAndNameTypeController, getHeadingsByTenderAndNameTypeController } from "./detailedestimate.controller.js";
 
 const upload = multer({ dest: "uploads/" });
 
@@ -14,6 +14,8 @@ detailedestrouter.post("/bulkinsertcustomhead", upload.single("file"), bulkInser
 detailedestrouter.post("/bulkinserthead", upload.single("file"), bulkInsertHeadingsController);
 
 detailedestrouter.post("/addphasebreakdown", addPhaseBreakdownToAbstractController);
+detailedestrouter.post("/addphasebreakdowndetailed", addPhaseBreakdownToDetailedController);
+
 
 
 

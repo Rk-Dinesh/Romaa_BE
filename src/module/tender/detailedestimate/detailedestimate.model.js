@@ -26,7 +26,9 @@ const DetailedSchema = new mongoose.Schema({
     length: { type: Number, default: "" },
     breath: { type: Number, default: "" },
     depth: { type: Number, default: "" },
-    contents: { type: Number, default: "" }
+    contents: { type: Number, default: "" },
+    balance_quantity: { type: Number, default: 0 },
+    phase_breakdown: { type: [WorkPhaseBreakdownSchema], default: [] },
 }, { _id: false });
 
 // Dynamic Heading Schema (for custom heads like "road", "bridge", etc.)

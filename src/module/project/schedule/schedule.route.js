@@ -1,19 +1,53 @@
 import { Router } from "express";
 import multer from "multer";
-import { getSchedules, updateScheduleReportDate, uploadScheduleCSV } from "./schedule.controller.js";
-
+import {
+  getSchedules,
+  updateScheduleReportDate,
+  uploadScheduleCSV,
+} from "./schedule.controller.js";
 
 const schedulerouter = Router();
 const upload = multer({ dest: "uploads/" });
 
-schedulerouter.post("/uploadcsv", upload.single("file"),uploadScheduleCSV); 
+schedulerouter.post("/uploadcsv", upload.single("file"), uploadScheduleCSV);
+// use formData to send the following body & also the file (sample file in utils schedule.csv)
+// [
+//   {
+//     key: "workOrderDate",
+//     value: "2025-10-07",
+//   },
+//   {
+//     key: "aggDate",
+//     value: "2025-10-07",
+//   },
+//   {
+//     key: "agreementValue",
+//     value: "230242327",
+//   },
+//   {
+//     key: "projectEndDate",
+//     value: "2026-07-10",
+//   },
+//   {
+//     key: "plannedCompletionDate",
+//     value: "2026-05-15",
+//   },
+//   {
+//     key: "reportDate",
+//     value: "2025-09-25",
+//   },
+//   {
+//     key: "projectName",
+//     value: "Checkdam",
+//   },
+//   {
+//     key: "tenderId",
+//     value: "TENDER001",
+//   },
+//   { key: "notes", value: "w"},
+// ];
+
 schedulerouter.get("/getschedule", getSchedules);
-schedulerouter.put("/updatereportdate", updateScheduleReportDate);
-
-
-export default schedulerouter;
-
-
 // Specific week and month in a year:
 // /schedule/getschedule?tenderId=XXX&week=firstWeek&month=jan&year=2025
 
@@ -28,3 +62,12 @@ export default schedulerouter;
 
 // Custom date range:
 // /schedule/getschedule?tenderId=XXX&startDate=2025-10-01&endDate=2025-10-21
+
+schedulerouter.put("/updatereportdate", updateScheduleReportDate);
+// req.body
+// {
+//   "tenderId": "TENDER001",
+//   "reportDate": "2025-10-28"
+// }
+
+export default schedulerouter;

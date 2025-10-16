@@ -92,6 +92,8 @@ static async bulkInsertCustomHeadingsFromCsv(tender_id, nametype, csvRows) {
         breath: Number(row.breath) || 0,
         depth: Number(row.depth) || 0,
         contents: Number(row.contents) || 0,
+        balance_quantity: Number(row.contents) || 0,
+        phase_breakdown: [] // Initialize empty phase breakdown
       });
     }
   }
@@ -312,6 +314,77 @@ static async addPhaseBreakdownToAbstractService(tender_id, nametype, description
   };
 }
 
+static async addPhaseBreakdownToDetailedService(tender_id, nametype, description, phase, quantity) {
+  if (!tender_id) throw new Error("tender_id is required");
+  if (!nametype) throw new Error("nametype is required");
+  if (!description) throw new Error("description is required");
+  if (!phase) throw new Error("phase is required");
+  if (typeof quantity !== "number" || quantity <= 0) throw new Error("Valid quantity required");
+
+  const match = nametype.match(/^(.*)(detailed)$/i);
+  if (!match) throw new Error("nametype must end with 'detailed'");
+
+  const baseHeading = match[1].toLowerCase();
+  const key = nametype.toLowerCase();
+
+  const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
+  if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
+  if (!detailedEstimate.detailed_estimate.length) throw new Error("No detailed estimates available");
+
+  const estimate = detailedEstimate.detailed_estimate[0];
+  if (!estimate.customheadings || !estimate.customheadings.length) throw new Error("No custom headings found");
+
+  const headingObj = estimate.customheadings.find(h => h.heading === baseHeading);
+  if (!headingObj || !headingObj[key]) throw new Error(`No data found for ${nametype}`);
+
+  // Find index of the detailed with matching description
+  const detailedIndex = headingObj[key].findIndex(item => item.description === description);
+  if (detailedIndex === -1) throw new Error("Detailed item with given description not found");
+
+  const detailedItem = headingObj[key][detailedIndex];
+  const totalContents = detailedItem.contents;
+
+  // Ensure phase_breakdown exists
+  if (!Array.isArray(detailedItem.phase_breakdown)) detailedItem.phase_breakdown = [];
+
+  // Sum existing phase quantities except current phase for checking limit
+  let currentSum = detailedItem.phase_breakdown.reduce(
+    (acc, pb) => pb.phase !== phase ? acc + pb.quantity : acc,
+    0
+  );
+
+  let phaseEntry = detailedItem.phase_breakdown.find(pb => pb.phase === phase);
+
+  if (phaseEntry) {
+    if (currentSum + quantity > totalContents) {
+      throw new Error(`Total allocated content (${currentSum + quantity}) exceeds available content (${totalContents})`);
+    }
+    phaseEntry.quantity = quantity;
+  } else {
+    if (currentSum + quantity > totalContents) {
+      throw new Error(`Total allocated content (${currentSum + quantity}) exceeds available content (${totalContents})`);
+    }
+    detailedItem.phase_breakdown.push({ phase, quantity });
+  }
+
+  // Recalculate sum and balance
+  const finalSum = detailedItem.phase_breakdown.reduce((acc, pb) => acc + pb.quantity, 0);
+  detailedItem.balance_quantity = Math.max(totalContents - finalSum, 0);
+
+  // Mark as modified for mongoose to pick nested array changes
+  const estimateIndex = 0; // assuming first detailed_estimate
+  const customHeadingsIdx = estimate.customheadings.findIndex(h => h.heading === baseHeading);
+  const path = `detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIdx}.${key}.${detailedIndex}.phase_breakdown`;
+  detailedEstimate.markModified(path);
+  detailedEstimate.markModified(`detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIdx}.${key}.${detailedIndex}.balance_quantity`);
+
+  await detailedEstimate.save();
+
+  return {
+    phase_breakdown: detailedItem.phase_breakdown,
+    balance_quantity: detailedItem.balance_quantity
+  };
+}
 
 
 }
