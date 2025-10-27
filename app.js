@@ -37,10 +37,17 @@ const app = express();
 connectDB();
 
 //middleware
+//middleware
 app.use(cookieParser());
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",          // Allow all origins
+    methods: "*",         // Allow all methods (GET, POST, PUT, DELETE, etc.)
+    allowedHeaders: "*",  // Allow all headers
+  })
+);
 
  //Add Morgan Middleware for Logging
 app.use(
