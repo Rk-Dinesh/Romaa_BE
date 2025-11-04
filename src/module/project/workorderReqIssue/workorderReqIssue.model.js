@@ -1,9 +1,9 @@
-import mongoose from "mongoose";
+import mongoose, { Schema } from "mongoose";
 
 const WorkOrderRequestSchema = new mongoose.Schema(
   {
     requestId: { type: String, required: true, unique: true },
-    projectId: { type: Schema.Types.ObjectId, ref: 'Project', required: true },
+    projectId: { type: String, required: true },
     title: { type: String, required: true },
     description: { type: String, required: true },
     siteDetails: {

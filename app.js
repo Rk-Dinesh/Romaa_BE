@@ -26,6 +26,7 @@ import rateanalysisrouter from './src/module/tender/rateAnalysis/rateanalysis.ro
 import detailedestrouter from './src/module/tender/detailedestimate/detailedestimate.route.js';
 import bidRouter from './src/module/tender/bid/bid.route.js';
 import schedulerouter from './src/module/project/schedule/schedule.route.js';
+import workOrderRequestrouter from './src/module/project/workorderReqIssue/workorderReqIssue.route.js';
 
 
 
@@ -80,6 +81,7 @@ app.use("/penalty",penaltyRouter);
 app.use("/rateanalysis",rateanalysisrouter);
 app.use('/detailedestimate',detailedestrouter);
 app.use('/schedule',schedulerouter);
+app.use('/workorderrequest',workOrderRequestrouter);
 
 
 app.get('/',(req,res)=>{
