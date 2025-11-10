@@ -2,7 +2,7 @@ import mongoose, { Schema } from "mongoose";
 
 const WorkOrderRequestSchema = new mongoose.Schema(
   {
-    requestId: { type: String, required: true, unique: true },
+    requestId: { type: String, required: true, unique: true }, 
     projectId: { type: String, required: true },
     title: { type: String, required: true },
     description: { type: String, required: true },
@@ -24,7 +24,7 @@ const WorkOrderRequestSchema = new mongoose.Schema(
       },
     ],
 
-    // Vendor quotations section with custom quotation ID
+    // Vendor quotations section with custom quotation ID // vendorId default , delivery period,
     vendorQuotations: [
       new mongoose.Schema(
         {
@@ -36,9 +36,10 @@ const WorkOrderRequestSchema = new mongoose.Schema(
             },
             unique: false,
           },
-          vendorId: { type: Schema.Types.ObjectId, ref: 'Vendor' },
+          vendorId: { type: Schema.Types.ObjectId, ref: 'Vendor' }, 
           vendorName: String,
           contact: String,
+          address:String,
           quotationDate: { type: Date, default: Date.now },
           quoteItems: [
             {
