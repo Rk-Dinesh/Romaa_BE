@@ -2,7 +2,7 @@ import mongoose, { Schema } from "mongoose";
 
 const WorkOrderRequestSchema = new mongoose.Schema(
   {
-    requestId: { type: String, required: true, unique: true }, 
+    requestId: { type: String, required: true, unique: true },
     projectId: { type: String, required: true },
     title: { type: String, required: true },
     description: { type: String, required: true },
@@ -11,7 +11,7 @@ const WorkOrderRequestSchema = new mongoose.Schema(
       location: String,
       siteIncharge: String,
     },
-    createdBy: { type: Schema.Types.ObjectId, ref: 'User' },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User" },
     requestDate: { type: Date, default: Date.now },
     requiredByDate: Date,
 
@@ -32,18 +32,22 @@ const WorkOrderRequestSchema = new mongoose.Schema(
             type: String,
             default: function () {
               // Generate a short readable quotation code (for example: QT-<5 random chars>)
-              return `QT-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+              return `QT-${Math.random()
+                .toString(36)
+                .substring(2, 7)
+                .toUpperCase()}`;
             },
             unique: false,
           },
-          vendorId: { type: Schema.Types.ObjectId, ref: 'Vendor' }, 
+          vendorId: String,
           vendorName: String,
           contact: String,
-          address:String,
+          address: String,
           quotationDate: { type: Date, default: Date.now },
           quoteItems: [
             {
               materialName: String,
+              unit: String,
               quotedUnitRate: Number,
               quantity: Number,
               totalAmount: Number,
@@ -55,8 +59,8 @@ const WorkOrderRequestSchema = new mongoose.Schema(
           remarks: String,
           approvalStatus: {
             type: String,
-            enum: ['Pending', 'Approved', 'Rejected'],
-            default: 'Pending',
+            enum: ["Pending", "Approved", "Rejected"],
+            default: "Pending",
           },
         },
         { _id: true }
@@ -65,7 +69,7 @@ const WorkOrderRequestSchema = new mongoose.Schema(
 
     // Selected vendor with reference to approved quotation
     selectedVendor: {
-      vendorId: { type: Schema.Types.ObjectId, ref: 'Vendor' },
+      vendorId: String,
       vendorName: String,
       approvedQuotationId: { type: Schema.Types.ObjectId },
     },
@@ -80,8 +84,14 @@ const WorkOrderRequestSchema = new mongoose.Schema(
       expectedCompletionDate: Date,
       progressStatus: {
         type: String,
-        enum: ['Not Started', 'In Progress', 'Completed', 'On Hold', 'Cancelled'],
-        default: 'Not Started',
+        enum: [
+          "Not Started",
+          "In Progress",
+          "Completed",
+          "On Hold",
+          "Cancelled",
+        ],
+        default: "Not Started",
       },
       remarks: String,
     },
@@ -90,19 +100,22 @@ const WorkOrderRequestSchema = new mongoose.Schema(
     status: {
       type: String,
       enum: [
-        'Request Raised',
-        'Quotation Requested',
-        'Quotation Received',
-        'Vendor Approved',
-        'Work Order Issued',
-        'Completed',
+        "Request Raised",
+        "Quotation Requested",
+        "Quotation Received",
+        "Vendor Approved",
+        "Work Order Issued",
+        "Completed",
       ],
-      default: 'Request Raised',
+      default: "Request Raised",
     },
   },
   { timestamps: true }
 );
 
-const WorkOrderRequestModel = mongoose.model("WorkOrderRequest", WorkOrderRequestSchema);
+const WorkOrderRequestModel = mongoose.model(
+  "WorkOrderRequest",
+  WorkOrderRequestSchema
+);
 
 export default WorkOrderRequestModel;

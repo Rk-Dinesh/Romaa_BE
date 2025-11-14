@@ -1,12 +1,114 @@
 import MaterialModel from "./material.model.js";
 
-
 class materialService {
   // Create new material
   static async createMaterial(data) {
     const material = new MaterialModel(data);
     return await material.save();
   }
+
+  static async addMaterialreceived(data) {
+    const { tender_id, item_description, received_quantity, ordered_date } =
+      data;
+
+    // Find tender document first
+    const existingTender = await MaterialModel.findOne({ tender_id });
+
+    if (!existingTender) {
+      throw new Error(`Tender with ID ${tender_id} not found`);
+    }
+
+    // Find the item inside the tender’s items array
+    const itemIndex = existingTender.items.findIndex(
+      (item) => item.item_description === item_description
+    );
+
+    if (itemIndex === -1) {
+      throw new Error(
+        `Item '${item_description}' not found under Tender ${tender_id}`
+      );
+    }
+
+    const item = existingTender.items[itemIndex];
+
+    // Calculate updated values
+    const newReceived =
+      (item.received_quantity || 0) + Number(received_quantity || 0);
+    const newPending = Math.max((item.quantity || 0) - newReceived, 0);
+
+    // Update values
+    item.received_quantity = newReceived;
+    item.pending_quantity = newPending;
+    item.ordered_date = ordered_date;
+
+    // Save tender document
+    await existingTender.save();
+
+    return {
+      message: "Material item updated successfully",
+      updatedItem: item,
+    };
+  }
+static async addMaterialissued(data) {
+  const {
+    tender_id,
+    item_description,
+    site_name,
+    work_location,
+    issued_quantity,
+    priority_level,
+    requested_by,
+  } = data;
+
+  // Find Tender
+  const existingTender = await MaterialModel.findOne({ tender_id });
+  if (!existingTender) throw new Error(`Tender ${tender_id} not found`);
+
+  // Find item
+  const item = existingTender.items.find(
+    (i) => i.item_description === item_description
+  );
+  if (!item) throw new Error(`Material '${item_description}' not found`);
+
+  // Calculate balance
+  const totalIssued = item.issued_details?.reduce(
+    (sum, i) => sum + i.issued_quantity,
+    0
+  ) || 0;
+
+  const balance = item.received_quantity - totalIssued;
+
+  // Prevent exceeding limit
+  if (issued_quantity > balance) {
+    throw new Error(
+      `Cannot issue more than balance. Balance available: ${balance}`
+    );
+  }
+
+  // 🔥 Push new entry instead of overriding
+  item.issued.push({
+    site_name,
+    work_location,
+    issued_quantity,
+    priority_level,
+    requested_by,
+    issued_date: new Date(),
+  });
+
+  // Save document
+  await existingTender.save();
+
+  return {
+    message: "Material issued successfully",
+    issued: item.issued,
+    balance: balance - issued_quantity,
+  };
+}
+
+
+
+
+
 
   static async bulkInsert(csvRows, createdByUser, tender_id) {
     if (!Array.isArray(csvRows) || csvRows.length === 0)
@@ -57,16 +159,13 @@ class materialService {
       .select("items tender_id created_by_user")
       .lean();
 
-    if (!materials)
-      return { items: [], totalPages: 1 };
+    if (!materials) return { items: [], totalPages: 1 };
 
     const paginatedItems = materials.items.slice(skip, skip + limit);
     const totalPages = Math.ceil(materials.items.length / limit) || 1;
 
     return { items: paginatedItems, totalPages };
   }
-  
-
-};
+}
 
 export default materialService;

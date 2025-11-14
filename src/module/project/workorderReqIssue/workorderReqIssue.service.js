@@ -5,7 +5,16 @@ import WorkOrderRequestModel from "./workorderReqIssue.model.js";
 class WorkOrderRequestService {
 
  static async create(workOrderData) {
-    const workOrderRequest = new WorkOrderRequestModel(workOrderData);
+    const idname = "WorkOrderRequest";
+    const idcode = "WO";
+    await IdcodeServices.addIdCode(idname, idcode);
+    const requestId = await IdcodeServices.generateCode(idname);
+
+    const workOrderRequest = new WorkOrderRequestModel({
+      requestId,
+      ...workOrderData,
+    });
+
     return await workOrderRequest.save(); // Returns the created document
   }
 
@@ -14,10 +23,11 @@ class WorkOrderRequestService {
     return await WorkOrderRequestModel.findOne({ projectId, requestId });
   }
 
-   static async getAllByProjectIdWithFields(projectId) {
+  static async getAllByProjectIdWithFields(projectId) {
     // Only selected fields: title, description, vendorQuotations
-    return await WorkOrderRequestModel.find({ projectId })
-      .select('title description vendorQuotations'); // field selection
+    return await WorkOrderRequestModel.find({ projectId }).select(
+      "title description vendorQuotations requestId"
+    ); // field selection
   }
 
   static async getAllByProjectIdSelectedVendor(projectId) {
@@ -145,6 +155,7 @@ class WorkOrderRequestService {
       };
     });
   }
+
 
 
 }

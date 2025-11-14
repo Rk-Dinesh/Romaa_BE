@@ -9,6 +9,19 @@ const MaterialItemSchema = new mongoose.Schema(
     rate_tax: Number,
     total_amount: Number,
     total_material: Number,
+    issued: [
+      {
+        site_name: { type: String, default: "" },
+        issued_quantity: { type: Number, default: 0 },
+        work_location: { type: String, default: "" },
+        priority_level: { type: String, default: "" },
+        requested_by: { type: String, default: "" },
+      },
+    ],
+
+    received_quantity: { type: Number, default: 0 },
+    pending_quantity: { type: Number, default: 0 },
+    ordered_date: Date,
   },
   { _id: false }
 );
