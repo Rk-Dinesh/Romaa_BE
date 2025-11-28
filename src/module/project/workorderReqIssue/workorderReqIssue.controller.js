@@ -7,6 +7,7 @@ export const createWorkOrderRequest = async (req, res) => {
     res.status(201).json({ message: 'WorkOrderRequest created successfully', data: result });
   } catch (error) {
     res.status(400).json({ message: 'Error creating WorkOrderRequest', error: error.message });
+    console.log(error.message);
   }
 };
 

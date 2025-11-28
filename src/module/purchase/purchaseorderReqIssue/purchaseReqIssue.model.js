@@ -2,7 +2,7 @@ import mongoose, { Schema } from "mongoose";
 
 const PurchaseRequestSchema = new mongoose.Schema(
   {
-    requestId: { type: String, required: true, unique: true },
+    requestId: { type: String},
     projectId: { type: String, required: true },
     title: { type: String, required: true },
     description: { type: String, required: true },
@@ -75,8 +75,7 @@ const PurchaseRequestSchema = new mongoose.Schema(
     },
 
     //  details
-    purchaseRequest: {
-      purchaseRequest: { type: String, unique: true },
+    purchaseOrder: {
       issueDate: Date,
       approvedAmount: Number,
       termsAndConditions: String,

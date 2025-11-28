@@ -2,7 +2,7 @@ import mongoose, { Schema } from "mongoose";
 
 const WorkOrderRequestSchema = new mongoose.Schema(
   {
-    requestId: { type: String, required: true, unique: true },
+    requestId: { type: String, required: true },
     projectId: { type: String, required: true },
     title: { type: String, required: true },
     description: { type: String, required: true },
@@ -76,7 +76,6 @@ const WorkOrderRequestSchema = new mongoose.Schema(
 
     // Work order details
     workOrder: {
-      workOrderNumber: { type: String, unique: true },
       issueDate: Date,
       approvedAmount: Number,
       termsAndConditions: String,

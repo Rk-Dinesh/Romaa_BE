@@ -26,11 +26,11 @@ class PurchaseRequestService {
   }
 
   static async getAllByProjectIdWithFields(projectId) {
-    // Only selected fields: title, description, vendorQuotations
-    return await PurchaseRequestModel.find({ projectId }).select(
-      "title description vendorQuotations requestId"
-    ); // field selection
-  }
+    // Only selected fields: requestId, title, description, vendorQuotations, siteDetails, materialsRequired, status, requestDate
+  return await PurchaseRequestModel.find({ projectId }).select(
+    "requestId projectId title description vendorQuotations siteDetails siteDetails  materialsRequired status requestDate requestedByDate "
+  ); // field selection
+}
 
   static async getAllByProjectIdSelectedVendor(projectId) {
     // Only selected fields: title, description, vendorQuotations
