@@ -158,7 +158,20 @@ class PurchaseRequestService {
     });
   }
 
+static async updateStatus(requestId, status) {
+    const updated = await PurchaseRequestModel.findOneAndUpdate(
+      { requestId },
+      { status },
+      { new: true }
+    );
+    return updated;
+  }
 
+  // Get all requests with status "Quotation Requested"
+  static async getQuotationRequested() {
+    const requests = await PurchaseRequestModel.find({ status: "Quotation Requested" });
+    return requests;
+  }
 
 }
 

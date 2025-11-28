@@ -116,3 +116,32 @@ export const getAllByProjectIdSelectedVendorWithQuotation = async (req, res) => 
     res.status(400).json({ message: error.message });
   }
 };
+
+export const updateStatus = async (req, res) => {
+  const { requestId } = req.params;
+  const { status } = req.body;
+
+  try {
+    const updated = await PurchaseRequestService.updateStatus(
+      requestId,
+      status
+    );
+    if (!updated) return res.status(404).json({ message: "Request not found" });
+
+    res.json({ message: "Status updated successfully", data: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// GET /getQuotationRequested
+export const getQuotationRequested = async (req, res) => {
+  try {
+    const requests = await PurchaseRequestService.getQuotationRequested();
+    res.json({ data: requests });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
