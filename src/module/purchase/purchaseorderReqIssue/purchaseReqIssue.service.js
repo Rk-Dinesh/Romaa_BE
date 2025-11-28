@@ -63,8 +63,8 @@ class PurchaseRequestService {
     if (!isPermitted) throw new Error('Not a permitted vendor');
 
     // 2. Check vendor is registered in Vendor collection (for auto-fill details)
-    const vendor = await VendorModel.findById(vendorId);
-    if (!vendor) throw new Error('Vendor not registered');
+   const vendor = await VendorModel.findOne({ vendor_id: vendorId });
+    if (!vendor) throw new Error("Vendor not registered");
 
     // 3. Compute totalQuotedValue from quoteItems
     const totalQuotedValue = Array.isArray(quoteData.quoteItems)

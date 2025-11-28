@@ -4,8 +4,7 @@ import VendorPermittedModel from "../../tender/vendorpermitted/vendorpermitted.m
 import WorkOrderRequestModel from "./workorderReqIssue.model.js";
 
 class WorkOrderRequestService {
-
- static async create(workOrderData) {
+  static async create(workOrderData) {
     const idname = "WorkOrderRequest";
     const idcode = "WO";
     await IdcodeServices.addIdCode(idname, idcode);
@@ -19,7 +18,7 @@ class WorkOrderRequestService {
     return await workOrderRequest.save(); // Returns the created document
   }
 
-   static async getByProjectAndRequestId(projectId, requestId) {
+  static async getByProjectAndRequestId(projectId, requestId) {
     // Use findOne for a specific match
     return await WorkOrderRequestModel.findOne({ projectId, requestId });
   }
@@ -33,8 +32,9 @@ class WorkOrderRequestService {
 
   static async getAllByProjectIdSelectedVendor(projectId) {
     // Only selected fields: title, description, vendorQuotations
-    return await WorkOrderRequestModel.find({ projectId })
-      .select('title description selectedVendor'); // field selection
+    return await WorkOrderRequestModel.find({ projectId }).select(
+      "title description selectedVendor"
+    ); // field selection
   }
 
   // You can add more service methods like:
@@ -43,31 +43,43 @@ class WorkOrderRequestService {
   }
 
   static async updateById(id, updateData) {
-    return await WorkOrderRequestModel.findByIdAndUpdate(id, updateData, { new: true });
+    return await WorkOrderRequestModel.findByIdAndUpdate(id, updateData, {
+      new: true,
+    });
   }
 
   static async deleteById(id) {
     return await WorkOrderRequestModel.findByIdAndDelete(id);
   }
 
-  static async addVendorQuotationWithTenderCheck({ workOrderRequestId, vendorId, quoteData, tenderId }) {
+  static async addVendorQuotationWithTenderCheck({
+    workOrderRequestId,
+    vendorId,
+    quoteData,
+    tenderId,
+  }) {
     // 1. Check vendor is permitted for tender
-    const permittedRecord = await VendorPermittedModel.findOne({ tender_id: tenderId });
-    if (!permittedRecord) throw new Error('TenderId not found');
+    const permittedRecord = await VendorPermittedModel.findOne({
+      tender_id: tenderId,
+    });
+    if (!permittedRecord) throw new Error("TenderId not found");
 
     // Vendor is permitted if found in permittedRecord.listOfPermittedVendors with a matching vendor_id
     const isPermitted = permittedRecord.listOfPermittedVendors.some(
-      v => v.vendor_id === vendorId
+      (v) => v.vendor_id === vendorId
     );
-    if (!isPermitted) throw new Error('Not a permitted vendor');
+    if (!isPermitted) throw new Error("Not a permitted vendor");
 
     // 2. Check vendor is registered in Vendor collection (for auto-fill details)
-    const vendor = await VendorModel.findById(vendorId);
-    if (!vendor) throw new Error('Vendor not registered');
+    const vendor = await VendorModel.findOne({ vendor_id: vendorId });
+    if (!vendor) throw new Error("Vendor not registered");
 
     // 3. Compute totalQuotedValue from quoteItems
     const totalQuotedValue = Array.isArray(quoteData.quoteItems)
-      ? quoteData.quoteItems.reduce((sum, item) => sum + (item.totalAmount || 0), 0)
+      ? quoteData.quoteItems.reduce(
+          (sum, item) => sum + (item.totalAmount || 0),
+          0
+        )
       : 0;
 
     // 4. Build vendorQuotation object
@@ -76,7 +88,7 @@ class WorkOrderRequestService {
       vendorId,
       vendorName: vendor.contact_person,
       contact: vendor.contact_phone, // ensure your VendorModel has 'contact'
-      address: `${vendor.address.street}, ${vendor.address.city}, ${vendor.address.state}, ${vendor.address.country} - ${vendor.address.pincode}`, 
+      address: `${vendor.address.street}, ${vendor.address.city}, ${vendor.address.state}, ${vendor.address.country} - ${vendor.address.pincode}`,
       totalQuotedValue,
     };
 
@@ -86,7 +98,7 @@ class WorkOrderRequestService {
       { $push: { vendorQuotations: vendorQuotation } },
       { new: true }
     );
-    if (!result) throw new Error('WorkOrderRequest not found');
+    if (!result) throw new Error("WorkOrderRequest not found");
     return result;
   }
 
@@ -99,14 +111,16 @@ class WorkOrderRequestService {
 
   static async approveVendorQuotation({ workOrderRequestId, quotationId }) {
     // 1. Find the WorkOrderRequest containing the quotation
-    const workOrder = await WorkOrderRequestModel.findOne({ _id: workOrderRequestId });
-    if (!workOrder) throw new Error('WorkOrderRequest not found');
+    const workOrder = await WorkOrderRequestModel.findOne({
+      _id: workOrderRequestId,
+    });
+    if (!workOrder) throw new Error("WorkOrderRequest not found");
 
     // 2. Find the vendorQuotation to approve by quotationId
     const vendorQuotation = workOrder.vendorQuotations.find(
       (q) => q.quotationId === quotationId
     );
-    if (!vendorQuotation) throw new Error('Vendor quotation not found');
+    if (!vendorQuotation) throw new Error("Vendor quotation not found");
 
     // 3. Update approvalStatus = "Approved" for this quotation
     vendorQuotation.approvalStatus = "Approved";
@@ -128,14 +142,14 @@ class WorkOrderRequestService {
     return workOrder;
   }
 
-   static async getAllByProjectIdSelectedVendorWithQuotation(projectId) {
+  static async getAllByProjectIdSelectedVendorWithQuotation(projectId) {
     // Step 1: Get docs with selected fields
     const docs = await WorkOrderRequestModel.find({ projectId })
-      .select('title description selectedVendor vendorQuotations')
+      .select("title description selectedVendor vendorQuotations")
       .lean();
 
     // Step 2: For each doc, find the approvedQuotationId in vendorQuotations
-    return docs.map(doc => {
+    return docs.map((doc) => {
       let approvedQuotation = null;
       if (
         doc.selectedVendor &&
@@ -143,7 +157,9 @@ class WorkOrderRequestService {
         doc.vendorQuotations
       ) {
         approvedQuotation = doc.vendorQuotations.find(
-          vq => vq._id.toString() === doc.selectedVendor.approvedQuotationId.toString()
+          (vq) =>
+            vq._id.toString() ===
+            doc.selectedVendor.approvedQuotationId.toString()
         );
       }
       return {
@@ -151,14 +167,11 @@ class WorkOrderRequestService {
         description: doc.description,
         selectedVendor: {
           ...doc.selectedVendor,
-          approvedQuotation: approvedQuotation || null
-        }
+          approvedQuotation: approvedQuotation || null,
+        },
       };
     });
   }
-
-
-
 }
 
 export default WorkOrderRequestService;
