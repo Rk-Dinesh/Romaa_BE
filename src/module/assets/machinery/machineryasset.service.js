@@ -1,5 +1,5 @@
-import IdcodeServices from "../../idcode/idcode.service";
-import MachineryAssetModel from "./machineryasset.model";
+import IdcodeServices from "../../idcode/idcode.service.js";
+import MachineryAssetModel from "./machineryasset.model.js";
 
 
 class MachineryAssetService {
@@ -30,31 +30,6 @@ class MachineryAssetService {
   static async getAssetsByProject(projectId) {
     return await MachineryAssetModel.find({ projectId }).select(
       "assetId assetName assetType currentSite currentStatus availabilityStatus"
-    );
-  }
-
-  // Enter meter reading for a machinery asset by assetId
-  static async enterMeterReading(assetId, meterData) {
-    const update = {
-      $push: { meterReadingHistory: meterData },
-      $set: {
-        currentMeterReading: meterData.meterEndReading,
-        currentTripCount: meterData.tripCount,
-        currentFuelLevel: meterData.fuelReading,
-        lastMeterReadingDate: meterData.readingDate || new Date(),
-      },
-    };
-    return await MachineryAssetModel.findOneAndUpdate({ assetId }, update, {
-      new: true,
-    });
-  }
-
-  // Enter trip details for a machinery asset by assetId
-  static async enterTripDetails(assetId, tripData) {
-    return await MachineryAssetModel.findOneAndUpdate(
-      { assetId },
-      { $push: { tripHistory: tripData } },
-      { new: true }
     );
   }
 
@@ -132,10 +107,17 @@ static async addMeterReading(assetId, meterData) {
   const update = {
     $push: { meterReadingHistory: meterData },
     $set: {
-      currentMeterReading: meterData.meterEndReading,
-      currentTripCount: meterData.tripCount,
-      currentFuelLevel: meterData.fuelReading,
-      lastMeterReadingDate: meterData.readingDate || new Date()
+      meterStartReading: meterData.meterStartReading,
+      meterEndReading: meterData.meterEndReading,
+      tripCount: meterData.tripCount,
+      fuelReading: meterData.fuelReading,
+      recordedBy: meterData.recordedBy,
+      operatorName: meterData.operatorName,
+      shift: meterData.shift,
+      remarks: meterData.remarks,
+      location: meterData.location,
+      fuelFilled: meterData.fuelFilled,
+      fuelCost: meterData.fuelCost
     },
   };
 

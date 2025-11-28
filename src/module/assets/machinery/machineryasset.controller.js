@@ -37,35 +37,6 @@ export const getAssetsByProject = async (req, res) => {
   }
 };
 
-// Enter meter reading
-export const enterMeterReading = async (req, res) => {
-  try {
-    const { assetId } = req.params;
-    const meterData = req.body;
-
-    const updated = await machineryassetService.enterMeterReading(assetId, meterData);
-    if (!updated) return res.status(404).json({ message: "Asset not found" });
-
-    res.status(200).json({ message: "Meter reading recorded", data: updated });
-  } catch (error) {
-    res.status(400).json({ message: "Error recording meter reading", error: error.message });
-  }
-};
-
-// Enter trip details
-export const enterTripDetails = async (req, res) => {
-  try {
-    const { assetId } = req.params;
-    const tripData = req.body;
-
-    const updated = await machineryassetService.enterTripDetails(assetId, tripData);
-    if (!updated) return res.status(404).json({ message: "Asset not found" });
-
-    res.status(200).json({ message: "Trip details recorded", data: updated });
-  } catch (error) {
-    res.status(400).json({ message: "Error recording trip details", error: error.message });
-  }
-};
 
 // Update status
 export const updateStatus = async (req, res) => {

@@ -29,6 +29,7 @@ import schedulerouter from './src/module/project/schedule/schedule.route.js';
 import workOrderRequestrouter from './src/module/project/workorderReqIssue/workorderReqIssue.route.js';
 import materialrouter from './src/module/tender/materials/material.route.js';
 import purhcaseRequestrouter from './src/module/purchase/purchaseorderReqIssue/purchaseReqIssue.route.js';
+import machineryrouter from './src/module/assets/machinery/machineryasset.route.js';
 
 
 
@@ -86,6 +87,7 @@ app.use('/schedule',schedulerouter);
 app.use('/workorderrequest',workOrderRequestrouter);
 app.use('/purchaseorderrequest',purhcaseRequestrouter);
 app.use('/material',materialrouter);
+app.use('/machineryasset',machineryrouter);
 
 
 app.get('/',(req,res)=>{
