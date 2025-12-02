@@ -4,6 +4,7 @@ import fs from "fs";
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getWeekRangeOfMonth, monthsMap } from "../../../../utils/helperfunction.js";
+import ScheduleModel from "./schedule.model.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -102,3 +103,162 @@ export const getSchedules = async (req, res, next) => {
     next(err);
   }
 };
+
+// GET /api/schedule/:tenderId/majorheadings
+export const getMajorHeadings = async (req, res) => {
+  try {
+    const { tenderId } = req.params;
+    const schedule = await ScheduleModel.findOne({ tenderId }, { majorHeadings: 1 });
+
+    if (!schedule) {
+      return res.status(404).json({ success: false, message: "Schedule not found" });
+    }
+
+    res.json({ success: true, majorHeadings: schedule.majorHeadings });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET /api/schedule/:tenderId/majorheading/:majorHeadingName/subheadings
+export const getSubheadings = async (req, res) => {
+  try {
+    const { tenderId, majorHeadingName } = req.params;
+
+    const schedule = await ScheduleModel.findOne({ tenderId }, { majorHeadings: 1 });
+    if (!schedule) {
+      return res.status(404).json({ success: false, message: "Schedule not found" });
+    }
+
+    // Find the major heading with matching name
+    const majorHeading = schedule.majorHeadings.find(
+      (mh) => mh.majorHeadingName === majorHeadingName
+    );
+
+    if (!majorHeading) {
+      return res.status(404).json({ success: false, message: "Major heading not found" });
+    }
+
+    res.json({ success: true, subheadings: majorHeading.subheadings });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET /api/schedule/:tenderId/majorheading/:majorHeadingName/subheading/:customworks/subworks
+export const getSubworks = async (req, res) => {
+  try {
+    const { tenderId, majorHeadingName, customworks } = req.params;
+
+    const schedule = await ScheduleModel.findOne({ tenderId }, { majorHeadings: 1 });
+    if (!schedule) {
+      return res.status(404).json({ success: false, message: "Schedule not found" });
+    }
+
+    const majorHeading = schedule.majorHeadings.find(
+      (mh) => mh.majorHeadingName === majorHeadingName
+    );
+    if (!majorHeading) {
+      return res.status(404).json({ success: false, message: "Major heading not found" });
+    }
+
+    // Find the subheading (customWorkSchema) matching customworks field
+    const subheading = majorHeading.subheadings.find(
+      (sh) => sh.customworks === customworks
+    );
+
+    if (!subheading) {
+      return res.status(404).json({ success: false, message: "Subheading not found" });
+    }
+
+    res.json({ success: true, subworks: subheading.subworks });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET /api/schedule/:tenderId/majorheadings
+export const getMajorHeadingNames = async (req, res) => {
+  try {
+    const { tenderId } = req.params;
+
+    const schedule = await ScheduleModel.findOne(
+      { tenderId },
+      { majorHeadings: 1 }
+    );
+
+    if (!schedule) {
+      return res.status(404).json({ success: false, message: "Schedule not found" });
+    }
+
+    // Map majorHeadings to only majorHeadingName strings
+    const majorHeadingNames = schedule.majorHeadings.map(
+      (mh) => mh.majorHeadingName
+    );
+
+    res.json({ success: true, majorHeadingNames });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET /api/schedule/:tenderId/majorheading/:majorHeadingName/subheadings
+export const getSubheadingCustomworks = async (req, res) => {
+  try {
+    const { tenderId, majorHeadingName } = req.params;
+    
+
+    const schedule = await ScheduleModel.findOne({ tenderId }, { majorHeadings: 1 });
+    if (!schedule)
+      return res.status(404).json({ success: false, message: "Schedule not found" });
+
+    const majorHeading = schedule.majorHeadings.find(
+      (mh) => mh.majorHeadingName === majorHeadingName
+    );
+    if (!majorHeading)
+      return res.status(404).json({ success: false, message: "Major heading not found" });
+
+    // Return only array of customworks strings from subheadings
+    const customworksList = majorHeading.subheadings.map(
+      (sh) => sh.customworks
+    );
+
+    res.json({ success: true, customworksList });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+// GET /api/schedule/:tenderId/majorheading/:majorHeadingName/subheadings/:customworks/subworks
+export const getSubworksByCustomworks = async (req, res) => {
+  try {
+    const { tenderId, majorHeadingName, customworks } = req.params;
+
+    const schedule = await ScheduleModel.findOne({ tenderId }, { majorHeadings: 1 });
+    if (!schedule)
+      return res.status(404).json({ success: false, message: "Schedule not found" });
+
+    const majorHeading = schedule.majorHeadings.find(
+      (mh) => mh.majorHeadingName === majorHeadingName
+    );
+
+    console.log(majorHeading,'eee');
+    
+
+    if (!majorHeading)
+      return res.status(404).json({ success: false, message: "Major heading not found" });
+
+    const subheading = majorHeading.subheadings.find(
+      (sh) => sh.customworks === customworks
+    );
+
+    if (!subheading)
+      return res.status(404).json({ success: false, message: "Subheading not found" });
+
+    res.json({ success: true, subworks: subheading.subworks });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+

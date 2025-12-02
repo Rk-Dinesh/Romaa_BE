@@ -1,7 +1,13 @@
 import { Router } from "express";
 import multer from "multer";
 import {
+  getMajorHeadingNames,
+  getMajorHeadings,
   getSchedules,
+  getSubheadingCustomworks,
+  getSubheadings,
+  getSubworks,
+  getSubworksByCustomworks,
   updateScheduleReportDate,
   uploadScheduleCSV,
 } from "./schedule.controller.js";
@@ -70,4 +76,23 @@ schedulerouter.put("/updatereportdate", updateScheduleReportDate);
 //   "reportDate": "2025-10-28"
 // }
 
+schedulerouter.get("/api/:tenderId/majorheadings", getMajorHeadings);
+schedulerouter.get(
+  "/api/:tenderId/majorheading/:majorHeadingName/subheadings",
+  getSubheadings
+);
+schedulerouter.get(
+  "/api/:tenderId/majorheading/:majorHeadingName/subheading/:customworks/subworks",
+  getSubworks)
+//localhost:5000/schedule/apischedule/TND021/majorheadings
+schedulerouter.get("/apischedule/:tenderId/majorheadings", getMajorHeadingNames); // check done
+//localhost:5000/schedule/apischedule/TND021/majorheading/B - LHS Side - High Portion - Shed Side/subheadings
+schedulerouter.get(
+  "/apischedule/:tenderId/majorheadings/:majorHeadingName/subheadings",
+  getSubheadingCustomworks
+);
+//
+schedulerouter.get("/apischedule/:tenderId/majorheadings/:majorHeadingName/subheadings/:customworks/subworks",
+  getSubworksByCustomworks
+);
 export default schedulerouter;
