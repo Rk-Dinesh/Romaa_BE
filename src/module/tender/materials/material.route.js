@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { addMaterialissued, addMaterialreceived, createMaterial, getMaterialsByTender, uploadMaterialCSV } from "./material.controller.js";
+import { addMaterialissued, addMaterialreceived, createMaterial, getMaterialsByTender, getRecievedMaterialByTender, updateRequestedQuantity, uploadMaterialCSV } from "./material.controller.js";
 
 
 const materialrouter = Router();
@@ -12,6 +12,8 @@ materialrouter.post("/addreceived", addMaterialreceived);
 materialrouter.post("/addissued", addMaterialissued);
 materialrouter.get("/getall/:tender_id", getMaterialsByTender);
 materialrouter.post("/uploadcsv", upload.single("file"), uploadMaterialCSV);
+materialrouter.get('/received/:tender_id/:item_description', getRecievedMaterialByTender);
+materialrouter.put('/updaterequestquantity/:tender_id/:item_description', updateRequestedQuantity);
 
 
 

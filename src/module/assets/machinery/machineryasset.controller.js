@@ -131,4 +131,22 @@ export const addTripDetails = async (req, res) => {
     res.status(400).json({ message: "Error adding trip details", error: error.message });
   }
 };
+export  const  getAllAssets = async (req, res) => {
+    try {
+      const assets = await machineryassetService.getAllAssets();
 
+      if (!assets || assets.length === 0) {
+        return res.status(404).json({ message: "No machinery assets found" });
+      }
+
+      return res.status(200).json({
+        message: "Machinery assets fetched successfully",
+        data: assets,
+      });
+    } catch (error) {
+      console.error("Error fetching machinery assets:", error);
+      return res.status(500).json({
+        message: "Internal server error while fetching machinery assets",
+      });
+    }
+  };

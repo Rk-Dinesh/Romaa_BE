@@ -132,8 +132,10 @@ static async addTripDetails(assetId, tripData) {
     { new: true }
   );
 }
-
+static async getAllAssets() {
+    return await MachineryAssetModel.find().sort({ createdAt: -1 });
+  }
 
 }
 
-export default new MachineryAssetService();
+export default  MachineryAssetService;

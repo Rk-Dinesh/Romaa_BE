@@ -1,3 +1,4 @@
+import PurchaseRequestModel from "../../purchase/purchaseorderReqIssue/purchaseReqIssue.model.js";
 import MaterialModel from "./material.model.js";
 
 class materialService {
@@ -8,7 +9,7 @@ class materialService {
   }
 
   static async addMaterialreceived(data) {
-    const { tender_id, item_description, received_quantity, ordered_date } =
+    const { tender_id, item_description, received_quantity, ordered_date,requestId,received_by } =
       data;
 
     // Find tender document first
@@ -17,6 +18,7 @@ class materialService {
     if (!existingTender) {
       throw new Error(`Tender with ID ${tender_id} not found`);
     }
+    
 
     // Find the item inside the tender’s items array
     const itemIndex = existingTender.items.findIndex(
@@ -29,7 +31,17 @@ class materialService {
       );
     }
 
+  
     const item = existingTender.items[itemIndex];
+    //if item.received has already the requestId, then throw error
+    const alreadyReceived = item.received.some(
+      (rec) => rec.requestId === requestId
+    );  
+    if (alreadyReceived) {
+      throw new Error(
+        `Material for Request ID '${requestId}' has already been received`
+      );
+    }
 
     // Calculate updated values
     const newReceived =
@@ -40,6 +52,21 @@ class materialService {
     item.received_quantity = newReceived;
     item.pending_quantity = newPending;
     item.ordered_date = ordered_date;
+
+    const reqdetails = await PurchaseRequestModel.findOne({requestId});
+
+    if(!reqdetails){
+      throw new Error(`Purchase Request with ID ${requestId} not found`);
+    }
+    
+
+    item.received.push({
+    requestId,
+    site_name:reqdetails.siteDetails?.siteName || "" ,
+    received_quantity ,
+    received_date:new Date(),
+    received_by:received_by || "Admin",
+  });
 
     // Save tender document
     await existingTender.save();
@@ -94,6 +121,7 @@ static async addMaterialissued(data) {
     requested_by,
     issued_date: new Date(),
   });
+  item.issued_quantity = (item.issued_quantity || 0) + issued_quantity;
 
   // Save document
   await existingTender.save();
@@ -121,6 +149,7 @@ static async addMaterialissued(data) {
       const rate_tax = Number(row.rate_tax) || 0;
       const total_amount = Number(row.total_amount) || quantity * unit_rate;
       const total_material = Number(row.total_material) || 0;
+      const request_quantity = quantity; 
 
       return {
         item_description: row.item_description || row.description || "",
@@ -130,6 +159,7 @@ static async addMaterialissued(data) {
         rate_tax,
         total_amount,
         total_material,
+        request_quantity
       };
     });
 
@@ -166,6 +196,49 @@ static async addMaterialissued(data) {
 
     return { items: paginatedItems, totalPages };
   }
+
+  static async getRecievedMaterialByTender(tender_id,item_description) {
+    const materials = await MaterialModel.findOne({ tender_id })
+      .select("items tender_id created_by_user")
+      .lean();
+    if (!materials) return { items: [] };
+
+    let filteredItems = materials.items;
+   // If item_description is provided, filter by it and to get received details of that item only
+   if(item_description){
+    filteredItems = materials.items.filter(
+      (item) => item.item_description === item_description
+    );
+    filteredItems = filteredItems.map(item => ({
+      item_description: item.item_description,
+      received: item.received
+    }));
+   }  
+
+    return { items: filteredItems  };
+
+  }
+
+  //api to update requesedquantity based on tender_id and item_description
+  static async updateRequestedQuantity(tender_id,item_description,request_quantity) {
+    const materialDoc = await MaterialModel.findOne({ tender_id });
+    if (!materialDoc) {
+      throw new Error(`Tender with ID ${tender_id} not found`);
+    }
+    const item = materialDoc.items.find(
+      (i) => i.item_description === item_description
+    );  
+    if (!item) {
+      throw new Error(`Item '${item_description}' not found under Tender ${tender_id}`);
+    }
+    item.request_quantity = request_quantity;
+    await materialDoc.save();
+    return {
+      message: "Requested quantity updated successfully",
+      updatedItem: item,
+    };
+  } 
 }
 
 export default materialService;
+

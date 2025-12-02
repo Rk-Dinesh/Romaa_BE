@@ -15,12 +15,23 @@ const MaterialItemSchema = new mongoose.Schema(
         issued_quantity: { type: Number, default: 0 },
         work_location: { type: String, default: "" },
         priority_level: { type: String, default: "" },
-        requested_by: { type: String, default: "" },
+        issued_by: { type: String, default: "" },
       },
+    ],
+    received: [
+      {
+        requestId: { type: String, default: "" },
+        site_name: { type: String, default: "" },
+        received_quantity: { type: Number, default: 0 },
+        received_date: { type: Date, default: Date.now },
+        received_by: { type: String, default: "" },
+      }
     ],
 
     received_quantity: { type: Number, default: 0 },
     pending_quantity: { type: Number, default: 0 },
+    request_quantity: { type: Number, default: 0 },
+    issued_quantity: { type: Number, default: 0 },
     ordered_date: Date,
   },
   { _id: false }

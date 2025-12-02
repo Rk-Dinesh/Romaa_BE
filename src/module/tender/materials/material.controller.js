@@ -108,3 +108,36 @@ export const getMaterialsByTender = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const getRecievedMaterialByTender = async (req, res) => {
+  try {
+    const { tender_id,item_description} = req.params; 
+    const result = await materialService.getRecievedMaterialByTender(tender_id,item_description);
+
+    res.status(200).json({
+      success: true,
+      data: result.items,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateRequestedQuantity = async (req, res) => {
+  try {
+    const { tender_id, item_description } = req.params;
+    const { request_quantity } = req.body;
+    const result = await materialService.updateRequestedQuantity(
+      tender_id,
+      item_description,
+      request_quantity
+    );
+    res.status(200).json({
+      success: true,
+      message: result.message,
+      data: result.updatedItem,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};

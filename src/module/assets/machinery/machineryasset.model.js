@@ -57,7 +57,7 @@ const MachineryAssetSchema = new mongoose.Schema(
     //yearOfManufacture: Number,
 
     // Project & Location
-    projectId: { type: String, required: true },
+    projectId: { type: String },
     currentSite: {
       siteName: String,
       location: String,

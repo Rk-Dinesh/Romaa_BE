@@ -1,5 +1,5 @@
 import express from "express";
-import { addMeterReading, addTripDetails, assignProjectAndSite, createMachinery, getAssetsByProject, getMeterReadingHistory, getTripHistory, updateStatus } from "./machineryasset.controller.js";
+import { addMeterReading, addTripDetails, assignProjectAndSite, createMachinery, getAllAssets, getAssetsByProject, getMeterReadingHistory, getTripHistory, updateStatus } from "./machineryasset.controller.js";
 
 
 const machineryrouter = express.Router();
@@ -28,6 +28,6 @@ machineryrouter.post("/api/machinery-assets/:assetId/meter-reading", addMeterRea
 // POST trip details
 machineryrouter.post("/api/machinery-assets/:assetId/trip-details", addTripDetails);
 
-
+machineryrouter.get("/api/allmachinery-assets", getAllAssets);
 
 export default machineryrouter;
