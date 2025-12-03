@@ -123,6 +123,8 @@ class PurchaseRequestService {
       approvedQuotationId: vendorQuotation._id, // Mongoose embedded doc _id
     };
 
+    purchaseRequest.status = "Approved";
+
     // 5. Save changes
     await purchaseRequest.save();
 
@@ -170,6 +172,11 @@ static async updateStatus(requestId, status) {
   // Get all requests with status "Quotation Requested"
   static async getQuotationRequested() {
     const requests = await PurchaseRequestModel.find({ status: "Quotation Requested" });
+    return requests;
+  }
+
+   static async getQuotationApproved() {
+    const requests = await PurchaseRequestModel.find({ status: "Approved" });
     return requests;
   }
 

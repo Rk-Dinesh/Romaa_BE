@@ -30,6 +30,13 @@ class WorkOrderRequestService {
     ); // field selection
   }
 
+    static async getAllByProjectIdWithFieldsApproved(projectId) {
+    // Only selected fields: title, description, vendorQuotations
+    return await WorkOrderRequestModel.find({ projectId, status:"Approved" }).select(
+      "title description vendorQuotations requestId"
+    ); // field selection
+  }
+
   static async getAllByProjectIdSelectedVendor(projectId) {
     // Only selected fields: title, description, vendorQuotations
     return await WorkOrderRequestModel.find({ projectId }).select(
@@ -135,6 +142,8 @@ class WorkOrderRequestService {
       vendorName: vendorQuotation.vendorName,
       approvedQuotationId: vendorQuotation._id, // Mongoose embedded doc _id
     };
+
+     workOrder.status = "Approved"
 
     // 5. Save changes
     await workOrder.save();

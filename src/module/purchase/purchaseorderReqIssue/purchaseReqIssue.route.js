@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { approveVendorQuotation, createPurchaseRequest, getAllByProjectIdSelectedVendorWithQuotation, getAllPurchaseByProjectId, getAllPurchaseBySelectedVendor, getPurchaseByProjectAndRequestId, getQuotationRequested, getVendorQuotationByQuotationId, postVendorQuotationWithTenderCheck, updateStatus } from "./purchaseReqIssue.controller.js";
+import { approveVendorQuotation, createPurchaseRequest, getAllByProjectIdSelectedVendorWithQuotation, getAllPurchaseByProjectId, getAllPurchaseBySelectedVendor, getPurchaseByProjectAndRequestId, getQuotationApproved, getQuotationRequested, getVendorQuotationByQuotationId, postVendorQuotationWithTenderCheck, updateStatus } from "./purchaseReqIssue.controller.js";
 
 const purhcaseRequestrouter = Router();
 
@@ -13,6 +13,7 @@ purhcaseRequestrouter.put('/api/purchase-requests/:purchaseRequestId/approve-ven
 purhcaseRequestrouter.get('/api/purchase-requests/project/:projectId/selected-vendor', getAllByProjectIdSelectedVendorWithQuotation);
 purhcaseRequestrouter.put('/api/updateStatus/:requestId', updateStatus);
 purhcaseRequestrouter.get('/api/getQuotationRequested', getQuotationRequested);
+purhcaseRequestrouter.get('/api/getQuotationApproved', getQuotationApproved);
 
 
 export default purhcaseRequestrouter;

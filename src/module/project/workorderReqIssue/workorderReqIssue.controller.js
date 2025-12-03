@@ -35,6 +35,17 @@ export const getAllWorkOrdersByProjectId = async (req, res) => {
   }
 };
 
+export const getAllWorkOrdersByProjectIdApproved = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const workOrders = await WorkOrderRequestService.getAllByProjectIdWithFieldsApproved(projectId);
+    res.status(200).json({ data: workOrders });
+  } catch (error) {
+    res.status(400).json({ message: 'Error fetching WorkOrderRequests', error: error.message });
+  }
+};
+
+
 export const getAllWorkOrdersBySelectedVendor = async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -89,13 +100,14 @@ export const getVendorQuotationByQuotationId = async (req, res) => {
 export const approveVendorQuotation = async (req, res) => {
   try {
     const { workOrderRequestId } = req.params;
-    const { quotationId } = req.body;
+    const { quotationId,status } = req.body;
 
     if (!quotationId) return res.status(400).json({ message: 'quotationId is required' });
 
     const updatedWorkOrderRequest = await WorkOrderRequestService.approveVendorQuotation({
       workOrderRequestId,
       quotationId,
+      status
     });
 
     res.status(200).json({

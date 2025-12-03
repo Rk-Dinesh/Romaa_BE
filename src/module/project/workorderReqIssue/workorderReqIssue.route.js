@@ -1,10 +1,11 @@
 import { Router } from "express";
-import { approveVendorQuotation, createWorkOrderRequest, getAllByProjectIdSelectedVendorWithQuotation, getAllWorkOrdersByProjectId, getAllWorkOrdersBySelectedVendor, getVendorQuotationByQuotationId, getWorkOrderByProjectAndRequestId, postVendorQuotationWithTenderCheck } from "./workorderReqIssue.controller.js";
+import { approveVendorQuotation, createWorkOrderRequest, getAllByProjectIdSelectedVendorWithQuotation, getAllWorkOrdersByProjectId, getAllWorkOrdersByProjectIdApproved, getAllWorkOrdersBySelectedVendor, getVendorQuotationByQuotationId, getWorkOrderByProjectAndRequestId, postVendorQuotationWithTenderCheck } from "./workorderReqIssue.controller.js";
 
 const workOrderRequestrouter = Router();
 
 workOrderRequestrouter.post('/api/create', createWorkOrderRequest   );
 workOrderRequestrouter.get('/api/getbyId/:projectId', getAllWorkOrdersByProjectId);
+workOrderRequestrouter.get('/api/getbyIdapproved/:projectId', getAllWorkOrdersByProjectIdApproved);
 workOrderRequestrouter.get('/api/getdetailbyId/:projectId/:requestId', getWorkOrderByProjectAndRequestId);
 workOrderRequestrouter.get('/api/getslectedvendor/:projectId', getAllWorkOrdersBySelectedVendor);
 workOrderRequestrouter.post('/api/workorder-requests/:workOrderRequestId/vendor-quotation', postVendorQuotationWithTenderCheck);

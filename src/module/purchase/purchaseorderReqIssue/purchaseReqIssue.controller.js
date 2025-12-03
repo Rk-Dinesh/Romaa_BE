@@ -89,13 +89,14 @@ export const getVendorQuotationByQuotationId = async (req, res) => {
 export const approveVendorQuotation = async (req, res) => {
   try {
     const { purchaseRequestId } = req.params;
-    const { quotationId } = req.body;
+    const { quotationId,status } = req.body;
 
     if (!quotationId) return res.status(400).json({ message: 'quotationId is required' });
 
     const updatedPurchaseRequest = await PurchaseRequestService.approveVendorQuotation({
       purchaseRequestId,
       quotationId,
+      status
     });
 
     res.status(200).json({
@@ -139,6 +140,16 @@ export const updateStatus = async (req, res) => {
 export const getQuotationRequested = async (req, res) => {
   try {
     const requests = await PurchaseRequestService.getQuotationRequested();
+    res.json({ data: requests });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+export const getQuotationApproved = async (req, res) => {
+  try {
+    const requests = await PurchaseRequestService.getQuotationApproved();
     res.json({ data: requests });
   } catch (err) {
     console.error(err);
