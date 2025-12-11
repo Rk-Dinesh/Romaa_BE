@@ -1,42 +1,47 @@
 import mongoose from "mongoose";
 
+// Work Phase Breakdown Schema
 const WorkPhaseBreakdownSchema = new mongoose.Schema({
-    phase: { type: String, required: true }, // E.g., "Foundation", "Slab", "Walls"
-    quantity: { type: Number, required: true }, // Quantity allocated to this phase
-    amount: { type: Number, required: true }  // Cost for this phase (quantity * rate)
+    phase: { type: String, required: true },
+    quantity: { type: Number, required: true },
+    amount: { type: Number, required: true }
 }, { _id: false });
 
-// Abstract Schema
+// Abstract Schema (with abstract_id)
 const AbstractSchema = new mongoose.Schema({
+    abstract_id: { type: String, required: true }, // Added for custom headings
     description: { type: String, required: true },
     unit: { type: String, default: "" },
-    quantity: { type: Number, default: '' },
-    rate: { type: Number, default: "" },
-    amount: { type: Number, default: "" },
+    quantity: { type: Number, default: 0 },
+    rate: { type: Number, default: 0 },
+    amount: { type: Number, default: 0 },
     balance_quantity: { type: Number, default: 0 },
-    balance_amount: { type: Number, default: 0 },
-    phase_breakdown: { type: [WorkPhaseBreakdownSchema], default: [] },
-  
+    balance_amount: { type: Number, default: 0 }
 }, { _id: false });
 
-// Detailed Schema
-const DetailedSchema = new mongoose.Schema({
-    description: { type: String, required: true },
-    number: { type: Number, default: "" },
-    length: { type: Number, default: "" },
-    breath: { type: Number, default: "" },
-    depth: { type: Number, default: "" },
-    contents: { type: Number, default: "" },
+// Particulars Breakdown Schema (inside detailed arrays)
+const ParticularsBreakdownSchema = new mongoose.Schema({
+    particulars: { type: String, required: true },
+    nos: { type: String, default: "" },
+    l: { type: Number, default: 0 },
+    b: { type: Number, default: 0 },
+    d_h: { type: Number, default: 0 },
+    content: { type: Number, default: 0 },
     balance_quantity: { type: Number, default: 0 },
-    phase_breakdown: { type: [WorkPhaseBreakdownSchema], default: [] },
+    phase_breakdown: { type: [WorkPhaseBreakdownSchema], default: [] }
+}, { _id: false });
+
+// Detailed Schema (for custom headings like "road", "bridge")
+const DetailedSchema = new mongoose.Schema({
+    abstract_id: { type: String, required: true },
+    breakdown: { type: [ParticularsBreakdownSchema], default: [] }
 }, { _id: false });
 
 // Dynamic Heading Schema (for custom heads like "road", "bridge", etc.)
 const HeadingSchema = new mongoose.Schema({
-  heading: { type: String, required: true },
-  // Accept dynamic keys with arrays of mixed content (loosely typed)
+    heading: { type: String, required: true },
+    // Accept dynamic keys with arrays of mixed content (loosely typed)
 }, { strict: false, _id: false });
-
 
 // Detailed Estimate Schema
 const DetailedEstimateSchema = new mongoose.Schema({

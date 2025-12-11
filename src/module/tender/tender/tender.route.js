@@ -29,7 +29,8 @@ import {
   updateFinancialGenerals,
   getTenderPenalityValue,
   updateGenerlSetup,
-  getGenerlSetup
+  getGenerlSetup,
+  updateTenderAgreementController
 } from "./tender.controller.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -51,6 +52,7 @@ tenderrouter.get("/getoverview/:tender_id", getTenderForOverview);
 tenderrouter.get("/getoverviewworkorder/:tender_id", getWorkOrdererForOverview);
 tenderrouter.post("/addfollowup/:tender_id", addImportantDate);
 tenderrouter.put("/update-workorder/:tender_id", updateTenderWorkOrderController);
+tenderrouter.put("/update-agreement/:tender_id", updateTenderAgreementController);
 tenderrouter.get("/approval-status/:tender_id", checkTenderApprovalStatus);
 tenderrouter.post('/updateemdamount/:tender_id',updateEmdDetails);
 tenderrouter.post('/securitydepositamount/:tender_id',updateSDDetails);

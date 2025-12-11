@@ -190,7 +190,7 @@ const tenderSchema = new mongoose.Schema(
     tender_type: { type: String, default: "" },
     tender_project_division: { type: String, default: "" },
     tender_project_type: { type: String, default: "" },
-    tender_bussiness_type: { type: String, default: "" },
+    tender_bussiness_type: { type: String, default: "" }, // no need to show in frontend
     tender_value: { type: Number, default: 0 },
     tender_contact_person: { type: String, default: "" },
     tender_contact_phone: { type: String, default: "" },
@@ -202,11 +202,15 @@ const tenderSchema = new mongoose.Schema(
     tender_duration: { type: String, default: "" },
     workOrder_id: { type: String, default: "" },
     workOrder_issued_date: { type: Date, default: null },
+    agreement_id: { type: String, default: "" },
+    agreement_value: { type: Number, default: 0 },
+    agreement_issued_date: { type: Date, default: null },
     workOrder_issued_by: { type: String, default: "" },
     tender_status: { type: String, default: "PENDING" },
     boq_final_value: { type: Number, default: 0 },
     zeroCost_final_value: { type: Number, default: 0 },
     penalty_final_value: { type: Number, default: 0 },
+
     emd: { type: emdSchema, default: () => ({}) },
     security_deposit: { type: securityDepositSchema, default: () => ({}) },
     tender_status_check: {

@@ -218,6 +218,25 @@ class TenderService {
     return tender;
   }
 
+  static async updateTenderStatusWithAgreement(
+    tender_id,
+    agreement_id,
+    agreement_issued_date
+  ) {
+    const tender = await TenderModel.findOne({ tender_id });
+
+    if (!tender) {
+      throw new Error("Tender not found for the given tender_id");
+    }
+    tender.agreement_id = agreement_id;
+    tender.tender_status = "APPROVED";
+    tender.agreement_issued_date = agreement_issued_date;
+
+    await tender.save();
+
+    return tender;
+  }
+
   static async getTendersPaginatedWorkorder(
     page,
     limit,

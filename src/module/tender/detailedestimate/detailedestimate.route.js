@@ -12,12 +12,7 @@ detailedestrouter.get("/getdatacustomhead", getCustomHeadingsByTenderAndNameType
 detailedestrouter.get("/getdatahead", getHeadingsByTenderAndNameTypeController);
 detailedestrouter.post("/bulkinsertcustomhead", upload.single("file"), bulkInsertCustomHeadingsController);
 detailedestrouter.post("/bulkinserthead", upload.single("file"), bulkInsertHeadingsController);
-
 detailedestrouter.post("/addphasebreakdown", addPhaseBreakdownToAbstractController);
 detailedestrouter.post("/addphasebreakdowndetailed", addPhaseBreakdownToDetailedController);
-
-
-
-
 
 export default detailedestrouter;

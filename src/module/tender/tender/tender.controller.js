@@ -189,6 +189,7 @@ export const updateTenderWorkOrderController = async (req, res) => {
     
    const { tender_id } = req.params;
     const { workOrder_id,workOrder_issued_date } = req.body;
+    console.log(tender_id,workOrder_id,workOrder_issued_date);
 
     if (!tender_id || !workOrder_issued_date ||!workOrder_id) {
       return res.status(400).json({
@@ -213,6 +214,33 @@ export const updateTenderWorkOrderController = async (req, res) => {
   }
 };
 
+export const updateTenderAgreementController = async (req, res) => {
+  try {
+    const { tender_id } = req.params;
+    const { agreement_id,agreement_issued_date } = req.body;
+
+    if (!tender_id || !agreement_issued_date ||!agreement_id) {
+      return res.status(400).json({
+        success: false,
+        message: "tender_id and agreement_issued_by are required"
+      });
+    }
+
+    const updatedTender = await TenderService.updateTenderStatusWithAgreement(
+      tender_id,
+      agreement_id,
+      agreement_issued_date
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Tender status updated & agreement issued successfully",
+      data: updatedTender
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
 
 export const checkTenderApprovalStatus = async (req, res) => {
   try {

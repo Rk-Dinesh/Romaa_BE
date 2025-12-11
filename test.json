@@ -1,0 +1,245 @@
+{
+    "tender_id": "TND007",
+    "detailed_estimate": [
+        {
+            "generalabstract": [
+                {
+                    "description": "earth excavation",
+                    "unit": "m3",
+                    "quantity": 12,
+                    "rate": 10,
+                    "amount": 120,
+                    "balance_quantity": 12,
+                    "balance_amount": 120
+                },
+                {
+                    "description": "wall",
+                    "unit": "m2",
+                    "quantity": 8,
+                    "rate": 10,
+                    "amount": 80,
+                    "balance_quantity": 8,
+                    "balance_amount": 80
+                }
+            ],
+            "billofqty": [
+                {
+                    "description": "concrete work",
+                    "unit": "m3",
+                    "quantity": 20,
+                    "rate": 15,
+                    "amount": 300,
+                    "balance_quantity": 20,
+                    "balance_amount": 300
+                }
+            ],
+            "customheadings": [
+                {
+                    "heading": "road",
+                    "roadabstract": [
+                        {
+                            "abstract_id": "ABS001",
+                            "description": "road excavation",
+                            "unit": "m3",
+                            "quantity": 50,
+                            "rate": 12,
+                            "amount": 600,
+                            "balance_quantity": 0,
+                            "balance_amount": 0
+                        },
+                        {
+                            "abstract_id": "ABS002",
+                            "description": "earth excavation",
+                            "unit": "m3",
+                            "quantity": 50,
+                            "rate": 12,
+                            "amount": 600,
+                            "balance_quantity": 0,
+                            "balance_amount": 0
+                        }
+                    ],
+                    "roaddetailed": [
+                        {
+                            "abstract_id": "ABS001",
+                            "breakdown": [
+                                {
+                                    "particulars": "wall cutoff",
+                                    "nos": 50,
+                                    "l": 12,
+                                    "b": 12,
+                                    "d_h": 12,
+                                    "content": 12,
+                                    "balance_quantity": 0,
+                                    "phase_breakdown": [
+                                        {
+                                            "phase": "phase 1",
+                                            "quantity": 50,
+                                            "amount": 600
+                                        }
+                                    ]
+                                },
+                                {
+                                    "particulars": "toe wall",
+                                    "nos": 50,
+                                    "l": 12,
+                                    "b": 12,
+                                    "d_h": 12,
+                                    "content": 12,
+                                    "balance_quantity": 0,
+                                    "phase_breakdown": [
+                                        {
+                                            "phase": "phase 1",
+                                            "quantity": 50,
+                                            "amount": 600
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "abstract_id": "ABS002",
+                            "breakdown": [
+                                {
+                                    "particulars": "wall work",
+                                    "nos": 50,
+                                    "l": 12,
+                                    "b": 12,
+                                    "d_h": 12,
+                                    "content": 12,
+                                    "balance_quantity": 0,
+                                    "phase_breakdown": [
+                                        {
+                                            "phase": "phase 1",
+                                            "quantity": 50,
+                                            "amount": 600
+                                        }
+                                    ]
+                                },
+                                {
+                                    "particulars": "base wall",
+                                    "nos": 50,
+                                    "l": 12,
+                                    "b": 12,
+                                    "d_h": 12,
+                                    "content": 12,
+                                    "balance_quantity": 0,
+                                    "phase_breakdown": [
+                                        {
+                                            "phase": "phase 1",
+                                            "quantity": 50,
+                                            "amount": 600
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                },
+                {
+                    "heading": "bridge",
+                    "roadabstract": [
+                        {
+                            "abstract_id": "ABS001",
+                            "description": "road excavation",
+                            "unit": "m3",
+                            "quantity": 50,
+                            "rate": 12,
+                            "amount": 600,
+                            "balance_quantity": 0,
+                            "balance_amount": 0
+                        },
+                        {
+                            "abstract_id": "ABS002",
+                            "description": "earth excavation",
+                            "unit": "m3",
+                            "quantity": 50,
+                            "rate": 12,
+                            "amount": 600,
+                            "balance_quantity": 0,
+                            "balance_amount": 0
+                        }
+                    ],
+                    "roaddetailed": [
+                        {
+                            "abstract_id": "ABS001",
+                            "breakdown": [
+                                {
+                                    "particulars": "wall cutoff",
+                                    "nos": 50,
+                                    "l": 12,
+                                    "b": 12,
+                                    "d_h": 12,
+                                    "content": 12,
+                                    "balance_quantity": 0,
+                                    "phase_breakdown": [
+                                        {
+                                            "phase": "phase 1",
+                                            "quantity": 50,
+                                            "amount": 600
+                                        }
+                                    ]
+                                },
+                                {
+                                    "particulars": "toe wall",
+                                    "nos": 50,
+                                    "l": 12,
+                                    "b": 12,
+                                    "d_h": 12,
+                                    "content": 12,
+                                    "balance_quantity": 0,
+                                    "phase_breakdown": [
+                                        {
+                                            "phase": "phase 1",
+                                            "quantity": 50,
+                                            "amount": 600
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "abstract_id": "ABS002",
+                            "breakdown": [
+                                {
+                                    "particulars": "wall work",
+                                    "nos": 50,
+                                    "l": 12,
+                                    "b": 12,
+                                    "d_h": 12,
+                                    "content": 12,
+                                    "balance_quantity": 0,
+                                    "phase_breakdown": [
+                                        {
+                                            "phase": "phase 1",
+                                            "quantity": 50,
+                                            "amount": 600
+                                        }
+                                    ]
+                                },
+                                {
+                                    "particulars": "base wall",
+                                    "nos": 50,
+                                    "l": 12,
+                                    "b": 12,
+                                    "d_h": 12,
+                                    "content": 12,
+                                    "balance_quantity": 0,
+                                    "phase_breakdown": [
+                                        {
+                                            "phase": "phase 1",
+                                            "quantity": 50,
+                                            "amount": 600
+                                        }
+                                    ]
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+"createdAt": "2025-10-28T11:19:51.953Z",
+"updatedAt": "2025-10-28T11:21:10.627Z",
+"__v": 3
+}

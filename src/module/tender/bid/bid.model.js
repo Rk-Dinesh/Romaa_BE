@@ -5,6 +5,7 @@ const bidItemSchema = new mongoose.Schema(
     item_code: String,               // Unique code for bid item (auto-generated)
     item_name: String,               // Standard Work Classification Code (from BoQ or elsewhere)
     description: String,             // Description of bid item
+    specifications: String,          // Specifications of bid item
     unit: String,                    // Unit of measurement (e.g., m3, Sqm, Kg)
     quantity: Number,                // Bid quantity
     base_rate: Number,               // BOQ/base rate (for comparison/reference)
@@ -14,6 +15,7 @@ const bidItemSchema = new mongoose.Schema(
     q_amount: Number,                // quantity * q_rate (quoted amount)
     n_amount: Number,                // quantity * n_rate (negotiated amount)
     remarks: String,
+    work_section: String,
   },
   { _id: false }
 );
