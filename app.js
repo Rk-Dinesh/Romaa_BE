@@ -30,6 +30,7 @@ import workOrderRequestrouter from './src/module/project/workorderReqIssue/worko
 import materialrouter from './src/module/tender/materials/material.route.js';
 import purhcaseRequestrouter from './src/module/purchase/purchaseorderReqIssue/purchaseReqIssue.route.js';
 import machineryrouter from './src/module/assets/machinery/machineryasset.route.js';
+import siteoverheadrouter from './src/module/tender/siteoverheads/siteoverhead.route.js';
 
 
 
@@ -88,6 +89,7 @@ app.use('/workorderrequest',workOrderRequestrouter);
 app.use('/purchaseorderrequest',purhcaseRequestrouter);
 app.use('/material',materialrouter);
 app.use('/machineryasset',machineryrouter);
+app.use('/siteoverhead',siteoverheadrouter);
 
 
 app.get('/',(req,res)=>{

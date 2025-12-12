@@ -353,6 +353,26 @@ export const updateEmdDetails = async (req, res) => {
   }
 };
 
+export const getEmdTracking = async (req, res) => {
+  try {
+    const { tender_id } = req.params;
+    const emdTracking = await TenderService.getemd_tracking(tender_id);
+    res.json({ emdTracking });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+export const getSecurityDepositTracking = async (req, res) => {
+  try {
+    const { tender_id } = req.params;
+    const securityDepositTracking = await TenderService.getsecurity_deposit_tracking(tender_id);
+    res.json({ securityDepositTracking });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};  
+
 export const updateSDDetails = async (req, res) => {
   try {
     const { tender_id } = req.params; 

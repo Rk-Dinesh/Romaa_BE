@@ -84,7 +84,17 @@ const approvedEmdDetailsSchema = new mongoose.Schema(
     emd_applied_bank: { type: String, default: "" },
     emd_applied_bank_branch: { type: String, default: "" },
     emd_level: { type: String, default: "" },
-    emd_note: { type: String, default: "" },
+   
+    emd_tracking: [
+      {
+         emd_note: { type: String, default: "" },
+         amount_collected: { type: Number, default: 0 },
+         amount_pending: { type: Number, default: 0 },
+         amount_collected_by: { type: String, default: "" },
+         amount_collected_date: { type: Date, default: null },
+         amount_collected_time: { type: String, default: "" },
+      }
+    ],
     security_deposit_amount: { type: Number, default: 0 },
     security_deposit_validity: { type: Date, default: null },
     security_deposit_status: { type: String, default: "" },
@@ -96,6 +106,16 @@ const approvedEmdDetailsSchema = new mongoose.Schema(
       default: 0, // will be calculated in service
     },
     security_deposit_note: { type: String, default: "" },
+    security_deposit_tracking: [
+      {
+         security_deposit_note: { type: String, default: "" },
+         amount_collected: { type: Number, default: 0 },
+         amount_pending: { type: Number, default: 0 },
+         amount_collected_by: { type: String, default: "" },
+         amount_collected_date: { type: Date, default: null },
+         amount_collected_time: { type: String, default: "" },
+      }
+    ],
   },
   { _id: false }
 );

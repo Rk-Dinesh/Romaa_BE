@@ -2,30 +2,57 @@ import TenderModel from "./tender.model.js";
 import IdcodeServices from "../../idcode/idcode.service.js";
 import ClientModel from "../../clients/client.model.js";
 import DetailedEstimateModel from "../detailedestimate/detailedestimate.model.js";
+import SiteOverheads from "../siteoverheads/siteoverhead.model.js";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const templatePath = path.join(
+  __dirname,
+  "../../../config/siteOverheadsTemplate.json"
+);
+const siteOverheadsTemplate = JSON.parse(fs.readFileSync(templatePath, "utf8"));
 
 class TenderService {
   // Create new tender
-  static async createTender(tenderData) {
+ static async createTender(tenderData) {
     const idname = "TENDER";
     const idcode = "TND";
     await IdcodeServices.addIdCode(idname, idcode);
     const tender_id = await IdcodeServices.generateCode(idname);
 
+    const tender_project_name = `Tender No ${tender_id}`;
+
     const tender = new TenderModel({
       tender_id,
       ...tenderData,
-      tender_project_name: "Tender No" + " " + tender_id,
+      tender_project_name
     });
 
+    // create DetailedEstimate doc
     const detailedEstimate = new DetailedEstimateModel({ tender_id });
-        if (detailedEstimate.detailed_estimate.length === 0) {
-      // If empty, push a new default object
+    if (!detailedEstimate.detailed_estimate ||
+        detailedEstimate.detailed_estimate.length === 0) {
       detailedEstimate.detailed_estimate.push({
         generalabstract: [],
         billofqty: []
       });
     }
     await detailedEstimate.save();
+
+    // create SiteOverheads doc from template
+    const siteOverheadsPayload = {
+      ...siteOverheadsTemplate,
+      tenderId: tender_id,
+      tenderName: tenderData.tender_name,
+      // periodMonths, jobValueRs, sections already present in template
+    };
+
+    const siteOverheads = new SiteOverheads(siteOverheadsPayload);
+    await siteOverheads.save();
 
     return await tender.save();
   }
@@ -354,81 +381,125 @@ class TenderService {
     return { total, tenders };
   }
 
-  static async updateEmdDetailsService(tender_id, updates) {
-    const { emd_note, emd_deposit_amount_collected } = updates;
+ static async updateEmdDetailsService(tender_id, updates) {
+  const { emd_note, emd_deposit_amount_collected } = updates;
 
-    // Find the tender
-    const tender = await TenderModel.findOne({ tender_id });
+  const tender = await TenderModel.findOne({ tender_id });
+  if (!tender) throw new Error("Tender not found");
 
-    if (!tender) throw new Error("Tender not found");
-
-    // In your service function, add this check:
-    if (
-      !tender.emd.approved_emd_details ||
-      tender.emd.approved_emd_details.length === 0
-    ) {
-      throw new Error("No approved EMD details found to update");
-    }
-
-    const emdEntry = tender.emd.approved_emd_details[0];
-    console.log(emdEntry);
-
-    // Update fields if provided
-    if (emd_note !== undefined) emdEntry.emd_note = emd_note;
-    if (emd_deposit_amount_collected !== undefined) {
-      emdEntry.emd_deposit_amount_collected = emd_deposit_amount_collected;
-    }
-
-    // Auto-calculate pending amount
-    emdEntry.emd_deposit_pendingAmount =
-      emdEntry.emd_approved_amount - emdEntry.emd_deposit_amount_collected;
-
-    // Save changes
-    await tender.save();
-
-    return emdEntry;
+  if (
+    !tender.emd.approved_emd_details ||
+    tender.emd.approved_emd_details.length === 0
+  ) {
+    throw new Error("No approved EMD details found to update");
   }
 
-  static async updateSDDetailsService(tender_id, updates) {
-    const { security_deposit_note, security_deposit_amount_collected } =
-      updates;
+  const emdEntry = tender.emd.approved_emd_details[0];
 
-    // Find the tender
-    const tender = await TenderModel.findOne({ tender_id });
+  // current totals (fallback 0)
+  const approved = emdEntry.emd_approved_amount || 0;
+  const prevCollected = emdEntry.emd_deposit_amount_collected || 0;
+  const addAmount = Number(emd_deposit_amount_collected || 0);
 
-    if (!tender) throw new Error("Tender not found");
+  if (emd_note !== undefined) emdEntry.emd_note = emd_note;
 
-    // In your service function, add this check:
-    if (
-      !tender.emd.approved_emd_details ||
-      tender.emd.approved_emd_details.length === 0
-    ) {
-      throw new Error("No approved EMD details found to update");
-    }
+  // new cumulative total
+  const newCollectedTotal = prevCollected + addAmount;
+  emdEntry.emd_deposit_amount_collected = newCollectedTotal;
 
-    const emdEntry = tender.emd.approved_emd_details[0];
-    console.log(emdEntry);
+  // pending
+  const pending = approved - newCollectedTotal;
+  emdEntry.emd_deposit_pendingAmount = pending;
 
-    // Update fields if provided
-    if (security_deposit_note !== undefined)
-      emdEntry.security_deposit_note = security_deposit_note;
-    if (security_deposit_amount_collected !== undefined) {
-      emdEntry.security_deposit_amount_collected =
-        security_deposit_amount_collected;
-    }
+  // push tracking for this *transaction only*
+  emdEntry.emd_tracking.push({
+    emd_note,
+    amount_collected: addAmount,          // 2000 (this entry)
+    amount_pending: pending,              // 8000, 6000, ...
+    amount_collected_by: "Admin",
+    amount_collected_date: new Date(),
+    amount_collected_time: new Date().toLocaleTimeString(),
+  });
 
-    // Auto-calculate pending amount
-    emdEntry.security_deposit_pendingAmount =
-      emdEntry.security_deposit_amount -
-      emdEntry.security_deposit_amount_collected;
+  await tender.save();
+  return emdEntry;
+}
 
-    // Save changes
-    await tender.save();
+static async getemd_tracking(tender_id) {
+  const tender = await TenderModel.findOne({ tender_id });
+  if (!tender) throw new Error("Tender not found");
 
-    return emdEntry;
+  if (
+    !tender.emd.approved_emd_details ||
+    tender.emd.approved_emd_details.length === 0
+  ) {
+    throw new Error("No approved EMD details found to update");
   }
 
-  static async getWorkorderForOverview(tender_id) {
+  const emdEntry = tender.emd.approved_emd_details[0];
+
+  return emdEntry.emd_tracking;
+}
+
+static async updateSDDetailsService(tender_id, updates) {
+  const { security_deposit_note, security_deposit_amount_collected } = updates;
+
+  const tender = await TenderModel.findOne({ tender_id });
+  if (!tender) throw new Error("Tender not found");
+
+  if (
+    !tender.emd.approved_emd_details ||
+    tender.emd.approved_emd_details.length === 0
+  ) {
+    throw new Error("No approved EMD details found to update");
+  }
+
+  const emdEntry = tender.emd.approved_emd_details[0];
+
+  const approved = emdEntry.security_deposit_amount || 0;
+  const prevCollected = emdEntry.security_deposit_amount_collected || 0;
+  const addAmount = Number(security_deposit_amount_collected || 0);
+
+  if (security_deposit_note !== undefined) {
+    emdEntry.security_deposit_note = security_deposit_note;
+  }
+
+  const newCollectedTotal = prevCollected + addAmount;
+  emdEntry.security_deposit_amount_collected = newCollectedTotal;
+
+  const pending = approved - newCollectedTotal;
+  emdEntry.security_deposit_pendingAmount = pending;
+
+  emdEntry.security_deposit_tracking.push({
+    security_deposit_note,
+    amount_collected: addAmount,
+    amount_pending: pending,
+    amount_collected_by: "Admin",
+    amount_collected_date: new Date(),
+    amount_collected_time: new Date().toLocaleTimeString(),
+  });
+
+  await tender.save();
+  return emdEntry;
+}
+
+static async getsecurity_deposit_tracking(tender_id) {
+  const tender = await TenderModel.findOne({ tender_id });
+  if (!tender) throw new Error("Tender not found");
+
+  if (
+    !tender.emd.approved_emd_details ||
+    tender.emd.approved_emd_details.length === 0
+  ) {
+    throw new Error("No approved EMD details found to update");
+  }
+
+  const emdEntry = tender.emd.approved_emd_details[0];
+
+  return emdEntry.security_deposit_tracking;
+}
+
+static async getWorkorderForOverview(tender_id) {
     const tender = await TenderModel.findOne(
       { tender_id },
       {
