@@ -42,89 +42,7 @@ class detailedestimateService {
 
     return headingPairs;
   }
-  //two
-  // static async bulkInsertCustomHeadingsFromCsv(tender_id, nametype, csvRows) {
-  //   if (!tender_id) throw new Error("tender_id is required");
-  //   const match = nametype.match(/^(.*)(abstract|detailed)$/i);
-  //   if (!match) throw new Error("nametype must end with 'abstract' or 'detailed'");
-
-  //   const baseHeading = match[1].toLowerCase();
-  //   const type = match[2].toLowerCase();
-  //   const key = nametype.toLowerCase();
-
-  //   const dataArray = [];
-  //   let totalAmount = 0;
-
-  //   if (type === "abstract") {
-  //     for (const row of csvRows) {
-  //       const amount = Number(row.amount) || 0;
-  //       dataArray.push({
-  //         abstract_id: row.abstract_id,
-  //         description: row.description,
-  //         unit: row.unit || "",
-  //         quantity: Number(row.quantity) || 0,
-  //         rate: Number(row.rate) || 0,
-  //         amount,
-  //         balance_quantity: Number(row.quantity) || 0,
-  //         balance_amount: amount,
-  //         phase_breakdown: []
-  //       });
-  //       totalAmount += amount;
-  //     }
-  //   } else if (type === "detailed") {
-  //     const grouped = {};
-  //     for (const row of csvRows) {
-  //       if (!grouped[row.abstract_id]) {
-  //         grouped[row.abstract_id] = [];
-  //       }
-  //       grouped[row.abstract_id].push({
-  //         particulars: row.particulars,
-  //         nos: row.nos || "",
-  //         l: Number(row.l) || 0,
-  //         b: Number(row.b) || 0,
-  //         d_h: Number(row.d_h) || 0,
-  //         content: Number(row.content) || 0,
-  //         balance_quantity: Number(row.content) || 0,
-  //         phase_breakdown: []
-  //       });
-  //     }
-  //     for (const [abstract_id, breakdown] of Object.entries(grouped)) {
-  //       dataArray.push({ abstract_id, breakdown });
-  //     }
-  //   }
-
-  //   const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-  //   if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
-
-  //   if (detailedEstimate.detailed_estimate.length === 0) {
-  //     detailedEstimate.detailed_estimate.push({ customheadings: [], generalabstract: [] });
-  //   }
-
-  //   const estimate = detailedEstimate.detailed_estimate[0];
-  //   if (!estimate.customheadings) estimate.customheadings = [];
-  //   if (!estimate.generalabstract) estimate.generalabstract = [];
-
-  //   let headingObj = estimate.customheadings.find(h => h.heading === baseHeading);
-  //   if (!headingObj) {
-  //     headingObj = { heading: baseHeading };
-  //     estimate.customheadings.push(headingObj);
-  //   }
-
-  //   if (!headingObj[key]) headingObj[key] = [];
-  //   headingObj[key].push(...dataArray);
-
-  //   if (type === "abstract") {
-  //     estimate.generalabstract.push({
-  //       heading: baseHeading,
-  //       total_amount: totalAmount
-  //     });
-  //   }
-
-  //   detailedEstimate.markModified('detailed_estimate');
-  //   await detailedEstimate.save();
-  //   return detailedEstimate;
-  // }
-
+ 
   static async bulkInsertCustomHeadingsFromCsv(tender_id, nametype, csvRows) {
     if (!tender_id) throw new Error("tender_id is required");
     const match = nametype.match(/^(.*)(abstract|detailed)$/i);
@@ -243,85 +161,6 @@ class detailedestimateService {
     return detailedEstimate;
   }
 
-
-  //one
-  // static async bulkInsertCustomHeadingsFromCsv(tender_id, nametype, csvRows) {
-  //   if (!tender_id) throw new Error("tender_id is required");
-  //   const match = nametype.match(/^(.*)(abstract|detailed)$/i);
-  //   if (!match) throw new Error("nametype must end with 'abstract' or 'detailed'");
-
-  //   const baseHeading = match[1].toLowerCase();
-  //   const type = match[2].toLowerCase();
-  //   const key = nametype.toLowerCase();
-
-  //   const dataArray = [];
-  //   if (type === "abstract") {
-  //     for (const row of csvRows) {
-  //       dataArray.push({
-  //         abstract_id: row.abstract_id,
-  //         description: row.description,
-  //         unit: row.unit || "",
-  //         quantity: Number(row.quantity) || 0,
-  //         rate: Number(row.rate) || 0,
-  //         amount: Number(row.amount) || 0,
-  //         balance_quantity: Number(row.quantity) || 0,
-  //         balance_amount: Number(row.amount) || 0,
-  //         phase_breakdown: []
-  //       });
-  //     }
-  //   } else if (type === "detailed") {
-  //     // Group by abstract_id
-  //     const grouped = {};
-  //     for (const row of csvRows) {
-  //       if (!grouped[row.abstract_id]) {
-  //         grouped[row.abstract_id] = [];
-  //       }
-  //       grouped[row.abstract_id].push({
-  //         particulars: row.particulars,
-  //         nos: row.nos || "",
-  //         l: Number(row.l) || 0,
-  //         b: Number(row.b) || 0,
-  //         d_h: Number(row.d_h) || 0,
-  //         content: Number(row.content) || 0,
-  //         balance_quantity: Number(row.content) || 0,
-  //         phase_breakdown: []
-  //       });
-  //     }
-
-  //     // Convert grouped object to dataArray
-  //     for (const [abstract_id, breakdown] of Object.entries(grouped)) {
-  //       dataArray.push({
-  //         abstract_id,
-  //         breakdown
-  //       });
-  //     }
-  //   }
-
-  //   const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-  //   if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
-
-  //   if (detailedEstimate.detailed_estimate.length === 0) {
-  //     detailedEstimate.detailed_estimate.push({ customheadings: [] });
-  //   }
-
-  //   const estimate = detailedEstimate.detailed_estimate[0];
-  //   if (!estimate.customheadings) estimate.customheadings = [];
-
-  //   let headingObj = estimate.customheadings.find((h) => h.heading === baseHeading);
-  //   if (!headingObj) {
-  //     headingObj = { heading: baseHeading };
-  //     estimate.customheadings.push(headingObj);
-  //   }
-
-  //   if (!headingObj[key]) headingObj[key] = [];
-  //   headingObj[key].push(...dataArray);
-
-  //   detailedEstimate.markModified('detailed_estimate');
-  //   await detailedEstimate.save();
-  //   return detailedEstimate;
-  // }
-
-
   static async getCustomHeadingsByTenderAndNameTypeService(tender_id, nametype) {
     if (!tender_id) throw new Error("tender_id is required");
     if (!nametype) throw new Error("nametype is required");
@@ -367,66 +206,26 @@ class detailedestimateService {
     return headingObj[key];
   }
 
-
-  static async bulkInsert(tender_id, nametype, csvRows) {
+  static async getGeneralAbstractService(tender_id) {
     if (!tender_id) throw new Error("tender_id is required");
-    if (!nametype) throw new Error("nametype is required");
-
-    const baseHeading = nametype.toLowerCase();
-    const dataArray = [];
-
-    for (const row of csvRows) {
-      if (!row.description || row.description.trim() === "") continue;
-      dataArray.push({
-        description: row.description.trim(),
-        unit: row.unit || "",
-        quantity: Number(row.quantity) || 0,
-        rate: Number(row.rate) || 0,
-        amount: Number(row.amount) || 0
-      });
-    }
-
-    if (dataArray.length === 0) throw new Error("No valid rows to insert after validation");
-
-    const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-    if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
-
-    if (detailedEstimate.detailed_estimate.length === 0) {
-      detailedEstimate.detailed_estimate.push({
-        generalabstract: [],
-        billofqty: []
-      });
-    }
-
-    const estimate = detailedEstimate.detailed_estimate[0];
-
-    if (baseHeading === "generalabstract") {
-      if (!estimate.generalabstract) estimate.generalabstract = [];
-      estimate.generalabstract.push(...dataArray);
-    } else if (baseHeading === "billofqty") {
-      if (!estimate.billofqty) estimate.billofqty = [];
-      estimate.billofqty.push(...dataArray);
-    }
-
-    detailedEstimate.markModified("detailed_estimate");
-    await detailedEstimate.save();
-    return detailedEstimate;
-  }
-
-  static async getHeadingsByTenderAndNameTypeService(tender_id, nametype) {
-    if (!tender_id) throw new Error("tender_id is required");
-    if (!nametype) throw new Error("nametype is required");
-
-    const baseHeading = nametype.toLowerCase();
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
     if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
     if (!detailedEstimate.detailed_estimate.length) throw new Error("No detailed estimates available");
-
     const estimate = detailedEstimate.detailed_estimate[0];
-    const headingObj = estimate[baseHeading];
-    if (!headingObj) throw new Error(`No data found for ${nametype}`);
+    if (!estimate.generalabstract || !estimate.generalabstract.length) throw new Error("No general abstract found");
+    return estimate.generalabstract;
+  }
 
-    return headingObj;
+  static async getBillOfQtyService(tender_id) {
+    if (!tender_id) throw new Error("tender_id is required");
+    const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
+    if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
+    if (!detailedEstimate.detailed_estimate.length) throw new Error("No detailed estimates available");
+    const estimate = detailedEstimate.detailed_estimate[0];
+    if (!estimate.billofqty || !estimate.billofqty.length) throw new Error("No bill of qty found");
+    const billOfQty = estimate.billofqty;
+    const spent = estimate.total_spent;
+    return { billOfQty, spent };
   }
 
   static async addPhaseBreakdownToAbstractService(tender_id, nametype, description, phase, quantity) {

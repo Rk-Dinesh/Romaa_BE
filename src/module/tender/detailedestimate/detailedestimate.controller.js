@@ -60,39 +60,6 @@ export const bulkInsertCustomHeadingsController = async (req, res, next) => {
   }
 };
 
-export const bulkInsertHeadingsController = async (req, res, next) => {
-  try {
-    const { tender_id } = req.query;
-    const { nametype } = req.body;
-
-    if (!req.file) return res.status(400).json({ status: false, message: "CSV file is required" });
-    if (!tender_id) return res.status(400).json({ status: false, message: "tender_id is required" });
-    if (!nametype) return res.status(400).json({ status: false, message: "nametype is required" });
-
-    const filePath = path.join(__dirname, "../../../../uploads", req.file.filename);
-    const csvRows = [];
-
-    fs.createReadStream(filePath)
-      .pipe(csvParser())
-      .on("data", (row) => csvRows.push(row))
-      .on("end", async () => {
-        try {
-          const result = await detailedestimateService.bulkInsert(tender_id, nametype, csvRows);
-          res.status(200).json({ status: true, message: "Bulk insert successful", data: result });
-        } catch (error) {
-          next(error);
-        } finally {
-          fs.unlinkSync(filePath);
-        }
-      })
-      .on("error", (err) => {
-        next(err);
-      });
-  } catch (error) {
-    next(error);
-  }
-};
-
 export const getCustomHeadingsByTenderAndNameTypeController = async (req, res, next) => {
   try {
     const { tender_id, nametype } = req.query;
@@ -102,17 +69,24 @@ export const getCustomHeadingsByTenderAndNameTypeController = async (req, res, n
     return res.status(404).json({ status: false, message: error.message });
   }
 };
-
-export const getHeadingsByTenderAndNameTypeController = async (req, res, next) => {
+export const getGeneralAbstractController = async (req, res) => {
   try {
-    const { tender_id, nametype } = req.query;
-    const data = await detailedestimateService.getHeadingsByTenderAndNameTypeService(tender_id, nametype);
+    const { tender_id } = req.query;
+    const data = await detailedestimateService.getGeneralAbstractService(tender_id);
     return res.status(200).json({ status: true, message: "Data retrieved successfully", data });
   } catch (error) {
     return res.status(404).json({ status: false, message: error.message });
   }
 };
-
+export const getBillOfQtyController = async (req, res) => {
+  try {
+    const { tender_id } = req.query;
+    const data = await detailedestimateService.getBillOfQtyService(tender_id);
+    return res.status(200).json({ status: true, message: "Data retrieved successfully", data });
+  } catch (error) {
+    return res.status(404).json({ status: false, message: error.message });
+  }
+};
 export const addPhaseBreakdownToAbstractController = async (req, res) => {
   try {
     const { tender_id, nametype } = req.query;

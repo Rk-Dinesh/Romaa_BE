@@ -1,51 +1,62 @@
-
 {
-  "tender_id": "TND014",
-  "detailed_estimate": [
-    {
-      "generalabstract": [],
-      "billofqty": [
+    "billofqty": [
         {
           "item_id": "ABS001",
           "item_name": "Concrete Work",
-          "unit": "m3"
+          "unit": "m3",
+          "inletquantity": 10,
+          "inletamount": 25000,
+          "total_quantity": 32,
+          "total_amount": 50120,
+          "roadquantity": 12,
+          "roadamount": 120,
+          "wallquantity": 10,
+          "wallamount": 25000
         },
         {
           "item_id": "ABS002",
           "item_name": "Brick Masonry",
-          "unit": "m2"
+          "unit": "m2",
+          "inletquantity": 5,
+          "inletamount": 50,
+          "total_quantity": 18,
+          "total_amount": 180,
+          "roadquantity": 8,
+          "roadamount": 80,
+          "wallquantity": 5,
+          "wallamount": 50
         },
         {
           "item_id": "ABS003",
           "item_name": "Plastering",
-          "unit": "m2"
+          "unit": "m2",
+          "inletquantity": 15,
+          "inletamount": 150,
+          "total_quantity": 30,
+          "total_amount": 300,
+          "wallquantity": 15,
+          "wallamount": 150
         },
         {
           "item_id": "ABS004",
           "item_name": "Painting",
-          "unit": "m2"
+          "unit": "m2",
+          "total_quantity": 12,
+          "total_amount": 120,
+          "roadquantity": 12,
+          "roadamount": 120
         },
         {
           "item_id": "ABS005",
           "item_name": "Floor Tiling",
-          "unit": "m2"
+          "unit": "m2",
+          "total_quantity": 0,
+          "total_amount": 0
         }
       ],
-      "customheadings": [
-        {
-          "heading": "inlet",
-          "inletabstract": [],
-          "inletdetailed": []
-        }
-      ]
-    }
-  ],
-  "createdAt": {
-    "$date": "2025-12-13T09:53:16.279Z"
-  },
-  "updatedAt": {
-    "$date": "2025-12-13T10:42:51.626Z"
-  },
-  "__v": 7
+      "total_spent": {
+        "inlet": 100000,
+        "road": 120,
+        "wall": 25000
+      }
 }
-
