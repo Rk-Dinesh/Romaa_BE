@@ -45,15 +45,17 @@ const HeadingSchema = new mongoose.Schema({
 
 // Detailed Estimate Schema
 const DetailedEstimateSchema = new mongoose.Schema({
-    generalabstract: { type: [AbstractSchema], default: [] },
-    billofqty: { type: [AbstractSchema], default: [] },
-    customheadings: { type: [HeadingSchema], default: [] } // any number of user-defined headings
+    generalabstract: { type: Array, default: [] },
+      billofqty: { type: Array, default: [] },
+    customheadings: { type: [HeadingSchema], default: [] } ,// any number of user-defined headings
+    total_spent: { type: Object, default: {} }
 }, { _id: false });
 
 // Main Document Schema
 const MainSchema = new mongoose.Schema({
     tender_id: { type: String, required: true },
-    detailed_estimate: { type: [DetailedEstimateSchema], default: [] }
+    detailed_estimate: { type: [DetailedEstimateSchema], default: [] },
+   
 }, { timestamps: true });
 
 const DetailedEstimateModel = mongoose.model("DetailedEstimates", MainSchema);

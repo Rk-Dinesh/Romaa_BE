@@ -1,5 +1,7 @@
 import BidModel from "./bid.model.js";
 import IdcodeServices from "../../idcode/idcode.service.js";
+import DetailedEstimateModel from "../detailedestimate/detailedestimate.model.js";
+import { log } from "console";
 
 
 class BidService {
@@ -131,6 +133,7 @@ class BidService {
 
       return {
         item_code: itemCodes[idx],
+        item_id: row.item_id,
         item_name: row.item_name,
         description: row.description,
         unit: row.unit,
@@ -145,20 +148,39 @@ class BidService {
       };
     });
 
+    const detailItems = csvRows.map((row) => ({
+      item_id: row.item_id,
+      item_name: row.item_name,
+      unit: row.unit
+    }));
+
+    let detail = await DetailedEstimateModel.findOne({ tender_id });
+
+    if (detail && detail.detailed_estimate.length > 0) {
+    detail.detailed_estimate[0].billofqty.push(...detailItems);
+    await detail.save();
+  }
+
+
+    // existing BidModel logic (your code)
     let bid = await BidModel.findOne({ tender_id });
 
     if (bid) {
-      // Append new items & update totals, etc.
       bid.items.push(...items);
-      bid.total_quote_amount = bid.items.reduce((sum, i) => sum + (i.q_amount || 0), 0);
-      bid.total_negotiated_amount = bid.items.reduce((sum, i) => sum + (i.n_amount || 0), 0);
+      bid.total_quote_amount = bid.items.reduce(
+        (sum, i) => sum + (i.q_amount || 0),
+        0
+      );
+      bid.total_negotiated_amount = bid.items.reduce(
+        (sum, i) => sum + (i.n_amount || 0),
+        0
+      );
       bid.phase = phase || bid.phase;
       bid.revision = parsedRevision || bid.revision;
       bid.prepared_by = prepared_by || bid.prepared_by;
       bid.approved_by = approved_by || bid.approved_by;
       bid.created_by_user = createdByUser || bid.created_by_user;
     } else {
-      // New Bid
       const idNameBid = "BID";
       const idCodeBid = "BID";
       await IdcodeServices.addIdCode(idNameBid, idCodeBid);
@@ -171,8 +193,14 @@ class BidService {
         phase,
         revision: parsedRevision,
         items,
-        total_quote_amount: items.reduce((sum, i) => sum + (i.q_amount || 0), 0),
-        total_negotiated_amount: items.reduce((sum, i) => sum + (i.n_amount || 0), 0),
+        total_quote_amount: items.reduce(
+          (sum, i) => sum + (i.q_amount || 0),
+          0
+        ),
+        total_negotiated_amount: items.reduce(
+          (sum, i) => sum + (i.n_amount || 0),
+          0
+        ),
         prepared_by,
         approved_by,
         created_by_user: createdByUser,
@@ -183,6 +211,7 @@ class BidService {
 
     return await bid.save();
   }
+
 }
 
 export default BidService;

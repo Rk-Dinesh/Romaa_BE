@@ -3,6 +3,7 @@ import mongoose from "mongoose";
 const bidItemSchema = new mongoose.Schema(
   {
     item_code: String,               // Unique code for bid item (auto-generated)
+    item_id: String,                 // Unique code for  item (manual)
     item_name: String,               // Standard Work Classification Code (from BoQ or elsewhere)
     description: String,             // Description of bid item
     specifications: String,          // Specifications of bid item

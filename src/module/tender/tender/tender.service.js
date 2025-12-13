@@ -638,8 +638,8 @@ static async getWorkorderForOverview(tender_id) {
     tender.preliminary_site_work[index] = {
       ...tender.preliminary_site_work[index]._doc,
       notes: stepData.notes || "",
-      date: stepData.date || null,
-      time: stepData.time || "",
+      date: stepData.date || new Date().toISOString(),
+      time: stepData.time || new Date().toLocaleTimeString() , //to get 12 hour format,
       file_name: stepData.file_name || "",
       file_url: stepData.file_url || "",
       completed: true,
@@ -661,8 +661,8 @@ static async getWorkorderForOverview(tender_id) {
     tender.preliminary_site_work[index] = {
       ...tender.preliminary_site_work[index]._doc,
       notes: stepData.notes || "",
-      date: stepData.date || null,
-      time: stepData.time || "",
+      date: stepData.date || new Date().toISOString(),
+      time: stepData.time || new Date().toLocaleTimeString(),
       file_name: stepData.file_name || "",
       file_url: stepData.file_url || "",
       completed: true,
