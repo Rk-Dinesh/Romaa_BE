@@ -1,62 +1,121 @@
+const sampleCSv = `itemNo,category,description,unit,working_quantity,rate
+ABS001,MAIN_ITEM,,Cum,855.36,
+ABS001,MY-M,Hire JCB,Month,2,80000
+ABS001,MY-M,Tractor,Month,1,45000
+ABS001,MY-F,Diesel,Lit,1275,96
+ABS001,MP-C,Blasting,Points,1100,180
+ABS001,MP-NMR,Helpers,Nos,60,700
+ABS002,MAIN_ITEM,,Cum,684.288,
+ABS002,MY-M,Hire JCB,Month,0.5,80000
+ABS002,MY-F,Diesel,Lit,112.5,96
+ABS002,MP-NMR,Helpers,Nos,15,700
+`;
 {
-    "billofqty": [
+  "tender_id": "TND014",
+  "work_items": [
+    {
+      "itemNo": 1,
+      "workItem": "Laying and curing concrete for foundation",
+      "unit": "Cum",
+      "working_quantity": 855.36,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 0,
+      "MT_BL_rate": 0,
+      "MY_M_rate": 239.67,
+      "MY_F_rate": 143.09,
+      "MP_C_rate": 231.48,
+      "MP_NMR_rate":49.10,
+      "final_rate": 663.35,
+      "lines": [
         {
-          "item_id": "ABS001",
-          "item_name": "Concrete Work",
-          "unit": "m3",
-          "inletquantity": 10,
-          "inletamount": 25000,
-          "total_quantity": 32,
-          "total_amount": 50120,
-          "roadquantity": 12,
-          "roadamount": 120,
-          "wallquantity": 10,
-          "wallamount": 25000
+          "category": "MY-M",
+          "description": "Hire JCB",
+          "unit": "Month",
+          "quantity": 2,
+          "rate": 80000,
+          "amount": 160000,
+          "total_rate": 187.0557
         },
         {
-          "item_id": "ABS002",
-          "item_name": "Brick Masonry",
-          "unit": "m2",
-          "inletquantity": 5,
-          "inletamount": 50,
-          "total_quantity": 18,
-          "total_amount": 180,
-          "roadquantity": 8,
-          "roadamount": 80,
-          "wallquantity": 5,
-          "wallamount": 50
+          "category": "MY-M",
+          "description": "Tractor",
+          "unit": "Month",
+          "quantity": 1,
+          "rate": 45000,
+          "amount": 45000,
+          "total_rate": 52.6094
         },
         {
-          "item_id": "ABS003",
-          "item_name": "Plastering",
-          "unit": "m2",
-          "inletquantity": 15,
-          "inletamount": 150,
-          "total_quantity": 30,
-          "total_amount": 300,
-          "wallquantity": 15,
-          "wallamount": 150
+          "category": "MY-F",
+          "description": "Diesel",
+          "unit": "Lit",
+          "quantity": 1275,
+          "rate": 96,
+          "amount": 122400,
+          "total_rate": 143.0976
         },
         {
-          "item_id": "ABS004",
-          "item_name": "Painting",
-          "unit": "m2",
-          "total_quantity": 12,
-          "total_amount": 120,
-          "roadquantity": 12,
-          "roadamount": 120
+          "category": "MP-C",
+          "description": "Blasting",
+          "unit": "Points",
+          "quantity": 1100,
+          "rate": 180,
+          "amount": 198000,
+          "total_rate": 231.4814
         },
         {
-          "item_id": "ABS005",
-          "item_name": "Floor Tiling",
-          "unit": "m2",
-          "total_quantity": 0,
-          "total_amount": 0
+          "category": "MP-NMR",
+          "description": "Helpers",
+          "unit": "Nos",
+          "quantity": 60,
+          "rate": 700,
+          "amount": 42000,
+          "total_rate": 49.1021
         }
-      ],
-      "total_spent": {
-        "inlet": 100000,
-        "road": 120,
-        "wall": 25000
-      }
+      ]
+    },
+    {
+      "itemNo": 2,
+      "workItem": "Brick work in cement mortar 1:6",
+      "unit": "Cum",
+      "working_quantity": 684.288,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 0,
+      "MT_BL_rate": 0,
+      "MY_M_rate": 58.45,
+      "MY_F_rate": 15.78,
+      "MP_C_rate": 0,
+      "MP_NMR_rate": 15.34,
+      "final_rate": 89.57,
+      "lines": [
+        {
+          "category": "MY-M",
+          "description": "Hire JCB",
+          "unit": "Month",
+          "quantity": 0.5,
+          "rate": 80000,
+          "amount": 40000,
+          "total_rate": 58.4549
+        },
+        {
+          "category": "MY-F",
+          "description": "Diesel",
+          "unit": "Lit",
+          "quantity": 112.5,
+          "rate": 96,
+          "amount": 10800,
+          "total_rate": 15.7828
+        },
+        {
+          "category": "MP-NMR",
+          "description": "Helpers",
+          "unit": "Nos",
+          "quantity": 15,
+          "rate": 700,
+          "amount": 10500,
+          "total_rate": 15.3444
+        }
+      ]
+    }
+  ]
 }

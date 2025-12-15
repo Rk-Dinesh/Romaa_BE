@@ -1,7 +1,8 @@
 import BidModel from "./bid.model.js";
 import IdcodeServices from "../../idcode/idcode.service.js";
 import DetailedEstimateModel from "../detailedestimate/detailedestimate.model.js";
-import { log } from "console";
+import BoqModel from "../boq/boq.model.js";
+import mongoose from "mongoose";
 
 
 class BidService {
@@ -105,75 +106,106 @@ class BidService {
     return await bid.save();
   }
 
-  static async bulkInsert(
-    csvRows,
-    createdByUser,
-    tender_id,
-    phase = "",
-    parsedRevision = 1,
-    prepared_by = "",
-    approved_by = ""
-  ) {
-    const idname = "BID_ITEM";
-    const idcode = "BITEM";
-    await IdcodeServices.addIdCode(idname, idcode);
+static async bulkInsert(
+  csvRows,
+  createdByUser,
+  tender_id,
+  phase = "",
+  parsedRevision = 1,
+  prepared_by = "",
+  approved_by = ""
+) {
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-    const itemCodes = [];
-    for (let i = 0; i < csvRows.length; i++) {
-      const code = await IdcodeServices.generateCode(idname);
-      if (!code) throw new Error("Failed to generate unique item_code");
-      itemCodes.push(code);
-    }
+  try {
+    // ---------- Prepare BID items (no item_code) ----------
+    const items = csvRows.map((row) => {
+      const quantity = Number(row.quantity || 0);
+      const base_rate = Number(row.base_rate || 0);
+      const q_rate = Number(row.q_rate || 0);
+      const n_rate = Number(row.n_rate || 0);
 
-    const items = csvRows.map((row, idx) => {
-      const quantity = Number(row.quantity);
-      const base_rate = Number(row.base_rate);
-      const q_rate = Number(row.q_rate);
-      const n_rate = Number(row.n_rate);
+      const base_amount = Number((quantity * base_rate).toFixed(2));
+      const q_amount = Number((quantity * q_rate).toFixed(2));
+      const n_amount = Number((quantity * n_rate).toFixed(2));
 
       return {
-        item_code: itemCodes[idx],
         item_id: row.item_id,
         item_name: row.item_name,
         description: row.description,
         unit: row.unit,
         quantity,
-        base_rate,
-        q_rate,
-        n_rate,
-        base_amount: quantity * base_rate,
-        q_amount: quantity * q_rate,
-        n_amount: quantity * n_rate,
+        base_rate: Number(base_rate.toFixed(2)),
+        q_rate: Number(q_rate.toFixed(2)),
+        n_rate: Number(n_rate.toFixed(2)),
+        base_amount,
+        q_amount,
+        n_amount,
         remarks: row.remarks
       };
     });
 
+    // ---------- DetailedEstimate update ----------
     const detailItems = csvRows.map((row) => ({
       item_id: row.item_id,
       item_name: row.item_name,
       unit: row.unit
     }));
 
-    let detail = await DetailedEstimateModel.findOne({ tender_id });
+    const detail = await DetailedEstimateModel
+      .findOne({ tender_id })
+      .session(session);
 
-    if (detail && detail.detailed_estimate.length > 0) {
-    detail.detailed_estimate[0].billofqty.push(...detailItems);
-    await detail.save();
-  }
+    if (detail?.detailed_estimate?.length) {
+      detail.detailed_estimate[0].billofqty.push(...detailItems);
+      await detail.save({ session });
+    }
 
+    // ---------- BOQ creation / update ----------
+    const boqItems = csvRows.map((row) => {
+      const quantity = Number(row.quantity || 0);
+      const n_rate = Number(row.n_rate || 0);
+      const n_amount = Number((quantity * n_rate).toFixed(2));
 
-    // existing BidModel logic (your code)
-    let bid = await BidModel.findOne({ tender_id });
+      return {
+        item_id: row.item_id,
+        item_name: row.item_name,
+        description: row.description,
+        specifications: row.specifications,
+        unit: row.unit,
+        quantity,
+        n_rate: Number(n_rate.toFixed(2)),
+        n_amount,
+        remarks: row.remarks
+      };
+    });
+
+    let boq = await BoqModel.findOne({ tender_id }).session(session);
+
+    if (boq) {
+      boq.items.push(...boqItems);
+    } else {
+      boq = new BoqModel({
+        tender_id,
+        status: "DRAFT",
+        items: boqItems,
+        created_by_user: createdByUser
+      });
+    }
+
+    await boq.save({ session });
+
+    // ---------- BID creation / update ----------
+    let bid = await BidModel.findOne({ tender_id }).session(session);
 
     if (bid) {
       bid.items.push(...items);
-      bid.total_quote_amount = bid.items.reduce(
-        (sum, i) => sum + (i.q_amount || 0),
-        0
+      bid.total_quote_amount = Number(
+        bid.items.reduce((sum, i) => sum + (i.q_amount || 0), 0).toFixed(2)
       );
-      bid.total_negotiated_amount = bid.items.reduce(
-        (sum, i) => sum + (i.n_amount || 0),
-        0
+      bid.total_negotiated_amount = Number(
+        bid.items.reduce((sum, i) => sum + (i.n_amount || 0), 0).toFixed(2)
       );
       bid.phase = phase || bid.phase;
       bid.revision = parsedRevision || bid.revision;
@@ -187,20 +219,21 @@ class BidService {
       const bid_id = await IdcodeServices.generateCode(idNameBid);
       if (!bid_id) throw new Error("Failed to generate BID ID");
 
+      const total_quote_amount = Number(
+        items.reduce((sum, i) => sum + (i.q_amount || 0), 0).toFixed(2)
+      );
+      const total_negotiated_amount = Number(
+        items.reduce((sum, i) => sum + (i.n_amount || 0), 0).toFixed(2)
+      );
+
       bid = new BidModel({
         bid_id,
         tender_id,
         phase,
         revision: parsedRevision,
         items,
-        total_quote_amount: items.reduce(
-          (sum, i) => sum + (i.q_amount || 0),
-          0
-        ),
-        total_negotiated_amount: items.reduce(
-          (sum, i) => sum + (i.n_amount || 0),
-          0
-        ),
+        total_quote_amount,
+        total_negotiated_amount,
         prepared_by,
         approved_by,
         created_by_user: createdByUser,
@@ -209,8 +242,18 @@ class BidService {
       });
     }
 
-    return await bid.save();
+    await bid.save({ session });
+
+    await session.commitTransaction();
+    session.endSession();
+    return bid;
+  } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
+    throw err;
   }
+}
+
 
 }
 

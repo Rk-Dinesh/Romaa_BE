@@ -2,53 +2,54 @@ import mongoose from "mongoose";
 
 const boqItemSchema = new mongoose.Schema(
   {
-    item_code: String,
+    item_id: String,
     item_name: String, // Standard Work Classification Code
     description: String, // Work description (e.g., "Earthwork Excavation")
-    specification: String, // Relevant specifications or standards
+    specifications: String, // Relevant specifications or standards
     unit: String, // Unit of measurement (e.g., m3, Sqm, Kg)
     quantity: Number,
-    final_unit_rate: Number, // Estimated rate/unit
-    final_amount: Number, // Calculated (quantity * unit_rate)
-    category: String, // Major, minor, sub-item, etc
+    n_rate: Number, // Estimated rate/unit
+    n_amount: Number, // Calculated (quantity * unit_rate)
     remarks: String,
     work_section: String, // Foundation, Superstructure, etc.
-    material: { type: String, default: "" },
-    material_amount: { type: String, default: "" },
-    fuel: { type: String, default: "" },
-    fuel_amount: { type: String, default: "" },
-    machinery: { type: String, default: "" },
-    machinery_amount: { type: String, default: "" },
-    labor: { type: String, default: "" },
-    labor_amount: { type: String, default: "" },
-    subcontractor: { type: String, default: "" },
-    subcontractor_amount: { type: String, default: "" },
-    zero_cost_unit_rate: {type:String,default:""}, // Rate for zero-cost items
-    zero_cost_final_amount: {type:String,default:""}, // Amount for zero-cost items
+    consumable_material_rate: { type: Number, default: 0 },
+    consumable_material_amount: { type: Number, default: 0 },
+    bulk_material_rate: { type: Number, default: 0 },
+    bulk_material_amount: { type: Number, default: 0 },
+    machinery_rate: { type: Number, default: 0 },
+    machinery_amount: { type: Number, default: 0 },
+    fuel_rate: { type: Number, default: 0 },
+    fuel_amount: { type: Number, default: 0 },
+    contractor_rate: { type: Number, default: 0 },
+    contractor_amount: { type: Number, default: 0 },
+    nmr_rate: { type: Number, default: 0 },
+    nmr_amount: { type: Number, default: 0 },
+    final_rate: { type: Number, default: 0 },
+    final_amount: { type: Number, default: 0 },
+    variance_amount: { type: Number, default: 0 },
+    variance_percentage: { type: Number, default: 0 },
   },
   { _id: false }
 );
 
 const boqSchema = new mongoose.Schema(
   {
-    boq_id: { type: String, unique: true },
-    tender_id: String, // Reference to the Project
-    phase: { type: String, default: "" }, // Phase/Stage: e.g., "Excavation", "Finishing"
-    revision: Number,
-    status: String, // Draft, Verified, Finalized
-    items: [boqItemSchema], // Array of individual BOQ items
-    total_amount: Number, // Sum of all item amounts
-    prepared_by: { type: String, default: "" },
-    approved_by: { type: String, default: "" },
-    prepared_date: { type: Date, default: Date.now() },
-    approved_date: { type: Date, default: Date.now() },
-    attachments: [
-      {
-        file_name: String,
-        file_url: String,
-        uploaded_at: Date,
-      },
-    ],
+    tender_id: String,
+    status: String,
+    items: [boqItemSchema],
+    boq_total_amount: { type: Number, default: 0 },
+    zero_cost_total_amount: { type: Number, default: 0 },
+    variance_amount: { type: Number, default: 0 },
+    variance_percentage: { type: Number, default: 0 },
+    consumable_material: { type: Number, default: 0 },
+    bulk_material: { type: Number, default: 0 },
+    total_material_amount: { type: Number, default: 0 },
+    machinery: { type: Number, default: 0 },
+    fuel: { type: Number, default: 0 },
+    total_machine_amount: { type: Number, default: 0 },
+    contractor: { type: Number, default: 0 },
+    nmr: { type: Number, default: 0 },
+    total_labor_amount: { type: Number, default: 0 },
     created_by_user: { type: String, default: "ADMIN" },
   },
   { timestamps: true }

@@ -1,41 +1,58 @@
 import mongoose from "mongoose";
 
-// Line schema for individual line items grouped by category
-const LineSchema = new mongoose.Schema({
-  description: { type: String, required: true },
-  unit: { type: String, default: "" },
-  quantity: { type: Number, default: null },
-  output: { type: Number, default: null },
-  rate: { type: Number, default: null },
-  amount: { type: Number, default: null },
-  finalRate: { type: Number, default: null }
-}, { _id: false });
+const { Schema } = mongoose;
 
-const LinesByCategorySchema = new mongoose.Schema({
-  category: {
-    type: String,
-    enum: ['MAIN_ITEM', 'MACHINERIES', 'MATERIALS', 'FUEL', 'SUBCONTRACTOR', 'MANPOWER', 'MAIN'],
-    required: true
+// Single line inside "lines" array
+const LineSchema = new Schema(
+  {
+    category: {
+      type: String,
+      enum: [ "MY-M", "MY-F", "MP-C", "MP-NMR", "MT-CM", "MT-BL"],
+      required: true,
+    },
+    description: { type: String, required: true },
+    unit: { type: String, default: "" },
+    quantity: { type: Number, default: null },
+    rate: { type: Number, default: null },
+    amount: { type: Number, default: null },
+    total_rate: { type: Number, default: null },
   },
-  sub: {
-    type: [LineSchema],
-    default: []
-  }
-}, { _id: false });
+  { _id: false }
+);
+// Work item schema
+const WorkItemSchema = new Schema(
+  {
+    itemNo: { type: String, required: true ,index:true},
+    workItem: { type: String, required: true },
+    unit: { type: String, default: null },
 
-const WorkItemSchema = new mongoose.Schema({
-  itemNo: { type: Number, required: true, index: true },
-  workItem: { type: String, required: true },
-  unit: { type: String, default: null },
-  output: { type: Number, default: null },
-  finalRate: { type: Number, default: null },
-  lines: { type: [LinesByCategorySchema], default: [] },
-}, { _id: false });
+    // from JSON
+    working_quantity: { type: Number, default: null },
+    category: {
+      type: String,
+      enum: ["MAIN_ITEM"],
+      default: "MAIN_ITEM",
+    },
+    MT_CM_rate: { type: Number, default: 0 },
+    MT_BL_rate: { type: Number, default: 0 },
+    MY_M_rate: { type: Number, default: 0 },
+    MY_F_rate: { type: Number, default: 0 },
+    MP_C_rate: { type: Number, default: 0 },
+    MP_NMR_rate: { type: Number, default: 0 },
+    final_rate: { type: Number, default: 0 },
 
-const MainSchema = new mongoose.Schema({
-  tender_id: { type: String, required: true },
-  work_items: { type: [WorkItemSchema], default: [] }
-}, { timestamps: true });
+    lines: { type: [LineSchema], default: [] },
+  },
+  { _id: false }
+);
+// Root schema
+const MainSchema = new Schema(
+  {
+    tender_id: { type: String, required: true },
+    work_items: { type: [WorkItemSchema], default: [] },
+  },
+  { timestamps: true }
+);
 
 const WorkItemModel = mongoose.model("WorkItems", MainSchema);
 

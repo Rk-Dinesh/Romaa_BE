@@ -97,31 +97,44 @@ export const uploadWorkItemsCSV1 = async (req, res, next) => {
 export const uploadWorkItemsCSVAndSyncBoq = async (req, res, next) => {
   try {
     const { tender_id } = req.body;
-    if (!tender_id) return res.status(400).json({ error: "tender_id is required" });
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!tender_id) {
+      return res.status(400).json({ error: "tender_id is required" });
+    }
+    if (!req.file) {
+      return res.status(400).json({ error: "No file uploaded" });
+    }
 
     const csvRows = [];
     const filePath = path.join(process.cwd(), "uploads", req.file.filename);
 
     fs.createReadStream(filePath)
       .pipe(csvParser())
-      .on("data", (row) => csvRows.push(row))
+      .on("data", (row) => {
+        csvRows.push(row);
+      })
       .on("end", async () => {
         try {
-          const workItems = await WorkItemService.bulkInsert2(csvRows, tender_id);
-          const boqDoc = await WorkItemService.syncBoqWithWorkItems(tender_id, workItems);
+          const workItemsDoc =
+            await WorkItemService.bulkInsertWorkItemsFromCsv(csvRows, tender_id);
 
           fs.unlinkSync(filePath);
 
           res.status(200).json({
             success: true,
-            updatedBoq: boqDoc,
-            updatedWorkItems: workItems,
+            updatedWorkItems: workItemsDoc
           });
         } catch (e) {
-          try { fs.unlinkSync(filePath); } catch {}
+          try {
+            fs.unlinkSync(filePath);
+          } catch {}
           next(e);
         }
+      })
+      .on("error", (err) => {
+        try {
+          fs.unlinkSync(filePath);
+        } catch {}
+        next(err);
       });
   } catch (error) {
     next(error);
