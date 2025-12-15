@@ -8,7 +8,8 @@ import {
   deleteWorkItem,
   uploadWorkItemsCSV1,
   getWorkItemsByTenderId,
-  uploadWorkItemsCSVAndSyncBoq
+  uploadWorkItemsCSVAndSyncBoq,
+  updateRateAnalysis
 } from './rateanalysis.controller.js';
 
 const rateanalysisrouter = Router();
@@ -22,6 +23,7 @@ rateanalysisrouter.put('/update/:id', updateWorkItem);
 rateanalysisrouter.delete('/delete/:id', deleteWorkItem);
 rateanalysisrouter.post('/uploadcsv1', upload.single('file'), uploadWorkItemsCSV1);
 rateanalysisrouter.post('/uploadcsv', upload.single('file'), uploadWorkItemsCSVAndSyncBoq);
+rateanalysisrouter.put('/updaterateanalysis/:tender_id', updateRateAnalysis);
 
 
 export default rateanalysisrouter;

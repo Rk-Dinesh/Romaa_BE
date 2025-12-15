@@ -432,9 +432,679 @@ class WorkItemService {
   // }
 
 
-static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
+  static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
+    // 1. Load BOQ once
+    const boq = await BoqModel.findOne({ tender_id });
+    const boqItems = boq?.items || [];
+
+    // Map item_id -> boq item (reference)
+    const boqById = new Map();
+    for (const item of boqItems) {
+      if (!item?.item_id) continue;
+      boqById.set(String(item.item_id).trim(), item);
+    }
+
+    // 2. Group CSV rows by itemNo
+    const grouped = new Map(); // itemNo -> { mainRow, detailRows: [] }
+
+    for (const rawRow of csvRows) {
+      if (!rawRow) continue;
+
+      const itemNo = rawRow.itemNo != null ? String(rawRow.itemNo).trim() : "";
+      if (!itemNo) continue;
+
+      const category = rawRow.category != null ? String(rawRow.category).trim() : "";
+
+      let entry = grouped.get(itemNo);
+      if (!entry) {
+        entry = { mainRow: null, detailRows: [] };
+        grouped.set(itemNo, entry);
+      }
+
+      if (category === "MAIN_ITEM") {
+        entry.mainRow = rawRow;
+      } else {
+        entry.detailRows.push(rawRow);
+      }
+    }
+
+    // 3. Build work_items + update BOQ, and in parallel accumulate RA quantities
+    const work_items = [];
+
+    // BOQ totals accumulators
+    let boq_total_amount = 0;
+    let zero_cost_total_amount = 0;
+    let variance_amount_total = 0;
+    let consumable_material_total = 0;
+    let bulk_material_total = 0;
+    let machinery_total = 0;
+    let fuel_total = 0;
+    let contractor_total = 0;
+    let nmr_total = 0;
+
+    // RAQuantity accumulators
+    const raBuckets = {
+      consumable_material: new Map(), // key -> ItemSchema-like obj
+      bulk_material: new Map(),
+      machinery: new Map(),
+      fuel: new Map(),
+      contractor: new Map(),
+      nmr: new Map()
+    };
+
+    // helper to map category to RA bucket name
+    const categoryToBucket = (category) => {
+      switch (category) {
+        case "MT-CM": return "consumable_material";
+        case "MT-BL": return "bulk_material";
+        case "MY-M": return "machinery";
+        case "MY-F": return "fuel";
+        case "MP-C": return "contractor";
+        case "MP-NMR": return "nmr";
+        default: return null;
+      }
+    };
+
+    for (const [itemNo, { mainRow, detailRows }] of grouped.entries()) {
+      if (!mainRow) continue;
+
+      const working_quantity = Number(mainRow.working_quantity || 0);
+      const unit = mainRow.unit || null;
+
+      // workItem text from BOQ; fallback to MAIN_ITEM description or generic label
+      const boqItem = boqById.get(itemNo);
+      const workItem =
+        (boqItem?.description || "").trim() ||
+        (mainRow.description || "").trim() ||
+        `Item ${itemNo}`;
+
+      const lines = [];
+      const categoryTotals = {
+        "MT-CM": 0,
+        "MT-BL": 0,
+        "MY-M": 0,
+        "MY-F": 0,
+        "MP-C": 0,
+        "MP-NMR": 0
+      };
+
+      for (const rawRow of detailRows) {
+        const category =
+          rawRow.category != null ? String(rawRow.category).trim() : "";
+
+        const lineQuantity = Number(
+          rawRow.working_quantity != null
+            ? rawRow.working_quantity
+            : rawRow.quantity || 0
+        );
+        const rate = Number(rawRow.rate || 0);
+        const amount = lineQuantity * rate;
+        const total_rate =
+          working_quantity > 0
+            ? Number((amount / working_quantity).toFixed(4))
+            : 0;
+
+        const line = {
+          category,
+          description: rawRow.description || "",
+          unit: rawRow.unit || "",
+          quantity: lineQuantity,
+          rate,
+          amount,
+          total_rate
+        };
+
+        lines.push(line);
+
+        if (Object.prototype.hasOwnProperty.call(categoryTotals, category)) {
+          categoryTotals[category] += total_rate;
+        }
+
+        // --- RAQuantity accumulation per line ---
+        const bucketName = categoryToBucket(category);
+        if (bucketName && boqItem && working_quantity > 0) {
+          const boqQty = Number(boqItem.quantity || 0);
+          // RA quantity for this item & line
+          const raQtyRaw = (lineQuantity / working_quantity) * boqQty;
+          const raQty = Number(raQtyRaw.toFixed(4));
+
+          // composite key per description + unit + category
+          const key = `${category}||${line.description}||${line.unit}`;
+          const bucket = raBuckets[bucketName];
+
+          let itemAgg = bucket.get(key);
+          if (!itemAgg) {
+            itemAgg = {
+              item_description: line.description,
+              category,
+              unit: line.unit,
+              quantity: [],
+              total_item_quantity: 0,
+              unit_rate: rate, // assume same for all occurrences
+              tax_percent: 0,
+              escalation_percent: 0,
+              tax_amount: 0,
+              total_amount: 0,
+              escalation_amount: 0,
+              percentage_value_of_material: 0
+            };
+            bucket.set(key, itemAgg);
+          }
+
+          itemAgg.quantity.push(raQty);
+          itemAgg.total_item_quantity += raQty;
+        }
+      }
+
+      // Round category rates to 2 decimals
+      const MT_CM_rate = Number(categoryTotals["MT-CM"].toFixed(2));
+      const MT_BL_rate = Number(categoryTotals["MT-BL"].toFixed(2));
+      const MY_M_rate = Number(categoryTotals["MY-M"].toFixed(2));
+      const MY_F_rate = Number(categoryTotals["MY-F"].toFixed(2));
+      const MP_C_rate = Number(categoryTotals["MP-C"].toFixed(2));
+      const MP_NMR_rate = Number(categoryTotals["MP-NMR"].toFixed(2));
+
+      const final_rate_raw =
+        MT_CM_rate +
+        MT_BL_rate +
+        MY_M_rate +
+        MY_F_rate +
+        MP_C_rate +
+        MP_NMR_rate;
+
+      const final_rate = Number(final_rate_raw.toFixed(2));
+
+      work_items.push({
+        itemNo,
+        workItem,
+        unit,
+        working_quantity,
+        category: "MAIN_ITEM",
+        MT_CM_rate,
+        MT_BL_rate,
+        MY_M_rate,
+        MY_F_rate,
+        MP_C_rate,
+        MP_NMR_rate,
+        final_rate,
+        lines
+      });
+
+      // 4. If corresponding BOQ item exists, compute its dynamic fields
+      if (boqItem) {
+        const boqQty = Number(boqItem.quantity || 0);
+        const n_rate = Number(boqItem.n_rate || 0);
+        const n_amount = Number(
+          boqItem.n_amount != null ? boqItem.n_amount : boqQty * n_rate || 0
+        );
+
+        const consumable_material_rate = MT_CM_rate;
+        const consumable_material_amount = Number(
+          (boqQty * consumable_material_rate).toFixed(2)
+        );
+
+        const bulk_material_rate = MT_BL_rate;
+        const bulk_material_amount = Number(
+          (boqQty * bulk_material_rate).toFixed(2)
+        );
+
+        const machinery_rate = MY_M_rate;
+        const machinery_amount = Number(
+          (boqQty * machinery_rate).toFixed(2)
+        );
+
+        const fuel_rate = MY_F_rate;
+        const fuel_amount = Number((boqQty * fuel_rate).toFixed(2));
+
+        const contractor_rate = MP_C_rate;
+        const contractor_amount = Number(
+          (boqQty * contractor_rate).toFixed(2)
+        );
+
+        const nmr_rate = MP_NMR_rate;
+        const nmr_amount = Number((boqQty * nmr_rate).toFixed(2));
+
+        const final_rate_item = final_rate; // already 2 decimals
+        const final_amount = Number(
+          (boqQty * final_rate_item).toFixed(2)
+        );
+
+        const variance_amount = Number(
+          (final_amount - n_amount).toFixed(2)
+        );
+        const variance_percentage =
+          n_amount > 0
+            ? Number(((final_amount / n_amount) * 100).toFixed(2))
+            : 0;
+
+        // assign back into boqItem
+        boqItem.consumable_material_rate = consumable_material_rate;
+        boqItem.consumable_material_amount = consumable_material_amount;
+        boqItem.bulk_material_rate = bulk_material_rate;
+        boqItem.bulk_material_amount = bulk_material_amount;
+        boqItem.machinery_rate = machinery_rate;
+        boqItem.machinery_amount = machinery_amount;
+        boqItem.fuel_rate = fuel_rate;
+        boqItem.fuel_amount = fuel_amount;
+        boqItem.contractor_rate = contractor_rate;
+        boqItem.contractor_amount = contractor_amount;
+        boqItem.nmr_rate = nmr_rate;
+        boqItem.nmr_amount = nmr_amount;
+        boqItem.final_rate = final_rate_item;
+        boqItem.final_amount = final_amount;
+        boqItem.variance_amount = variance_amount;
+        boqItem.variance_percentage = variance_percentage;
+
+        // accumulate BOQ totals
+        boq_total_amount += n_amount;
+        zero_cost_total_amount += final_amount;
+        variance_amount_total += variance_amount;
+        consumable_material_total += consumable_material_amount;
+        bulk_material_total += bulk_material_amount;
+        machinery_total += machinery_amount;
+        fuel_total += fuel_amount;
+        contractor_total += contractor_amount;
+        nmr_total += nmr_amount;
+      }
+    }
+
+    // 5. Upsert WorkItems document for this tender
+    let doc = await WorkItemModel.findOne({ tender_id });
+
+    if (doc) {
+      doc.work_items = work_items;
+    } else {
+      doc = new WorkItemModel({
+        tender_id,
+        work_items
+      });
+    }
+
+    await doc.save();
+
+    // 6. If BOQ exists, update BOQ totals once
+    if (boq) {
+      const total_material_amount = consumable_material_total + bulk_material_total;
+      const total_machine_amount = machinery_total + fuel_total;
+      const total_labor_amount = contractor_total + nmr_total;
+
+      boq.boq_total_amount = Number(boq_total_amount.toFixed(2));
+      boq.zero_cost_total_amount = Number(
+        zero_cost_total_amount.toFixed(2)
+      );
+      boq.variance_amount = Number(variance_amount_total.toFixed(2));
+      boq.variance_percentage = Number(
+        ((zero_cost_total_amount / (boq_total_amount || 1)) * 100).toFixed(2)
+      );
+      boq.consumable_material = Number(
+        consumable_material_total.toFixed(2)
+      );
+      boq.bulk_material = Number(bulk_material_total.toFixed(2));
+      boq.total_material_amount = Number(
+        total_material_amount.toFixed(2)
+      );
+      boq.machinery = Number(machinery_total.toFixed(2));
+      boq.fuel = Number(fuel_total.toFixed(2));
+      boq.total_machine_amount = Number(
+        total_machine_amount.toFixed(2)
+      );
+      boq.contractor = Number(contractor_total.toFixed(2));
+      boq.nmr = Number(nmr_total.toFixed(2));
+      boq.total_labor_amount = Number(
+        total_labor_amount.toFixed(2)
+      );
+
+      await boq.save();
+    }
+
+    // 7. Upsert RAQuantity document
+    const raDocData = {
+      tender_id,
+      quantites: {
+        consumable_material: Array.from(raBuckets.consumable_material.values()).map(
+          (it) => ({
+            ...it,
+            quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+            total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+            total_amount: Number(
+              (it.total_item_quantity * it.unit_rate).toFixed(2)
+            )
+          })
+        ),
+        bulk_material: Array.from(raBuckets.bulk_material.values()).map((it) => ({
+          ...it,
+          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+          total_amount: Number(
+            (it.total_item_quantity * it.unit_rate).toFixed(2)
+          )
+        })),
+        machinery: Array.from(raBuckets.machinery.values()).map((it) => ({
+          ...it,
+          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+          total_amount: Number(
+            (it.total_item_quantity * it.unit_rate).toFixed(2)
+          )
+        })),
+        fuel: Array.from(raBuckets.fuel.values()).map((it) => ({
+          ...it,
+          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+          total_amount: Number(
+            (it.total_item_quantity * it.unit_rate).toFixed(2)
+          )
+        })),
+        contractor: Array.from(raBuckets.contractor.values()).map((it) => ({
+          ...it,
+          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+          total_amount: Number(
+            (it.total_item_quantity * it.unit_rate).toFixed(2)
+          )
+        })),
+        nmr: Array.from(raBuckets.nmr.values()).map((it) => ({
+          ...it,
+          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+          total_amount: Number(
+            (it.total_item_quantity * it.unit_rate).toFixed(2)
+          )
+        }))
+      },
+      created_by_user: "ADMIN"
+    };
+
+    let raDoc = await RAQuantityModel.findOne({ tender_id });
+    if (raDoc) {
+      raDoc.quantites = raDocData.quantites;
+    } else {
+      raDoc = new RAQuantityModel(raDocData);
+    }
+    await raDoc.save();
+
+    return doc;
+  }
+
+  //tw0
+  // static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
+  //   // 1. Load BOQ once
+  //   const boq = await BoqModel.findOne({ tender_id });
+  //   const boqItems = boq?.items || [];
+
+  //   // Map item_id -> boq item (reference)
+  //   const boqById = new Map();
+  //   for (const item of boqItems) {
+  //     if (!item?.item_id) continue;
+  //     boqById.set(String(item.item_id).trim(), item);
+  //   }
+
+  //   // 2. Group CSV rows by itemNo
+  //   const grouped = new Map(); // itemNo -> { mainRow, detailRows: [] }
+
+  //   for (const rawRow of csvRows) {
+  //     if (!rawRow) continue;
+
+  //     const itemNo = rawRow.itemNo != null ? String(rawRow.itemNo).trim() : "";
+  //     if (!itemNo) continue;
+
+  //     const category = rawRow.category != null ? String(rawRow.category).trim() : "";
+
+  //     let entry = grouped.get(itemNo);
+  //     if (!entry) {
+  //       entry = { mainRow: null, detailRows: [] };
+  //       grouped.set(itemNo, entry);
+  //     }
+
+  //     if (category === "MAIN_ITEM") {
+  //       entry.mainRow = rawRow;
+  //     } else {
+  //       entry.detailRows.push(rawRow);
+  //     }
+  //   }
+
+  //   // 3. Build work_items array and in same loop compute/update BOQ per item
+  //   const work_items = [];
+
+  //   // BOQ totals accumulators
+  //   let boq_total_amount = 0;
+  //   let zero_cost_total_amount = 0;
+  //   let variance_amount_total = 0;
+  //   let variance_percentage_total = 0;
+  //   let consumable_material_total = 0;
+  //   let bulk_material_total = 0;
+  //   let machinery_total = 0;
+  //   let fuel_total = 0;
+  //   let contractor_total = 0;
+  //   let nmr_total = 0;
+
+  //   for (const [itemNo, { mainRow, detailRows }] of grouped.entries()) {
+  //     if (!mainRow) continue;
+
+  //     const working_quantity = Number(mainRow.working_quantity || 0);
+  //     const unit = mainRow.unit || null;
+
+  //     // workItem text from BOQ; fallback to MAIN_ITEM description or generic label
+  //     const boqItem = boqById.get(itemNo);
+  //     const workItem =
+  //       (boqItem?.description || "").trim() ||
+  //       (mainRow.description || "").trim() ||
+  //       `Item ${itemNo}`;
+
+  //     const lines = [];
+  //     const categoryTotals = {
+  //       "MT-CM": 0,
+  //       "MT-BL": 0,
+  //       "MY-M": 0,
+  //       "MY-F": 0,
+  //       "MP-C": 0,
+  //       "MP-NMR": 0
+  //     };
+
+  //     for (const rawRow of detailRows) {
+  //       const category =
+  //         rawRow.category != null ? String(rawRow.category).trim() : "";
+
+  //       const quantity = Number(
+  //         rawRow.working_quantity != null
+  //           ? rawRow.working_quantity
+  //           : rawRow.quantity || 0
+  //       );
+  //       const rate = Number(rawRow.rate || 0);
+  //       const amount = quantity * rate;
+  //       const total_rate =
+  //         working_quantity > 0
+  //           ? Number((amount / working_quantity).toFixed(4))
+  //           : 0;
+
+  //       const line = {
+  //         category,
+  //         description: rawRow.description || "",
+  //         unit: rawRow.unit || "",
+  //         quantity,
+  //         rate,
+  //         amount,
+  //         total_rate
+  //       };
+
+  //       lines.push(line);
+
+  //       if (Object.prototype.hasOwnProperty.call(categoryTotals, category)) {
+  //         categoryTotals[category] += total_rate;
+  //       }
+  //     }
+
+  //     // Round category rates to 2 decimals
+  //     const MT_CM_rate = Number(categoryTotals["MT-CM"].toFixed(2));
+  //     const MT_BL_rate = Number(categoryTotals["MT-BL"].toFixed(2));
+  //     const MY_M_rate = Number(categoryTotals["MY-M"].toFixed(2));
+  //     const MY_F_rate = Number(categoryTotals["MY-F"].toFixed(2));
+  //     const MP_C_rate = Number(categoryTotals["MP-C"].toFixed(2));
+  //     const MP_NMR_rate = Number(categoryTotals["MP-NMR"].toFixed(2));
+
+  //     const final_rate_raw =
+  //       MT_CM_rate +
+  //       MT_BL_rate +
+  //       MY_M_rate +
+  //       MY_F_rate +
+  //       MP_C_rate +
+  //       MP_NMR_rate;
+
+  //     const final_rate = Number(final_rate_raw.toFixed(2));
+
+  //     work_items.push({
+  //       itemNo,
+  //       workItem,
+  //       unit,
+  //       working_quantity,
+  //       category: "MAIN_ITEM",
+  //       MT_CM_rate,
+  //       MT_BL_rate,
+  //       MY_M_rate,
+  //       MY_F_rate,
+  //       MP_C_rate,
+  //       MP_NMR_rate,
+  //       final_rate,
+  //       lines
+  //     });
+
+  //     // 4. If corresponding BOQ item exists, compute its dynamic fields
+  //     if (boqItem) {
+  //       const quantity = Number(boqItem.quantity || 0);
+  //       const n_rate = Number(boqItem.n_rate || 0);
+  //       const n_amount = Number(
+  //         boqItem.n_amount != null ? boqItem.n_amount : quantity * n_rate || 0
+  //       );
+
+  //       const consumable_material_rate = MT_CM_rate;
+  //       const consumable_material_amount = Number(
+  //         (quantity * consumable_material_rate).toFixed(2)
+  //       );
+
+  //       const bulk_material_rate = MT_BL_rate;
+  //       const bulk_material_amount = Number(
+  //         (quantity * bulk_material_rate).toFixed(2)
+  //       );
+
+  //       const machinery_rate = MY_M_rate;
+  //       const machinery_amount = Number(
+  //         (quantity * machinery_rate).toFixed(2)
+  //       );
+
+  //       const fuel_rate = MY_F_rate;
+  //       const fuel_amount = Number((quantity * fuel_rate).toFixed(2));
+
+  //       const contractor_rate = MP_C_rate;
+  //       const contractor_amount = Number(
+  //         (quantity * contractor_rate).toFixed(2)
+  //       );
+
+  //       const nmr_rate = MP_NMR_rate;
+  //       const nmr_amount = Number((quantity * nmr_rate).toFixed(2));
+
+  //       const final_rate_item = final_rate; // already 2 decimals
+  //       const final_amount = Number(
+  //         (quantity * final_rate_item).toFixed(2)
+  //       );
+
+  //       const variance_amount = Number(
+  //         (final_amount - n_amount).toFixed(2)
+  //       );
+  //       const variance_percentage =
+  //         n_amount > 0
+  //           ? Number(((final_amount/n_amount) * 100).toFixed(2))
+  //           : 0;
+
+  //       // assign back into boqItem
+  //       boqItem.consumable_material_rate = consumable_material_rate;
+  //       boqItem.consumable_material_amount = consumable_material_amount;
+  //       boqItem.bulk_material_rate = bulk_material_rate;
+  //       boqItem.bulk_material_amount = bulk_material_amount;
+  //       boqItem.machinery_rate = machinery_rate;
+  //       boqItem.machinery_amount = machinery_amount;
+  //       boqItem.fuel_rate = fuel_rate;
+  //       boqItem.fuel_amount = fuel_amount;
+  //       boqItem.contractor_rate = contractor_rate;
+  //       boqItem.contractor_amount = contractor_amount;
+  //       boqItem.nmr_rate = nmr_rate;
+  //       boqItem.nmr_amount = nmr_amount;
+  //       boqItem.final_rate = final_rate_item;
+  //       boqItem.final_amount = final_amount;
+  //       boqItem.variance_amount = variance_amount;
+  //       boqItem.variance_percentage = variance_percentage;
+
+  //       // accumulate BOQ totals
+  //       boq_total_amount += n_amount;
+  //       zero_cost_total_amount += final_amount;
+  //       variance_amount_total += variance_amount;
+  //       // variance_percentage_total += variance_percentage;
+  //       consumable_material_total += consumable_material_amount;
+  //       bulk_material_total += bulk_material_amount;
+  //       machinery_total += machinery_amount;
+  //       fuel_total += fuel_amount;
+  //       contractor_total += contractor_amount;
+  //       nmr_total += nmr_amount;
+  //     }
+  //   }
+
+  //   // 5. Upsert WorkItems document for this tender
+  //   let doc = await WorkItemModel.findOne({ tender_id });
+
+  //   if (doc) {
+  //     doc.work_items = work_items;
+  //   } else {
+  //     doc = new WorkItemModel({
+  //       tender_id,
+  //       work_items
+  //     });
+  //   }
+
+  //   await doc.save();
+
+  //   // 6. If BOQ exists, update BOQ totals once
+  //   if (boq) {
+  //     const total_material_amount = consumable_material_total + bulk_material_total;
+  //     const total_machine_amount = machinery_total + fuel_total;
+  //     const total_labor_amount = contractor_total + nmr_total;
+
+  //     boq.boq_total_amount = Number(boq_total_amount.toFixed(2));
+  //     boq.zero_cost_total_amount = Number(
+  //       zero_cost_total_amount.toFixed(2)
+  //     );
+  //     boq.variance_amount = Number(variance_amount_total.toFixed(2));
+  //     boq.variance_percentage = Number(
+  //       (zero_cost_total_amount/boq_total_amount) * 100
+  //     );
+  //     boq.consumable_material = Number(
+  //       consumable_material_total.toFixed(2)
+  //     );
+  //     boq.bulk_material = Number(bulk_material_total.toFixed(2));
+  //     boq.total_material_amount = Number(
+  //       total_material_amount.toFixed(2)
+  //     );
+  //     boq.machinery = Number(machinery_total.toFixed(2));
+  //     boq.fuel = Number(fuel_total.toFixed(2));
+  //     boq.total_machine_amount = Number(
+  //       total_machine_amount.toFixed(2)
+  //     );
+  //     boq.contractor = Number(contractor_total.toFixed(2));
+  //     boq.nmr = Number(nmr_total.toFixed(2));
+  //     boq.total_labor_amount = Number(
+  //       total_labor_amount.toFixed(2)
+  //     );
+
+  //     await boq.save();
+  //   }
+
+  //   return doc;
+  // }
+static async updateRateAnalysis(payload, tender_id) {
+
+  if (!tender_id) throw new Error("Tender ID is required");
+
   // 1. Load BOQ once
-  const boq = await BoqModel.findOne({ tender_id });
+  const boq = await BoqModel.findOne({ tender_id: tender_id });
+
   const boqItems = boq?.items || [];
 
   // Map item_id -> boq item (reference)
@@ -444,23 +1114,19 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
     boqById.set(String(item.item_id).trim(), item);
   }
 
-  // 2. Group CSV rows by itemNo
-  const grouped = new Map(); // itemNo -> { mainRow, detailRows: [] }
-
-  for (const rawRow of csvRows) {
+  // 2. Group payload work_items by itemNo
+  const grouped = new Map();
+  for (const rawRow of payload) {
     if (!rawRow) continue;
-
     const itemNo = rawRow.itemNo != null ? String(rawRow.itemNo).trim() : "";
     if (!itemNo) continue;
 
     const category = rawRow.category != null ? String(rawRow.category).trim() : "";
-
     let entry = grouped.get(itemNo);
     if (!entry) {
       entry = { mainRow: null, detailRows: [] };
       grouped.set(itemNo, entry);
     }
-
     if (category === "MAIN_ITEM") {
       entry.mainRow = rawRow;
     } else {
@@ -468,10 +1134,8 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
     }
   }
 
-  // 3. Build work_items + update BOQ, and in parallel accumulate RA quantities
+  // 3. Build updated work_items + update BOQ, and in parallel accumulate RA quantities
   const work_items = [];
-
-  // BOQ totals accumulators
   let boq_total_amount = 0;
   let zero_cost_total_amount = 0;
   let variance_amount_total = 0;
@@ -482,9 +1146,8 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
   let contractor_total = 0;
   let nmr_total = 0;
 
-  // RAQuantity accumulators
   const raBuckets = {
-    consumable_material: new Map(), // key -> ItemSchema-like obj
+    consumable_material: new Map(),
     bulk_material: new Map(),
     machinery: new Map(),
     fuel: new Map(),
@@ -492,7 +1155,6 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
     nmr: new Map()
   };
 
-  // helper to map category to RA bucket name
   const categoryToBucket = (category) => {
     switch (category) {
       case "MT-CM": return "consumable_material";
@@ -506,13 +1168,14 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
   };
 
   for (const [itemNo, { mainRow, detailRows }] of grouped.entries()) {
-    if (!mainRow) continue;
+    if (!mainRow) {
+      continue;
+    }
 
     const working_quantity = Number(mainRow.working_quantity || 0);
     const unit = mainRow.unit || null;
-
-    // workItem text from BOQ; fallback to MAIN_ITEM description or generic label
     const boqItem = boqById.get(itemNo);
+
     const workItem =
       (boqItem?.description || "").trim() ||
       (mainRow.description || "").trim() ||
@@ -520,18 +1183,12 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
 
     const lines = [];
     const categoryTotals = {
-      "MT-CM": 0,
-      "MT-BL": 0,
-      "MY-M": 0,
-      "MY-F": 0,
-      "MP-C": 0,
-      "MP-NMR": 0
+      "MT-CM": 0, "MT-BL": 0, "MY-M": 0, "MY-F": 0, "MP-C": 0, "MP-NMR": 0
     };
 
     for (const rawRow of detailRows) {
       const category =
         rawRow.category != null ? String(rawRow.category).trim() : "";
-
       const lineQuantity = Number(
         rawRow.working_quantity != null
           ? rawRow.working_quantity
@@ -564,11 +1221,9 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
       const bucketName = categoryToBucket(category);
       if (bucketName && boqItem && working_quantity > 0) {
         const boqQty = Number(boqItem.quantity || 0);
-        // RA quantity for this item & line
         const raQtyRaw = (lineQuantity / working_quantity) * boqQty;
         const raQty = Number(raQtyRaw.toFixed(4));
 
-        // composite key per description + unit + category
         const key = `${category}||${line.description}||${line.unit}`;
         const bucket = raBuckets[bucketName];
 
@@ -580,7 +1235,7 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
             unit: line.unit,
             quantity: [],
             total_item_quantity: 0,
-            unit_rate: rate, // assume same for all occurrences
+            unit_rate: rate,
             tax_percent: 0,
             escalation_percent: 0,
             tax_amount: 0,
@@ -642,33 +1297,26 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
       const consumable_material_amount = Number(
         (boqQty * consumable_material_rate).toFixed(2)
       );
-
       const bulk_material_rate = MT_BL_rate;
       const bulk_material_amount = Number(
         (boqQty * bulk_material_rate).toFixed(2)
       );
-
       const machinery_rate = MY_M_rate;
       const machinery_amount = Number(
         (boqQty * machinery_rate).toFixed(2)
       );
-
       const fuel_rate = MY_F_rate;
       const fuel_amount = Number((boqQty * fuel_rate).toFixed(2));
-
       const contractor_rate = MP_C_rate;
       const contractor_amount = Number(
         (boqQty * contractor_rate).toFixed(2)
       );
-
       const nmr_rate = MP_NMR_rate;
       const nmr_amount = Number((boqQty * nmr_rate).toFixed(2));
-
-      const final_rate_item = final_rate; // already 2 decimals
+      const final_rate_item = final_rate;
       const final_amount = Number(
         (boqQty * final_rate_item).toFixed(2)
       );
-
       const variance_amount = Number(
         (final_amount - n_amount).toFixed(2)
       );
@@ -709,18 +1357,21 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
   }
 
   // 5. Upsert WorkItems document for this tender
-  let doc = await WorkItemModel.findOne({ tender_id });
+  let doc = await WorkItemModel.findOne({ tender_id: tender_id });
 
   if (doc) {
     doc.work_items = work_items;
   } else {
     doc = new WorkItemModel({
-      tender_id,
+      tender_id: tender_id,
       work_items
     });
   }
-
-  await doc.save();
+  try {
+    await doc.save();
+  } catch (err) {
+    console.error("Error saving WorkItem:", err);
+  }
 
   // 6. If BOQ exists, update BOQ totals once
   if (boq) {
@@ -729,32 +1380,26 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
     const total_labor_amount = contractor_total + nmr_total;
 
     boq.boq_total_amount = Number(boq_total_amount.toFixed(2));
-    boq.zero_cost_total_amount = Number(
-      zero_cost_total_amount.toFixed(2)
-    );
+    boq.zero_cost_total_amount = Number(zero_cost_total_amount.toFixed(2));
     boq.variance_amount = Number(variance_amount_total.toFixed(2));
     boq.variance_percentage = Number(
       ((zero_cost_total_amount / (boq_total_amount || 1)) * 100).toFixed(2)
     );
-    boq.consumable_material = Number(
-      consumable_material_total.toFixed(2)
-    );
+    boq.consumable_material = Number(consumable_material_total.toFixed(2));
     boq.bulk_material = Number(bulk_material_total.toFixed(2));
-    boq.total_material_amount = Number(
-      total_material_amount.toFixed(2)
-    );
+    boq.total_material_amount = Number(total_material_amount.toFixed(2));
     boq.machinery = Number(machinery_total.toFixed(2));
     boq.fuel = Number(fuel_total.toFixed(2));
-    boq.total_machine_amount = Number(
-      total_machine_amount.toFixed(2)
-    );
+    boq.total_machine_amount = Number(total_machine_amount.toFixed(2));
     boq.contractor = Number(contractor_total.toFixed(2));
     boq.nmr = Number(nmr_total.toFixed(2));
-    boq.total_labor_amount = Number(
-      total_labor_amount.toFixed(2)
-    );
+    boq.total_labor_amount = Number(total_labor_amount.toFixed(2));
 
-    await boq.save();
+    try {
+      await boq.save();
+    } catch (err) {
+      console.error("Error saving BOQ:", err);
+    }
   }
 
   // 7. Upsert RAQuantity document
@@ -815,289 +1460,20 @@ static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
     created_by_user: "ADMIN"
   };
 
-  let raDoc = await RAQuantityModel.findOne({ tender_id });
+  let raDoc = await RAQuantityModel.findOne({ tender_id: tender_id });
   if (raDoc) {
     raDoc.quantites = raDocData.quantites;
   } else {
     raDoc = new RAQuantityModel(raDocData);
   }
-  await raDoc.save();
+  try {
+    await raDoc.save();
+  } catch (err) {
+    console.error("Error saving RAQuantity:", err);
+  }
 
   return doc;
 }
-
-//tw0
-// static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
-//   // 1. Load BOQ once
-//   const boq = await BoqModel.findOne({ tender_id });
-//   const boqItems = boq?.items || [];
-
-//   // Map item_id -> boq item (reference)
-//   const boqById = new Map();
-//   for (const item of boqItems) {
-//     if (!item?.item_id) continue;
-//     boqById.set(String(item.item_id).trim(), item);
-//   }
-
-//   // 2. Group CSV rows by itemNo
-//   const grouped = new Map(); // itemNo -> { mainRow, detailRows: [] }
-
-//   for (const rawRow of csvRows) {
-//     if (!rawRow) continue;
-
-//     const itemNo = rawRow.itemNo != null ? String(rawRow.itemNo).trim() : "";
-//     if (!itemNo) continue;
-
-//     const category = rawRow.category != null ? String(rawRow.category).trim() : "";
-
-//     let entry = grouped.get(itemNo);
-//     if (!entry) {
-//       entry = { mainRow: null, detailRows: [] };
-//       grouped.set(itemNo, entry);
-//     }
-
-//     if (category === "MAIN_ITEM") {
-//       entry.mainRow = rawRow;
-//     } else {
-//       entry.detailRows.push(rawRow);
-//     }
-//   }
-
-//   // 3. Build work_items array and in same loop compute/update BOQ per item
-//   const work_items = [];
-
-//   // BOQ totals accumulators
-//   let boq_total_amount = 0;
-//   let zero_cost_total_amount = 0;
-//   let variance_amount_total = 0;
-//   let variance_percentage_total = 0;
-//   let consumable_material_total = 0;
-//   let bulk_material_total = 0;
-//   let machinery_total = 0;
-//   let fuel_total = 0;
-//   let contractor_total = 0;
-//   let nmr_total = 0;
-
-//   for (const [itemNo, { mainRow, detailRows }] of grouped.entries()) {
-//     if (!mainRow) continue;
-
-//     const working_quantity = Number(mainRow.working_quantity || 0);
-//     const unit = mainRow.unit || null;
-
-//     // workItem text from BOQ; fallback to MAIN_ITEM description or generic label
-//     const boqItem = boqById.get(itemNo);
-//     const workItem =
-//       (boqItem?.description || "").trim() ||
-//       (mainRow.description || "").trim() ||
-//       `Item ${itemNo}`;
-
-//     const lines = [];
-//     const categoryTotals = {
-//       "MT-CM": 0,
-//       "MT-BL": 0,
-//       "MY-M": 0,
-//       "MY-F": 0,
-//       "MP-C": 0,
-//       "MP-NMR": 0
-//     };
-
-//     for (const rawRow of detailRows) {
-//       const category =
-//         rawRow.category != null ? String(rawRow.category).trim() : "";
-
-//       const quantity = Number(
-//         rawRow.working_quantity != null
-//           ? rawRow.working_quantity
-//           : rawRow.quantity || 0
-//       );
-//       const rate = Number(rawRow.rate || 0);
-//       const amount = quantity * rate;
-//       const total_rate =
-//         working_quantity > 0
-//           ? Number((amount / working_quantity).toFixed(4))
-//           : 0;
-
-//       const line = {
-//         category,
-//         description: rawRow.description || "",
-//         unit: rawRow.unit || "",
-//         quantity,
-//         rate,
-//         amount,
-//         total_rate
-//       };
-
-//       lines.push(line);
-
-//       if (Object.prototype.hasOwnProperty.call(categoryTotals, category)) {
-//         categoryTotals[category] += total_rate;
-//       }
-//     }
-
-//     // Round category rates to 2 decimals
-//     const MT_CM_rate = Number(categoryTotals["MT-CM"].toFixed(2));
-//     const MT_BL_rate = Number(categoryTotals["MT-BL"].toFixed(2));
-//     const MY_M_rate = Number(categoryTotals["MY-M"].toFixed(2));
-//     const MY_F_rate = Number(categoryTotals["MY-F"].toFixed(2));
-//     const MP_C_rate = Number(categoryTotals["MP-C"].toFixed(2));
-//     const MP_NMR_rate = Number(categoryTotals["MP-NMR"].toFixed(2));
-
-//     const final_rate_raw =
-//       MT_CM_rate +
-//       MT_BL_rate +
-//       MY_M_rate +
-//       MY_F_rate +
-//       MP_C_rate +
-//       MP_NMR_rate;
-
-//     const final_rate = Number(final_rate_raw.toFixed(2));
-
-//     work_items.push({
-//       itemNo,
-//       workItem,
-//       unit,
-//       working_quantity,
-//       category: "MAIN_ITEM",
-//       MT_CM_rate,
-//       MT_BL_rate,
-//       MY_M_rate,
-//       MY_F_rate,
-//       MP_C_rate,
-//       MP_NMR_rate,
-//       final_rate,
-//       lines
-//     });
-
-//     // 4. If corresponding BOQ item exists, compute its dynamic fields
-//     if (boqItem) {
-//       const quantity = Number(boqItem.quantity || 0);
-//       const n_rate = Number(boqItem.n_rate || 0);
-//       const n_amount = Number(
-//         boqItem.n_amount != null ? boqItem.n_amount : quantity * n_rate || 0
-//       );
-
-//       const consumable_material_rate = MT_CM_rate;
-//       const consumable_material_amount = Number(
-//         (quantity * consumable_material_rate).toFixed(2)
-//       );
-
-//       const bulk_material_rate = MT_BL_rate;
-//       const bulk_material_amount = Number(
-//         (quantity * bulk_material_rate).toFixed(2)
-//       );
-
-//       const machinery_rate = MY_M_rate;
-//       const machinery_amount = Number(
-//         (quantity * machinery_rate).toFixed(2)
-//       );
-
-//       const fuel_rate = MY_F_rate;
-//       const fuel_amount = Number((quantity * fuel_rate).toFixed(2));
-
-//       const contractor_rate = MP_C_rate;
-//       const contractor_amount = Number(
-//         (quantity * contractor_rate).toFixed(2)
-//       );
-
-//       const nmr_rate = MP_NMR_rate;
-//       const nmr_amount = Number((quantity * nmr_rate).toFixed(2));
-
-//       const final_rate_item = final_rate; // already 2 decimals
-//       const final_amount = Number(
-//         (quantity * final_rate_item).toFixed(2)
-//       );
-
-//       const variance_amount = Number(
-//         (final_amount - n_amount).toFixed(2)
-//       );
-//       const variance_percentage =
-//         n_amount > 0
-//           ? Number(((final_amount/n_amount) * 100).toFixed(2))
-//           : 0;
-
-//       // assign back into boqItem
-//       boqItem.consumable_material_rate = consumable_material_rate;
-//       boqItem.consumable_material_amount = consumable_material_amount;
-//       boqItem.bulk_material_rate = bulk_material_rate;
-//       boqItem.bulk_material_amount = bulk_material_amount;
-//       boqItem.machinery_rate = machinery_rate;
-//       boqItem.machinery_amount = machinery_amount;
-//       boqItem.fuel_rate = fuel_rate;
-//       boqItem.fuel_amount = fuel_amount;
-//       boqItem.contractor_rate = contractor_rate;
-//       boqItem.contractor_amount = contractor_amount;
-//       boqItem.nmr_rate = nmr_rate;
-//       boqItem.nmr_amount = nmr_amount;
-//       boqItem.final_rate = final_rate_item;
-//       boqItem.final_amount = final_amount;
-//       boqItem.variance_amount = variance_amount;
-//       boqItem.variance_percentage = variance_percentage;
-
-//       // accumulate BOQ totals
-//       boq_total_amount += n_amount;
-//       zero_cost_total_amount += final_amount;
-//       variance_amount_total += variance_amount;
-//       // variance_percentage_total += variance_percentage;
-//       consumable_material_total += consumable_material_amount;
-//       bulk_material_total += bulk_material_amount;
-//       machinery_total += machinery_amount;
-//       fuel_total += fuel_amount;
-//       contractor_total += contractor_amount;
-//       nmr_total += nmr_amount;
-//     }
-//   }
-
-//   // 5. Upsert WorkItems document for this tender
-//   let doc = await WorkItemModel.findOne({ tender_id });
-
-//   if (doc) {
-//     doc.work_items = work_items;
-//   } else {
-//     doc = new WorkItemModel({
-//       tender_id,
-//       work_items
-//     });
-//   }
-
-//   await doc.save();
-
-//   // 6. If BOQ exists, update BOQ totals once
-//   if (boq) {
-//     const total_material_amount = consumable_material_total + bulk_material_total;
-//     const total_machine_amount = machinery_total + fuel_total;
-//     const total_labor_amount = contractor_total + nmr_total;
-
-//     boq.boq_total_amount = Number(boq_total_amount.toFixed(2));
-//     boq.zero_cost_total_amount = Number(
-//       zero_cost_total_amount.toFixed(2)
-//     );
-//     boq.variance_amount = Number(variance_amount_total.toFixed(2));
-//     boq.variance_percentage = Number(
-//       (zero_cost_total_amount/boq_total_amount) * 100
-//     );
-//     boq.consumable_material = Number(
-//       consumable_material_total.toFixed(2)
-//     );
-//     boq.bulk_material = Number(bulk_material_total.toFixed(2));
-//     boq.total_material_amount = Number(
-//       total_material_amount.toFixed(2)
-//     );
-//     boq.machinery = Number(machinery_total.toFixed(2));
-//     boq.fuel = Number(fuel_total.toFixed(2));
-//     boq.total_machine_amount = Number(
-//       total_machine_amount.toFixed(2)
-//     );
-//     boq.contractor = Number(contractor_total.toFixed(2));
-//     boq.nmr = Number(nmr_total.toFixed(2));
-//     boq.total_labor_amount = Number(
-//       total_labor_amount.toFixed(2)
-//     );
-
-//     await boq.save();
-//   }
-
-//   return doc;
-// }
 
 
 

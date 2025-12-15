@@ -7,7 +7,7 @@ const LineSchema = new Schema(
   {
     category: {
       type: String,
-      enum: [ "MY-M", "MY-F", "MP-C", "MP-NMR", "MT-CM", "MT-BL"],
+      enum: ["MY-M", "MY-F", "MP-C", "MP-NMR", "MT-CM", "MT-BL"],
       required: true,
     },
     description: { type: String, required: true },
@@ -17,12 +17,12 @@ const LineSchema = new Schema(
     amount: { type: Number, default: null },
     total_rate: { type: Number, default: null },
   },
-  { _id: false }
+  { _id: false } 
 );
 // Work item schema
 const WorkItemSchema = new Schema(
   {
-    itemNo: { type: String, required: true ,index:true},
+    itemNo: { type: String, required: true, index: true },
     workItem: { type: String, required: true },
     unit: { type: String, default: null },
 
@@ -45,12 +45,13 @@ const WorkItemSchema = new Schema(
   },
   { _id: false }
 );
+
 // Root schema
 const MainSchema = new Schema(
   {
-    tender_id: { type: String, required: true },
+    tender_id: { type: String, required: true, unique: true }, // Explicitly defined as String
     work_items: { type: [WorkItemSchema], default: [] },
-    summary:{
+    summary: {
       direct_cost: { type: Number, default: 0 },
       indirect_cost: { type: Number, default: 0 },
       total_cost: { type: Number, default: 0 },
@@ -66,8 +67,7 @@ const MainSchema = new Schema(
       grossmargin_percentage: { type: Number, default: 0 },
       ho_overheads: { type: Number, default: 0 },
       PBT: { type: Number, default: 0 },
-      
-    }
+    },
   },
   { timestamps: true }
 );

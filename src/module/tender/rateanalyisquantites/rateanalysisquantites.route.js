@@ -3,7 +3,7 @@ import { getRateAnalysisQuantities } from './rateanalysisquantities.controller.j
 
 const rateanalysisquantitesrouter = Router();
 
-rateanalysisquantitesrouter.get('/getbytenderId', getRateAnalysisQuantities);
+rateanalysisquantitesrouter.get('/quantites/:tender_id/:nametype', getRateAnalysisQuantities);
 
 
 
