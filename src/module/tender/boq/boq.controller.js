@@ -167,4 +167,15 @@ if (isNaN(parsedRevision)) {
   } catch (error) {
     next(error);
   }
+
+};
+
+
+export const getBoqItems = async (req, res) => {
+  try {
+    const boq = await BoqService.getBoqItems(req.params.tender_id);
+    res.status(200).json({ status: true, data: boq });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
 };

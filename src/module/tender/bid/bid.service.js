@@ -106,153 +106,183 @@ class BidService {
     return await bid.save();
   }
 
-static async bulkInsert(
-  csvRows,
-  createdByUser,
-  tender_id,
-  phase = "",
-  parsedRevision = 1,
-  prepared_by = "",
-  approved_by = ""
-) {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  static async bulkInsert(
+    csvRows,
+    createdByUser,
+    tender_id,
+    phase = "",
+    parsedRevision = 1,
+    prepared_by = "",
+    approved_by = ""
+  ) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-  try {
-    // ---------- Prepare BID items (no item_code) ----------
-    const items = csvRows.map((row) => {
-      const quantity = Number(row.quantity || 0);
-      const base_rate = Number(row.base_rate || 0);
-      const q_rate = Number(row.q_rate || 0);
-      const n_rate = Number(row.n_rate || 0);
+    try {
+      // ---------- Prepare BID items (no item_code) ----------
+      const items = csvRows.map((row) => {
+        const quantity = Number(row.quantity || 0);
+        const base_rate = Number(row.base_rate || 0);
+        const q_rate = Number(row.q_rate || 0);
+        const n_rate = Number(row.n_rate || 0);
 
-      const base_amount = Number((quantity * base_rate).toFixed(2));
-      const q_amount = Number((quantity * q_rate).toFixed(2));
-      const n_amount = Number((quantity * n_rate).toFixed(2));
+        const base_amount = Number((quantity * base_rate).toFixed(2));
+        const q_amount = Number((quantity * q_rate).toFixed(2));
+        const n_amount = Number((quantity * n_rate).toFixed(2));
 
-      return {
+        return {
+          item_id: row.item_id,
+          item_name: row.item_name,
+          description: row.description,
+          unit: row.unit,
+          quantity,
+          base_rate: Number(base_rate.toFixed(2)),
+          q_rate: Number(q_rate.toFixed(2)),
+          n_rate: Number(n_rate.toFixed(2)),
+          base_amount,
+          q_amount,
+          n_amount,
+          remarks: row.remarks,
+        };
+      });
+
+      // ---------- DetailedEstimate update ----------
+      const detailItems = csvRows.map((row) => ({
         item_id: row.item_id,
         item_name: row.item_name,
-        description: row.description,
         unit: row.unit,
-        quantity,
-        base_rate: Number(base_rate.toFixed(2)),
-        q_rate: Number(q_rate.toFixed(2)),
-        n_rate: Number(n_rate.toFixed(2)),
-        base_amount,
-        q_amount,
-        n_amount,
-        remarks: row.remarks
-      };
-    });
+      }));
 
-    // ---------- DetailedEstimate update ----------
-    const detailItems = csvRows.map((row) => ({
-      item_id: row.item_id,
-      item_name: row.item_name,
-      unit: row.unit
-    }));
+      const detail = await DetailedEstimateModel.findOne({ tender_id }).session(
+        session
+      );
 
-    const detail = await DetailedEstimateModel
-      .findOne({ tender_id })
-      .session(session);
+      if (detail?.detailed_estimate?.length) {
+        const bill = detail.detailed_estimate[0];
 
-    if (detail?.detailed_estimate?.length) {
-      detail.detailed_estimate[0].billofqty.push(...detailItems);
-      await detail.save({ session });
-    }
+        if (!Array.isArray(bill.billofqty) || bill.billofqty.length === 0) {
+          bill.billofqty = [...detailItems];
+        } else {
+          bill.billofqty = detailItems;
+        }
 
-    // ---------- BOQ creation / update ----------
-    const boqItems = csvRows.map((row) => {
-      const quantity = Number(row.quantity || 0);
-      const n_rate = Number(row.n_rate || 0);
-      const n_amount = Number((quantity * n_rate).toFixed(2));
+        await detail.save({ session });
+      }
 
-      return {
-        item_id: row.item_id,
-        item_name: row.item_name,
-        description: row.description,
-        specifications: row.specifications,
-        unit: row.unit,
-        quantity,
-        n_rate: Number(n_rate.toFixed(2)),
-        n_amount,
-        remarks: row.remarks
-      };
-    });
+      // ---------- BOQ creation / update ----------
+      const boqItems = csvRows.map((row) => {
+        const quantity = Number(row.quantity || 0);
+        const n_rate = Number(row.n_rate || 0);
+        const n_amount = Number((quantity * n_rate).toFixed(2));
 
-    let boq = await BoqModel.findOne({ tender_id }).session(session);
-
-    if (boq) {
-      boq.items.push(...boqItems);
-    } else {
-      boq = new BoqModel({
-        tender_id,
-        status: "DRAFT",
-        items: boqItems,
-        created_by_user: createdByUser
+        return {
+          item_id: row.item_id,
+          item_name: row.item_name,
+          description: row.description,
+          specifications: row.specifications,
+          unit: row.unit,
+          quantity,
+          n_rate: Number(n_rate.toFixed(2)),
+          n_amount,
+          remarks: row.remarks,
+        };
       });
+
+      let boq = await BoqModel.findOne({ tender_id }).session(session);
+
+      if (boq) {
+        if (!Array.isArray(boq.items) || boq.items.length === 0) {
+          boq.items = [...boqItems];
+        } else {
+          boq.items = boqItems;
+        }
+      } else {
+        boq = new BoqModel({
+          tender_id,
+          status: "DRAFT",
+          items: boqItems,
+          created_by_user: createdByUser,
+        });
+      }
+
+      // RESET ALL TOTAL FIELDS WHEN REPLACING
+      boq.boq_total_amount = 0;
+      boq.zero_cost_total_amount = 0;
+      boq.variance_amount = 0;
+      boq.variance_percentage = 0;
+      boq.consumable_material = 0;
+      boq.bulk_material = 0;
+      boq.total_material_amount = 0;
+      boq.machinery = 0;
+      boq.fuel = 0;
+      boq.total_machine_amount = 0;
+      boq.contractor = 0;
+      boq.nmr = 0;
+      boq.total_labor_amount = 0;
+
+
+      await boq.save({ session });
+
+      // ---------- BID creation / update ----------
+      let bid = await BidModel.findOne({ tender_id }).session(session);
+
+      if (bid) {
+        // replace existing items instead of pushing
+        bid.items = items;
+
+        bid.total_quote_amount = Number(
+          items.reduce((sum, i) => sum + (i.q_amount || 0), 0).toFixed(2)
+        );
+        bid.total_negotiated_amount = Number(
+          items.reduce((sum, i) => sum + (i.n_amount || 0), 0).toFixed(2)
+        );
+        bid.phase = phase || bid.phase;
+        bid.revision = parsedRevision || bid.revision;
+        bid.prepared_by = prepared_by || bid.prepared_by;
+        bid.approved_by = approved_by || bid.approved_by;
+        bid.created_by_user = createdByUser || bid.created_by_user;
+      } else {
+        const idNameBid = "BID";
+        const idCodeBid = "BID";
+        await IdcodeServices.addIdCode(idNameBid, idCodeBid);
+        const bid_id = await IdcodeServices.generateCode(idNameBid);
+        if (!bid_id) throw new Error("Failed to generate BID ID");
+
+        const total_quote_amount = Number(
+          items.reduce((sum, i) => sum + (i.q_amount || 0), 0).toFixed(2)
+        );
+        const total_negotiated_amount = Number(
+          items.reduce((sum, i) => sum + (i.n_amount || 0), 0).toFixed(2)
+        );
+
+        bid = new BidModel({
+          bid_id,
+          tender_id,
+          phase,
+          revision: parsedRevision,
+          items,
+          total_quote_amount,
+          total_negotiated_amount,
+          prepared_by,
+          approved_by,
+          created_by_user: createdByUser,
+          prepared_date: new Date(),
+          approved_date: new Date(),
+        });
+      }
+
+      await bid.save({ session });
+
+      await session.commitTransaction();
+      session.endSession();
+      return bid;
+    } catch (err) {
+      await session.abortTransaction();
+      session.endSession();
+      throw err;
     }
-
-    await boq.save({ session });
-
-    // ---------- BID creation / update ----------
-    let bid = await BidModel.findOne({ tender_id }).session(session);
-
-    if (bid) {
-      bid.items.push(...items);
-      bid.total_quote_amount = Number(
-        bid.items.reduce((sum, i) => sum + (i.q_amount || 0), 0).toFixed(2)
-      );
-      bid.total_negotiated_amount = Number(
-        bid.items.reduce((sum, i) => sum + (i.n_amount || 0), 0).toFixed(2)
-      );
-      bid.phase = phase || bid.phase;
-      bid.revision = parsedRevision || bid.revision;
-      bid.prepared_by = prepared_by || bid.prepared_by;
-      bid.approved_by = approved_by || bid.approved_by;
-      bid.created_by_user = createdByUser || bid.created_by_user;
-    } else {
-      const idNameBid = "BID";
-      const idCodeBid = "BID";
-      await IdcodeServices.addIdCode(idNameBid, idCodeBid);
-      const bid_id = await IdcodeServices.generateCode(idNameBid);
-      if (!bid_id) throw new Error("Failed to generate BID ID");
-
-      const total_quote_amount = Number(
-        items.reduce((sum, i) => sum + (i.q_amount || 0), 0).toFixed(2)
-      );
-      const total_negotiated_amount = Number(
-        items.reduce((sum, i) => sum + (i.n_amount || 0), 0).toFixed(2)
-      );
-
-      bid = new BidModel({
-        bid_id,
-        tender_id,
-        phase,
-        revision: parsedRevision,
-        items,
-        total_quote_amount,
-        total_negotiated_amount,
-        prepared_by,
-        approved_by,
-        created_by_user: createdByUser,
-        prepared_date: new Date(),
-        approved_date: new Date()
-      });
-    }
-
-    await bid.save({ session });
-
-    await session.commitTransaction();
-    session.endSession();
-    return bid;
-  } catch (err) {
-    await session.abortTransaction();
-    session.endSession();
-    throw err;
   }
-}
+
 
 
 }

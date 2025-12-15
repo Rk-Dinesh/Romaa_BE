@@ -367,6 +367,18 @@ static async bulkInsert(csvRows, createdByUser, tender_id, phase = "", parsedRev
 }
 
 
+static async getBoqItems(tender_id) {
+  const boq = await BoqModel.findOne({ tender_id }).lean();
+
+  if (!boq) {
+    return null;
+  }
+
+  return boq; 
+}
+
+
+
 }
 
 export default BoqService;

@@ -11,7 +11,8 @@ import {
   addOrUpdateBoqItem,
   getBoqItemsPaginated,
   getBoqByTenderId,
-  uploadBoqCSV
+  uploadBoqCSV,
+  getBoqItems,
 } from "./boq.controller.js";
 
 const boqrouter = Router();
@@ -32,5 +33,7 @@ boqrouter.delete("/removeitem/:tender_id/:item_code", removeItemFromBoq);
 boqrouter.get("/items/:tender_id", getBoqItemsPaginated);
 boqrouter.get("/by-tender/:tender_id", getBoqByTenderId);
 boqrouter.post("/uploadcsv", upload.single("file"), uploadBoqCSV);
+
+boqrouter.get("/get-items/:tender_id", getBoqItems);
 
 export default boqrouter;
