@@ -45,6 +45,7 @@ const bidSchema = new mongoose.Schema(
     created_by_user: { type: String, default: "ADMIN" },    // Origin user
     // Audit
     deleted: { type: Boolean, default: false },      // Soft-delete flag (optional)
+    freezed: { type: Boolean, default: false },      // Freezed flag (optional)
   },
   { timestamps: true }
 );

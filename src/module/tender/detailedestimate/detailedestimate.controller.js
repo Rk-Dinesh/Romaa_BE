@@ -27,7 +27,7 @@ export const extractHeadingInpairs = async (req, res) => {
   }
 };
 
-export const bulkInsertCustomHeadingsController = async (req, res, next) => {
+export const bulkInsertCustomHeadingsController = async (req, res) => {
   try {
     const { tender_id } = req.query;
     const { nametype } = req.body;
@@ -47,16 +47,16 @@ export const bulkInsertCustomHeadingsController = async (req, res, next) => {
           const result = await detailedestimateService.bulkInsertCustomHeadingsFromCsv(tender_id, nametype, csvRows);
           res.status(200).json({ status: true, message: "Bulk insert successful", data: result });
         } catch (error) {
-          next(error);
+          return res.status(400).json({ status: false, message: error.message });
         } finally {
           fs.unlinkSync(filePath);
         }
       })
       .on("error", (err) => {
-        next(err);
+        return res.status(400).json({ status: false, message: err.message });
       });
   } catch (error) {
-    next(error);
+    return res.status(500).json({ status: false, message: error.message });
   }
 };
 

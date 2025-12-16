@@ -111,3 +111,12 @@ export const uploadBidCSV = async (req, res, next) => {
     next(error);
   }
 };
+
+export const freezeBid = async (req, res) => {
+  try {
+    const result = await BidService.freezeBid(req.params.tender_id);
+    res.status(200).json({ status: true, message: "Bid frozen successfully", data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};

@@ -6,7 +6,7 @@ const upload = multer({ dest: "uploads/" });
 
 const detailedestrouter = Router();
 
-detailedestrouter.post("/addheading", detailedEstimateCustomHeading);
+detailedestrouter.post("/addheading", detailedEstimateCustomHeading); 
 detailedestrouter.get("/extractheadings", extractHeadingInpairs);
 detailedestrouter.get("/getdatacustomhead", getCustomHeadingsByTenderAndNameTypeController);
 detailedestrouter.post("/bulkinsertcustomhead", upload.single("file"), bulkInsertCustomHeadingsController);

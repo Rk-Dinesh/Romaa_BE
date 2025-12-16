@@ -52,22 +52,20 @@ const MainSchema = new Schema(
     tender_id: { type: String, required: true, unique: true }, // Explicitly defined as String
     work_items: { type: [WorkItemSchema], default: [] },
     summary: {
-      direct_cost: { type: Number, default: 0 },
-      indirect_cost: { type: Number, default: 0 },
+      zero_cost_total_amount: { type: Number, default: 0 },
+      siteoverhead_total_amount: { type: Number, default: 0 },
       total_cost: { type: Number, default: 0 },
-      tender_value: { type: Number, default: 0 },
+      boq_total_amount: { type: Number, default: 0 },
       margin: { type: Number, default: 0 },
       profit: { type: Number, default: 0 },
       escalation_benefits_percentage: { type: Number, default: 0 },
       total_margin: { type: Number, default: 0 },
       risk_contingency: { type: Number, default: 0 },
-      interest: { type: Number, default: 0 },
-      insurance: { type: Number, default: 0 },
-      bank_guarantee: { type: Number, default: 0 },
       grossmargin_percentage: { type: Number, default: 0 },
       ho_overheads: { type: Number, default: 0 },
       PBT: { type: Number, default: 0 },
     },
+    freeze: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
@@ -75,3 +73,6 @@ const MainSchema = new Schema(
 const WorkItemModel = mongoose.model("WorkItems", MainSchema);
 
 export default WorkItemModel;
+
+
+//  grossmargin_percentage: (total_margin/boq_total_amount) *100,

@@ -119,3 +119,38 @@ ABS002,MP-NMR,Helpers,Nos,15,700
     }
   ]
 }
+
+  
+    // // Fetch SiteOverheads grand_total_overheads_rs
+    // const siteOverheads = await SiteOverheads.findOne({ tender_id });
+    // const siteoverhead_total_amount = Number(siteOverheads?.grand_total_overheads_rs || 0);
+
+    // // Calculate summary values
+    // const total_cost = zero_cost_total_amount + siteoverhead_total_amount;
+    // const margin = total_cost - boq_total_amount;
+    // const escalation_benefits_percentage = 0; // default
+    // const total_margin = margin + (margin * escalation_benefits_percentage / 100);
+    // const grossmargin_percentage = boq_total_amount > 0 ? (margin / boq_total_amount) * 100 : 0;
+    // const risk_contingency = 0; // default
+    // const ho_overheads = 0; // default
+    // const PBT = grossmargin_percentage - risk_contingency - ho_overheads;
+
+    // // Update bid summary
+    // await WorkItemModel.updateOne(
+    //   { tender_id },
+    //   {
+    //     $set: {
+    //       "summary.zero_cost_total_amount": zero_cost_total_amount,
+    //       "summary.siteoverhead_total_amount": siteoverhead_total_amount,
+    //       "summary.total_cost": total_cost,
+    //       "summary.boq_total_amount": boq_total_amount,
+    //       "summary.margin": margin,
+    //       "summary.total_margin": total_margin,
+    //       "summary.escalation_benefits_percentage": escalation_benefits_percentage,
+    //       "summary.grossmargin_percentage": grossmargin_percentage,
+    //       "summary.risk_contingency": risk_contingency,
+    //       "summary.ho_overheads": ho_overheads,
+    //       "summary.PBT": PBT
+    //     }
+    //   }
+    // );

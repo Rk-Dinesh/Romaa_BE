@@ -1,8 +1,13 @@
+import BidModel from "../bid/bid.model.js";
 import DetailedEstimateModel from "./detailedestimate.model.js";
 
 class detailedestimateService {
   static async createDetailedEstimateCustomHeadings({ tender_id }, { heading, abstract = [], detailed = [] }) {
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
+    const bid = await BidModel.findOne({ tender_id });
+    if (bid.freezed === false) {
+      throw new Error("🔒 Freeze Bid and try again 🔄");
+    }
     if (!detailedEstimate) {
       throw new Error("Detailed estimate not found for this tender_id");
     }
@@ -42,7 +47,7 @@ class detailedestimateService {
 
     return headingPairs;
   }
- 
+
   static async bulkInsertCustomHeadingsFromCsv(tender_id, nametype, csvRows) {
     if (!tender_id) throw new Error("tender_id is required");
     const match = nametype.match(/^(.*)(abstract|detailed)$/i);
@@ -56,6 +61,35 @@ class detailedestimateService {
     let totalAmount = 0;
 
     if (type === "abstract") {
+      // Extract all abstract_ids from CSV
+      const csvAbstractIds = csvRows.map(row => row.abstract_id);
+
+      // Find duplicates
+      const seen = new Set();
+      const duplicates = csvAbstractIds.filter(id => {
+        if (seen.has(id)) return true;
+        seen.add(id);
+        return false;
+      });
+
+      if (duplicates.length > 0) {
+        throw new Error(`Duplicate abstract IDs  ${[...new Set(duplicates)].join(', ')}`);
+      }
+
+      // Fetch billOfQty item_ids
+      const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
+      if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
+
+      const estimate = detailedEstimate.detailed_estimate[0];
+      if (!estimate || !estimate.billofqty) throw new Error("Bill of Qty not found");
+
+      const billOfQtyItemIds = new Set(estimate.billofqty.map(item => item.item_id));
+
+      // Find missing IDs
+      const missingIds = csvAbstractIds.filter(id => !billOfQtyItemIds.has(id));
+      if (missingIds.length > 0) {
+        throw new Error(`Abstract IDs ${missingIds.join(', ')} are not found in bill of quantity`);
+      }
       for (const row of csvRows) {
         const amount = Number(row.amount) || 0;
         dataArray.push({
@@ -72,6 +106,29 @@ class detailedestimateService {
         totalAmount += amount;
       }
     } else if (type === "detailed") {
+      const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
+      if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
+
+      const estimate = detailedEstimate.detailed_estimate[0];
+      if (!estimate || !estimate.customheadings) throw new Error("Custom headings not found for this tender_id");
+
+      const headingObj = estimate.customheadings.find(h => h.heading === baseHeading);
+      if (!headingObj) throw new Error(`Custom heading ${baseHeading} not found for this tender_id`);
+
+      const abstractKey = `${baseHeading}abstract`;
+      if (!headingObj[abstractKey] || headingObj[abstractKey].length === 0) {
+        throw new Error(`${baseHeading} Abstract is empty. Please add items before proceeding.`);
+      }
+
+      // Extract abstract_ids from CSV
+      const csvAbstractIds = csvRows.map(row => row.abstract_id);
+      // Validate abstract_id exists in abstract array
+      const abstractIds = new Set(headingObj[abstractKey].map(item => item.abstract_id));
+      const missingInAbstract = csvAbstractIds.filter(id => !abstractIds.has(id));
+      if (missingInAbstract.length > 0) {
+        throw new Error(`Abstract IDs ${missingInAbstract.join(', ')} are not found in ${abstractKey}: `);
+      }
+
       const grouped = {};
       for (const row of csvRows) {
         if (!grouped[row.abstract_id]) {
@@ -131,7 +188,7 @@ class detailedestimateService {
           const item = estimate.billofqty.find(b => b.item_id === row.abstract_id);
           if (item) {
             item[`${baseHeading}quantity`] = Number(row.quantity) || 0;
-            item[`${baseHeading}amount`] = Number(row.amount) || 0;
+            item[`${baseHeading}amount`] = Number((row.quantity * item.n_rate).toFixed(2)) || 0;
           }
         }
       }

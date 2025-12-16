@@ -94,7 +94,7 @@ export const uploadWorkItemsCSV1 = async (req, res, next) => {
 };
 
 
-export const uploadWorkItemsCSVAndSyncBoq = async (req, res, next) => {
+export const uploadWorkItemsCSVAndSyncBoq = async (req, res) => {
   try {
     const { tender_id } = req.body;
     if (!tender_id) {
@@ -123,21 +123,21 @@ export const uploadWorkItemsCSVAndSyncBoq = async (req, res, next) => {
             success: true,
             updatedWorkItems: workItemsDoc
           });
-        } catch (e) {
+        } catch (error) {
           try {
             fs.unlinkSync(filePath);
-          } catch { }
-          next(e);
+          } catch (error) { }
+          return res.status(400).json({ status: false, message: error.message });
         }
       })
       .on("error", (err) => {
         try {
           fs.unlinkSync(filePath);
         } catch { }
-        next(err);
+        return res.status(400).json({ status: false, message: err.message });
       });
   } catch (error) {
-    next(error);
+    return res.status(400).json({ status: false, message: error.message });
   }
 };
 
@@ -153,4 +153,13 @@ export const updateRateAnalysis = async (req, res) => {
   }
 }
 
+export const freezeRateAnalysis = async (req, res) => {
+  const { tender_id } = req.params;
 
+  try {
+    const updatedDoc = await WorkItemService.freezeRateAnalysis(tender_id);
+    res.status(200).json({ message: 'Rate analysis frozen successfully', data: updatedDoc });
+  } catch (err) {
+    res.status(500).json({ message: 'Error freezing rate analysis', error: err.message });
+  }
+}

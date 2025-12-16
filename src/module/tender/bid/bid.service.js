@@ -147,11 +147,15 @@ class BidService {
       });
 
       // ---------- DetailedEstimate update ----------
-      const detailItems = csvRows.map((row) => ({
+      const detailItems = csvRows.map((row) => {
+        const n_rate = Number(row.n_rate || 0);
+        return {
         item_id: row.item_id,
         item_name: row.item_name,
         unit: row.unit,
-      }));
+        n_rate:Number(n_rate.toFixed(2)),  
+      }
+      });
 
       const detail = await DetailedEstimateModel.findOne({ tender_id }).session(
         session
@@ -283,7 +287,12 @@ class BidService {
     }
   }
 
-
+static async freezeBid(tender_id) {
+  const bid = await BidModel.findOne({ tender_id });
+  if (!bid) throw new Error("Bid not found");
+  bid.freezed = true;
+  return await bid.save();
+}
 
 }
 
