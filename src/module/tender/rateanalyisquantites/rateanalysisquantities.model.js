@@ -16,6 +16,7 @@ const ItemSchema = new mongoose.Schema(
         escalation_percent: { type: Number, default: 0 },
         tax_amount: { type: Number, default: 0 },
         total_amount: { type: Number, default: 0 },
+        final_amount: { type: Number, default: 0 },
         escalation_amount: { type: Number, default: 0 },
         percentage_value_of_material: { type: Number, default: 0 }
     },

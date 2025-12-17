@@ -163,3 +163,15 @@ export const freezeRateAnalysis = async (req, res) => {
     res.status(500).json({ message: 'Error freezing rate analysis', error: err.message });
   }
 }
+
+export const getSummary = async (req, res) => {
+  const { tender_id } = req.params;
+
+  try {
+    const summary = await WorkItemService.getSummary(tender_id);
+    res.status(200).json({ message: 'Summary retrieved successfully', data: summary });
+  } catch (err) {
+    res.status(500).json({ message: 'Error retrieving summary', error: err.message });
+  }
+}
+

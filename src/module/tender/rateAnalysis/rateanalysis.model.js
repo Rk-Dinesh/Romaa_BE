@@ -57,7 +57,6 @@ const MainSchema = new Schema(
       total_cost: { type: Number, default: 0 },
       boq_total_amount: { type: Number, default: 0 },
       margin: { type: Number, default: 0 },
-      profit: { type: Number, default: 0 },
       escalation_benefits_percentage: { type: Number, default: 0 },
       total_margin: { type: Number, default: 0 },
       risk_contingency: { type: Number, default: 0 },
@@ -74,5 +73,15 @@ const WorkItemModel = mongoose.model("WorkItems", MainSchema);
 
 export default WorkItemModel;
 
-
-//  grossmargin_percentage: (total_margin/boq_total_amount) *100,
+// Calculate summary values
+// zero_cost_total_amount 
+// siteoverhead_total_amount = updated value of  grand_total_overheads_rs
+// total_cost = zero_cost_total_amount + siteoverhead_total_amount
+// boq_total_amount = take from boq
+// margin = total_cost - boq_total_amount
+// escalation_benefits_percentage = if 1 or 2 etc
+// total_margin = margin + (margin * escalation_benefits_percentage / 100)
+// grossmargin_percentage = total_margin * 100 / boq_total_amount
+// risk_contingency = 1 0r 2
+// ho_overheads =1 or 2 or 0
+// PBT = grossmargin_percentage - risk_contingency - ho_overheads

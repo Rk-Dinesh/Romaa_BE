@@ -10,7 +10,8 @@ import {
   getWorkItemsByTenderId,
   uploadWorkItemsCSVAndSyncBoq,
   updateRateAnalysis,
-  freezeRateAnalysis
+  freezeRateAnalysis,
+  getSummary
 } from './rateanalysis.controller.js';
 
 const rateanalysisrouter = Router();
@@ -26,5 +27,6 @@ rateanalysisrouter.post('/uploadcsv1', upload.single('file'), uploadWorkItemsCSV
 rateanalysisrouter.post('/uploadcsv', upload.single('file'), uploadWorkItemsCSVAndSyncBoq);
 rateanalysisrouter.put('/updaterateanalysis/:tender_id', updateRateAnalysis);
 rateanalysisrouter.put('/freeze/:tender_id', freezeRateAnalysis);
+rateanalysisrouter.get('/getsummary/:tender_id', getSummary);
 
 export default rateanalysisrouter;

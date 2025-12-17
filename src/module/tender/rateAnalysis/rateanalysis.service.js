@@ -5,6 +5,7 @@ import BoqModel from "../boq/boq.model.js";
 import RAQuantityModel from "../rateanalyisquantites/rateanalysisquantities.model.js";
 import BidModel from "../bid/bid.model.js";
 import SiteOverheads from "../siteoverheads/siteoverhead.model.js";
+import TenderModel from "../tender/tender.model.js";
 
 function groupLinesByCategory(lines) {
   // Group lines by 'category'
@@ -777,7 +778,9 @@ class WorkItemService {
             total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
             total_amount: Number(
               (it.total_item_quantity * it.unit_rate).toFixed(2)
-            )
+            ),
+            tax_amount: 0,
+            final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
           })
         ),
         bulk_material: Array.from(raBuckets.bulk_material.values()).map((it) => ({
@@ -786,7 +789,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: 0,
+          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
         })),
         machinery: Array.from(raBuckets.machinery.values()).map((it) => ({
           ...it,
@@ -794,7 +799,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: 0,
+          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
         })),
         fuel: Array.from(raBuckets.fuel.values()).map((it) => ({
           ...it,
@@ -802,7 +809,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: 0,
+          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
         })),
         contractor: Array.from(raBuckets.contractor.values()).map((it) => ({
           ...it,
@@ -810,7 +819,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: 0,
+          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
         })),
         nmr: Array.from(raBuckets.nmr.values()).map((it) => ({
           ...it,
@@ -818,7 +829,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: 0,
+          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
         }))
       },
       created_by_user: "ADMIN"
@@ -831,6 +844,64 @@ class WorkItemService {
       raDoc = new RAQuantityModel(raDocData);
     }
     await raDoc.save();
+
+    // 8. Calculate summary values and update WorkItems summary
+    if (boq) {
+      // 1) zero_cost_total_amount & boq_total_amount from BOQ
+      const zero_cost_total_amount = Number(boq.zero_cost_total_amount || 0);
+      const boq_total_amount = Number(boq.boq_total_amount || 0);
+
+      // 2) siteoverhead_total_amount from SiteOverheads
+      const siteOverheads = await SiteOverheads.findOne({ tenderId: tender_id });
+      const siteoverhead_total_amount = Number(
+        siteOverheads?.grand_total_overheads_rs || 0
+      );
+
+      // 3) total_cost
+      const total_cost = zero_cost_total_amount + siteoverhead_total_amount;
+
+      // 4) margin
+      const margin = total_cost - boq_total_amount;
+
+      // 5) escalation_benefits_percentage
+      // You can pass this as an argument, read from Bid, or keep a default
+      const escalation_benefits_percentage = 0;
+
+      // 6) total_margin
+      const total_margin =
+        margin + (margin * escalation_benefits_percentage) / 100;
+
+      // 7) grossmargin_percentage
+      const grossmargin_percentage =
+        boq_total_amount > 0 ? (total_margin * 100) / boq_total_amount : 0;
+
+      // 8) risk_contingency & ho_overheads
+      // Either keep as constants, args, or pick from another model (e.g., Bid)
+      const risk_contingency = 0;
+
+      const ho_overheads = 0;
+
+      // 9) PBT
+      const PBT = grossmargin_percentage - risk_contingency - ho_overheads;
+
+      // 10) Persist into WorkItems document summary
+      doc.summary = {
+        zero_cost_total_amount,
+        siteoverhead_total_amount,
+        total_cost,
+        boq_total_amount,
+        margin,
+        escalation_benefits_percentage,
+        total_margin,
+        grossmargin_percentage,
+        risk_contingency,
+        ho_overheads,
+        PBT
+      };
+
+      await doc.save();
+    }
+
 
     return doc;
   }
@@ -1422,7 +1493,9 @@ class WorkItemService {
             total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
             total_amount: Number(
               (it.total_item_quantity * it.unit_rate).toFixed(2)
-            )
+            ),
+            tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
+            final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
           })
         ),
         bulk_material: Array.from(raBuckets.bulk_material.values()).map((it) => ({
@@ -1431,7 +1504,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
+          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
         })),
         machinery: Array.from(raBuckets.machinery.values()).map((it) => ({
           ...it,
@@ -1439,7 +1514,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
+          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
         })),
         fuel: Array.from(raBuckets.fuel.values()).map((it) => ({
           ...it,
@@ -1447,7 +1524,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
+          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
         })),
         contractor: Array.from(raBuckets.contractor.values()).map((it) => ({
           ...it,
@@ -1455,7 +1534,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
+          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
         })),
         nmr: Array.from(raBuckets.nmr.values()).map((it) => ({
           ...it,
@@ -1463,7 +1544,9 @@ class WorkItemService {
           total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
           total_amount: Number(
             (it.total_item_quantity * it.unit_rate).toFixed(2)
-          )
+          ),
+          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
+          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
         }))
       },
       created_by_user: "ADMIN"
@@ -1481,6 +1564,62 @@ class WorkItemService {
       console.error("Error saving RAQuantity:", err);
     }
 
+    // 8. Calculate summary values and update WorkItems summary
+    if (boq) {
+      // 1) zero_cost_total_amount & boq_total_amount from BOQ
+      const zero_cost_total_amount = Number(boq.zero_cost_total_amount || 0);
+      const boq_total_amount = Number(boq.boq_total_amount || 0);
+
+      // 2) siteoverhead_total_amount from SiteOverheads
+      const siteOverheads = await SiteOverheads.findOne({ tenderId: tender_id });
+      const siteoverhead_total_amount = Number(
+        siteOverheads?.grand_total_overheads_rs || 0
+      );
+
+      // 3) total_cost
+      const total_cost = zero_cost_total_amount + siteoverhead_total_amount;
+
+      // 4) margin
+      const margin = total_cost - boq_total_amount;
+
+      // 5) escalation_benefits_percentage
+      // You can pass this as an argument, read from Bid, or keep a default
+      const escalation_benefits_percentage = 0;
+      // 6) total_margin
+      const total_margin =
+        margin + (margin * escalation_benefits_percentage) / 100;
+
+      // 7) grossmargin_percentage
+      const grossmargin_percentage =
+        boq_total_amount > 0 ? (total_margin * 100) / boq_total_amount : 0;
+
+      // 8) risk_contingency & ho_overheads
+      // Either keep as constants, args, or pick from another model (e.g., Bid)
+      const risk_contingency = 0;
+
+      const ho_overheads = 0;
+
+      // 9) PBT
+      const PBT = grossmargin_percentage - risk_contingency - ho_overheads;
+
+      // 10) Persist into WorkItems document summary
+      doc.summary = {
+        zero_cost_total_amount,
+        siteoverhead_total_amount,
+        total_cost,
+        boq_total_amount,
+        margin,
+        escalation_benefits_percentage,
+        total_margin,
+        grossmargin_percentage,
+        risk_contingency,
+        ho_overheads,
+        PBT
+      };
+
+      await doc.save();
+    }
+
     return doc;
   }
 
@@ -1491,6 +1630,85 @@ class WorkItemService {
     }
     doc.freeze = true;
     await doc.save();
+  }
+
+  static async updateSummaryAfterSiteOverhead(tender_id) {
+    // Fetch latest BOQ and SiteOverheads
+    const boq = await BoqModel.findOne({ tender_id });
+    const siteOverheads = await SiteOverheads.findOne({ tenderId: tender_id });
+
+    if (!boq || !siteOverheads) {
+      throw new Error("BOQ or SiteOverheads not found for tender_id");
+    }
+
+    // Extract values
+    const zero_cost_total_amount = Number(boq.zero_cost_total_amount || 0);
+    const siteoverhead_total_amount = Number(siteOverheads.grand_total_overheads_rs || 0);
+    const boq_total_amount = Number(boq.boq_total_amount || 0);
+
+    // Calculate summary values
+    const total_cost = zero_cost_total_amount + siteoverhead_total_amount;
+    const margin = total_cost - boq_total_amount;
+    const escalation_benefits_percentage = Number(siteOverheads.escalation_benefits_percentage || 0);
+    const total_margin = margin + (margin * escalation_benefits_percentage) / 100;
+    const grossmargin_percentage = boq_total_amount > 0 ? (total_margin * 100) / boq_total_amount : 0;
+    const risk_contingency = Number(siteOverheads.risk_contingency || 0);
+    const ho_overheads = Number(siteOverheads.ho_overheads || 0);
+    const PBT = grossmargin_percentage - risk_contingency - ho_overheads;
+
+    // Update WorkItems summary
+    const doc = await WorkItemModel.findOne({ tender_id });
+    if (!doc) {
+      throw new Error("WorkItem document not found for tender_id");
+    }
+
+    doc.summary = {
+      zero_cost_total_amount,
+      siteoverhead_total_amount,
+      total_cost,
+      boq_total_amount,
+      margin,
+      escalation_benefits_percentage,
+      total_margin,
+      grossmargin_percentage,
+      risk_contingency,
+      ho_overheads,
+      PBT,
+    };
+
+    await doc.save();
+    return doc;
+  }
+
+  static async getSummary(tender_id) {
+    const doc = await WorkItemModel.findOne({ tender_id });
+    const tender = await TenderModel.findOne({ tender_id });
+
+    if (!doc) {
+      throw new Error("WorkItem not found");
+    }
+
+    if (!tender) {
+      throw new Error("Tender not found");
+    }
+    const tenderdetails = {
+      tender_id: tender.tender_id,
+      tender_name: tender.tender_name,
+      tender_project_name: tender.tender_project_name,
+      tender_type: tender.tender_type,
+      tender_status: tender.tender_status,
+      tender_start_date: tender.tender_start_date,
+      tender_end_date: tender.tender_end_date,
+      tender_location: tender.tender_location,
+      tender_description: tender.tender_description,
+      client_name: tender.client_name
+    };
+
+    return {
+      summary: doc.summary,
+      tenderdetails,
+      freeze: doc.freeze
+    };
   }
 
 }
