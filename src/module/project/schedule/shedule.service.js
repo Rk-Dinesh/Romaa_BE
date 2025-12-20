@@ -298,6 +298,7 @@ class ScheduleService {
             unit: item.unit,
             quantity: item.quantity,
             daily: item.daily,
+            weekly: item.weekly,
         };
        });
        return items;
