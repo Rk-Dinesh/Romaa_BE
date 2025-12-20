@@ -217,7 +217,7 @@ export const updateTenderWorkOrderController = async (req, res) => {
 export const updateTenderAgreementController = async (req, res) => {
   try {
     const { tender_id } = req.params;
-    const { agreement_id,agreement_issued_date } = req.body;
+    const { agreement_id,agreement_value,agreement_issued_date } = req.body;
 
     if (!tender_id || !agreement_issued_date ||!agreement_id) {
       return res.status(400).json({
@@ -229,6 +229,7 @@ export const updateTenderAgreementController = async (req, res) => {
     const updatedTender = await TenderService.updateTenderStatusWithAgreement(
       tender_id,
       agreement_id,
+      agreement_value,
       agreement_issued_date
     );
 

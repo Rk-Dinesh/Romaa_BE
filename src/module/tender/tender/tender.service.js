@@ -171,6 +171,7 @@ class TenderService {
         follow_up_ids: 1,
         client_id: 1,
         client_name: 1,
+        agreement_value:1
       }
     ).lean();
 
@@ -202,6 +203,7 @@ class TenderService {
         contact_person: tender.tender_contact_person,
         contact_phone: tender.tender_contact_phone,
         contact_email: tender.tender_contact_email,
+        agreement_value: tender.agreement_value
       },
       customerDetails: client
         ? {
@@ -248,6 +250,7 @@ class TenderService {
   static async updateTenderStatusWithAgreement(
     tender_id,
     agreement_id,
+    agreement_value,
     agreement_issued_date
   ) {
     const tender = await TenderModel.findOne({ tender_id });
@@ -256,6 +259,7 @@ class TenderService {
       throw new Error("Tender not found for the given tender_id");
     }
     tender.agreement_id = agreement_id;
+    tender.agreement_value = agreement_value;
     tender.tender_status = "APPROVED";
     tender.agreement_issued_date = agreement_issued_date;
 

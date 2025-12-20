@@ -1495,7 +1495,7 @@ class WorkItemService {
               (it.total_item_quantity * it.unit_rate).toFixed(2)
             ),
             tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-            final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
+            final_amount: Number(it.total_amount).toFixed(2),
           })
         ),
         bulk_material: Array.from(raBuckets.bulk_material.values()).map((it) => ({
@@ -1506,7 +1506,7 @@ class WorkItemService {
             (it.total_item_quantity * it.unit_rate).toFixed(2)
           ),
           tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
+          final_amount: Number(it.total_amount).toFixed(2),
         })),
         machinery: Array.from(raBuckets.machinery.values()).map((it) => ({
           ...it,
@@ -1516,7 +1516,7 @@ class WorkItemService {
             (it.total_item_quantity * it.unit_rate).toFixed(2)
           ),
           tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
+          final_amount: Number(it.total_amount).toFixed(2),
         })),
         fuel: Array.from(raBuckets.fuel.values()).map((it) => ({
           ...it,
@@ -1526,7 +1526,7 @@ class WorkItemService {
             (it.total_item_quantity * it.unit_rate).toFixed(2)
           ),
           tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
+          final_amount: Number(it.total_amount).toFixed(2),
         })),
         contractor: Array.from(raBuckets.contractor.values()).map((it) => ({
           ...it,
@@ -1536,7 +1536,7 @@ class WorkItemService {
             (it.total_item_quantity * it.unit_rate).toFixed(2)
           ),
           tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
+          final_amount: Number(it.total_amount).toFixed(2),
         })),
         nmr: Array.from(raBuckets.nmr.values()).map((it) => ({
           ...it,
@@ -1546,7 +1546,7 @@ class WorkItemService {
             (it.total_item_quantity * it.unit_rate).toFixed(2)
           ),
           tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount + it.tax_amount).toFixed(2),
+          final_amount: Number(it.total_amount ).toFixed(2),
         }))
       },
       created_by_user: "ADMIN"
