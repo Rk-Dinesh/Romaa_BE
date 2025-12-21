@@ -4,9 +4,7 @@ import ScheduleModel from "./schedule.model.js";
 import moment from "moment";
 
 class ScheduleService {
-    /**
-     * Create schedule from CSV with basic info (description, unit, quantity)
-     */
+
     static async bulkInsert(csvRows, createdByUser, tender_id) {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -73,9 +71,6 @@ class ScheduleService {
         }
     }
 
-    /**
-     * Update schedule with dates, duration, and auto-calculate derived fields
-     */
     static async bulkUpdateSchedule(csvRows, tender_id) {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -316,6 +311,15 @@ class ScheduleService {
                 wbs_id: item.wbs_id,
                 description: item.description,
                 unit: item.unit,
+                start_date: item.start_date,
+                end_date: item.end_date,
+                revised_end_date: item.revised_end_date,
+                duration: item.duration,
+                revised_duration: item.revised_duration,
+                lag: item.lag,
+                executed_quantity: item.executed_quantity,
+                balance_quantity: item.balance_quantity,
+                status: item.status,
                 quantity: item.quantity,
                 weekly: item.weekly,
             };
@@ -427,37 +431,46 @@ class ScheduleService {
 
             if (!schedule) throw new Error("Schedule not found");
 
-            // We process each item in the schedule to check for updates
             for (let item of schedule.items) {
                 let isModified = false;
 
-                // 1. Handle Date Shifts (Start or End changed)
-                const newStart = new_start_dates && new_start_dates[item.wbs_id];
-                const newEnd = revised_end_dates && revised_end_dates[item.wbs_id];
+                // --- 1. Handle Date Shifts ---
+                const newStartStr = new_start_dates && new_start_dates[item.wbs_id];
+                const newRevisedEndStr = revised_end_dates && revised_end_dates[item.wbs_id];
 
-                if (newStart || newEnd) {
-                    const startDate = newStart ? new Date(newStart) : item.start_date;
-                    const endDate = newEnd ? new Date(newEnd) : item.revised_end_date;
+                if (newStartStr || newRevisedEndStr) {
+                    // Determine effective dates (New or Existing)
+                    const effectiveStart = newStartStr ? new Date(newStartStr) : item.start_date;
+                    const effectiveRevisedEnd = newRevisedEndStr ? new Date(newRevisedEndStr) : item.revised_end_date;
+                    const originalEnd = item.end_date; // Keep original end date reference
 
-                    // Update fields
-                    if (newStart) item.start_date = startDate;
-                    if (newEnd) item.revised_end_date = endDate;
+                    // A. Update Start Date & Original Duration
+                    if (newStartStr) {
+                        item.start_date = effectiveStart;
+                        // Recalculate Original Duration (Start -> Original End)
+                        const newOrgDuration = this.getDaysDiff(effectiveStart, originalEnd);
+                        item.duration = newOrgDuration > 0 ? newOrgDuration : 0;
+                    }
 
-                    // Calculate new duration
-                    const newDuration = this.getDaysDiff(startDate, endDate);
-                    item.revised_duration = newDuration > 0 ? newDuration : 0;
+                    // B. Update Revised End Date
+                    if (newRevisedEndStr) {
+                        item.revised_end_date = effectiveRevisedEnd;
+                    }
 
-                    // Reconstruct Daily Array (Add/Remove dates, keep existing qty)
-                    item.daily = this.generateDailyArray(startDate, endDate, item.daily);
+                    // C. Always Recalculate Revised Duration (Start -> Revised End)
+                    // (This needs to update if EITHER start OR revised end changes)
+                    const newRevDuration = this.getDaysDiff(effectiveStart, effectiveRevisedEnd);
+                    item.revised_duration = newRevDuration > 0 ? newRevDuration : 0;
+
+                    // D. Regenerate Daily Array
+                    item.daily = this.generateDailyArray(effectiveStart, effectiveRevisedEnd, item.daily);
                     isModified = true;
                 }
 
-                // 2. Handle Daily Quantity Updates (User typed in cells)
+                // --- 2. Handle Daily Quantity Updates ---
                 if (daily_updates) {
                     item.daily.forEach(dayRecord => {
-                        // Key format matches frontend: "WBS029-2025-12-06T18:30:00.000Z"
                         const key = `${item.wbs_id}-${dayRecord.date.toISOString()}`;
-
                         if (daily_updates.hasOwnProperty(key)) {
                             const newQty = parseFloat(daily_updates[key]);
                             if (!isNaN(newQty)) {
@@ -468,28 +481,26 @@ class ScheduleService {
                     });
                 }
 
-                // 3. Recalculate Aggregates (Executed, Balance, Weekly, Monthly)
+                // --- 3. Recalculate Aggregates ---
                 if (isModified) {
-                    // Total Executed
                     const totalExecuted = item.daily.reduce((sum, d) => sum + (d.quantity || 0), 0);
                     item.executed_quantity = parseFloat(totalExecuted.toFixed(2));
                     item.balance_quantity = parseFloat((item.quantity - item.executed_quantity).toFixed(2));
 
-                    // Status Update
                     if (item.executed_quantity >= item.quantity) item.status = "completed";
                     else if (item.executed_quantity > 0) item.status = "inprogress";
                     else item.status = "pending";
 
+                    // *** UPDATE LAG HERE ***
+                    // Lag = Revised Duration - Original Duration
                     if (item.revised_duration !== undefined && item.duration !== undefined) {
                         item.lag = item.revised_duration - item.duration;
                     }
 
-                    // Recalculate Weekly Metrics (Includes Lag)
                     item.weekly = this.calculateWeeklyMetrics1(item);
 
-                    // Monthly Metrics
                     item.monthly.executed_quantity = item.executed_quantity;
-                    item.monthly.planned_quantity = item.quantity; // Assuming 1 month view for now
+                    item.monthly.planned_quantity = item.quantity;
                 }
             }
 

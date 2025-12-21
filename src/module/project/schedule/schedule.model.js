@@ -37,6 +37,9 @@ const MonthlySchema = new Schema(
   {
     planned_quantity: { type: Number, default: 0 },
     achieved_quantity: { type: Number, default: 0 },
+    lag_quantity: { type: Number, default: 0 },
+    month: { type: String },
+    year: { type: Number },
   },
   { _id: false }
 );
@@ -59,7 +62,7 @@ const ItemSchema = new Schema(
     status: { type: String, enum: ["pending", "inprogress", "completed"], default: "pending" },
     daily: { type: [DailySchema], default: [] },
     weekly: { type: WeeklySchema, default: {} },
-    monthly: { type: MonthlySchema, default: {} },
+    monthly: { type: [MonthlySchema], default: [] },
   },
   { _id: false }
 );
