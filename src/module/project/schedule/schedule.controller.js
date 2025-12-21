@@ -118,131 +118,52 @@ export const uploadScheduleDatesCSV = async (req, res, next) => {
 };
 
 export const getSchedule = async (req, res, next) => {
-  try {
-    const { tender_id } = req.params;
-
-    if (!tender_id) {
-      return res.status(400).json({ error: "tender_id is required" });
+    try {
+        const { tender_id } = req.params;
+        const schedule = await ScheduleService.getSchedule(tender_id);
+        if (!schedule) return res.status(404).json({ error: "Schedule not found" });
+        res.status(200).json({ status: true, message: "Success", data: schedule });
+    } catch (error) {
+        next(error);
     }
-
-    const schedule = await ScheduleService.getSchedule(tender_id);
-
-    if (!schedule) {
-      return res.status(404).json({ error: "Schedule not found" });
-    }
-
-    res.status(200).json({
-      status: true,
-      message: "Schedule retrieved successfully",
-      data: schedule,
-    });
-  } catch (error) {
-    next(error);
-  }
 };
 
 export const getDailySchedule = async (req, res, next) => {
-  try {
-    const { tender_id } = req.params;
-
-    if (!tender_id) {
-      return res.status(400).json({ error: "tender_id is required" });
+    try {
+        const { tender_id } = req.params;
+        const data = await ScheduleService.getDailySchedule(tender_id);
+        res.status(200).json({ status: true, message: "Success", data });
+    } catch (error) {
+        next(error);
     }
-
-    const schedule = await ScheduleService.getDailySchedule(tender_id);
-
-    if (!schedule) {
-      return res.status(404).json({ error: "Schedule not found" });
-    }
-
-    res.status(200).json({
-      status: true,
-      message: "Schedule retrieved successfully",
-      data: schedule,
-    });
-  } catch (error) {
-    next(error);
-  }
 };
 
-export const getWeeklySchedule = async (req, res, next) => {
-  try {
-    const { tender_id } = req.params;
-
-    if (!tender_id) {
-      return res.status(400).json({ error: "tender_id is required" });
-    }
-
-    const schedule = await ScheduleService.getWeeklySchedule(tender_id);
-
-    if (!schedule) {
-      return res.status(404).json({ error: "Schedule not found" });
-    }
-
-    res.status(200).json({
-      status: true,
-      message: "Schedule retrieved successfully",
-      data: schedule,
-    });
-  } catch (error) {
-    next(error);
-  }
-};      
-
-export const getMonthlySchedule = async (req, res, next) => {
-  try {
-    const { tender_id } = req.params;
-
-    if (!tender_id) {
-      return res.status(400).json({ error: "tender_id is required" });
-    }
-
-    const schedule = await ScheduleService.getMonthlySchedule(tender_id);
-
-    if (!schedule) {
-      return res.status(404).json({ error: "Schedule not found" });
-    }
-
-    res.status(200).json({
-      status: true,
-      message: "Schedule retrieved successfully",
-      data: schedule,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
+// Main Update API
 export const updateScheduleData = async (req, res) => {
     try {
-      const { tender_id } = req.params;
-      const payload = req.body;
+        const { tender_id } = req.params;
+        const payload = req.body;
 
-      // Validation
-      if (!tender_id) {
-        return res.status(400).json({ status: false, message: "Tender ID is required" });
-      }
+        if (!tender_id) return res.status(400).json({ status: false, message: "Tender ID required" });
+        
+        // Basic validation
+        if (!payload || (!payload.daily_updates && !payload.new_start_dates && !payload.revised_end_dates)) {
+            return res.status(400).json({ status: false, message: "No update data provided" });
+        }
 
-      if (!payload || (!payload.daily_updates && !payload.new_start_dates && !payload.revised_end_dates)) {
-         return res.status(400).json({ status: false, message: "No update data provided" });
-      }
+        const updatedSchedule = await ScheduleService.updateSchedule(tender_id, payload);
 
-      const updatedSchedule = await ScheduleService.updateSchedule(tender_id, payload);
-
-      return res.status(200).json({
-        status: true,
-        message: "Schedule updated successfully",
-        data: updatedSchedule
-      });
+        return res.status(200).json({
+            status: true,
+            message: "Schedule updated successfully",
+            data: updatedSchedule
+        });
 
     } catch (error) {
-      console.error("Update Schedule Error:", error);
-      return res.status(500).json({
-        status: false,
-        message: error.message || "Internal Server Error"
-      });
+        console.error("Update Schedule Error:", error);
+        return res.status(500).json({ status: false, message: error.message || "Internal Server Error" });
     }
-  }
+};
 
 
 

@@ -1,1282 +1,4 @@
-{
-  "tender_id": "TND014",
-  "items": [
-    {
-      "wbs_id": "WBS001",
-      "description": "Description 1",
-      "unit": "Unit 1",
-      "quantity": 10,
-      "executed_quantity": 10, // frequnetly updated
-      "balance_quantity": 0, // frequently updated
-      "duration": 6, // duration = end_date - start_date
-      "revised_duration": 7, // revised_duration = revised_end_date - start_date
-      "start_date": "2025-12-18",
-      "end_date": "2025-12-23",
-      "revised_end_date": "2025-12-24",
-      "lag": 1, // lag = revised_end_date - end_date
-      "status": "inprogress",
-      "daily": [
-        {
-          "date": "2025-12-18",
-          "quantity": 3
-        },
-        {
-          "date": "2025-12-19",
-          "quantity": 2
-        },
-        {
-          "date": "2025-12-20",
-          "quantity": 0
-        },
-        {
-          "date": "2025-12-21",
-          "quantity": 0
-        },
-        {
-          "date": "2025-12-22",
-          "quantity": 2
-        },
-        {
-          "date": "2025-12-23",
-          "quantity": 1
-        },
-        {
-          "date": "2025-12-24",
-          "quantity": 2
-        }
-      ],
-      "weekly": {
-        //working_quantity_per_day =(quantity/revised_duration) = 10/7 = 1.4285, total_planned_quantity = working_quantity_per_day * duration = 1.4285 * 7 = 10
-        //working_week_days = if first week is 1-7 , check the start_date and revised_end_date is present in the week then calculate the working days, same for second week,third week,fourth week and so on
-        // if start_date is 18-12-2025 and revised_end_date is 24-12-2025 ,then it is in third week & fourth week
-        // third week 15-21 = working_week_days = 4,
-        // fourth week 22-28 = working_week_days = 3
-        "firstweek": { // first week 1-7 
-          "achieved_quantity": 0, // sum of quantity in daily array of the first week = 0
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        },
-        "secondweek": { // second week 8-14
-          "achieved_quantity": 0, // sum of quantity in daily array of the second week = 0
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        },
-        "thirdweek": { // third week 15-21
-          "achieved_quantity": 5, // sum of quantity in daily array  of the third week = 5
-          "planned_quantity": 6.68, // planned_quantity= working_week_days * working_quantity_per_day = 4 * 1.4285 = 5.714 
-          "lag_quantity": 0.714, // planned_quantity - achieved_quantity = 5.714 - 5 = 0.714
-        },
-        "fourthweek": { // fourth week 22-28 // typical month fifth week is added to the fourth week = 22-31 based on month
-          "achieved_quantity": 5, // sum of quantity in daily array  of the fourth week = 5
-          "planned_quantity": 5.01, // planned_quantity= working_week_days * working_quantity_per_day = 3 * 1.4285 = 4.285 
-          "lag_quantity": -0.714 // planned_quantity - achieved_quantity = 4.285 - 5 = -0.714
-        }
-      },
-      "monthly": {
-        "planned_quantity": 10, // from start_date to revised_end_date
-        "achieved_quantity": 10 // sum of quantity in daily array from start_date to revised_end_date
-      }
-    },
-    {
-      "wbs_id": "WBS02",
-      "description": "Description 2",
-      "unit": "Unit 2",
-      "quantity": 12,
-      "executed_quantity": 1,
-      "balance_quantity": 1,
-      "duration": 8,
-      "revised_duration": 8,
-      "start_date": "2025-12-23",
-      "end_date": "2025-12-30",
-      "revised_end_date": "2025-12-30",
-      "lag": 0,
-      "status": "inprogress",
-      "daily": [
-        {
-          "date": "2025-12-23",
-          "quantity": 1
-        },
-        {
-          "date": "2025-12-24",
-          "quantity": 1
-        },
-        {
-          "date": "2025-12-25",
-          "quantity": 4
-        },
-        {
-          "date": "2025-12-26",
-          "quantity": 1
-        },
-        {
-          "date": "2025-12-27",
-          "quantity": 0
-        },
-        {
-          "date": "2025-12-28",
-          "quantity": 3
-        },
-        {
-          "date": "2025-12-29",
-          "quantity": 0
-        },
-        {
-          "date": "2025-12-30",
-          "quantity": 2
-        }
-      ],
-      "weekly": {
-        //working_quantity_per_day =(quantity/revised_duration) = 12/8 = 1.5, total_planned_quantity = working_quantity_per_day * duration = 1.5 * 8 = 12
-        //working_week_days = if first week is 1-7 , check the start_date and revised_end_date is present in the week then calculate the working days, same for second week,third week,fourth week and so on
-        // if start_date is 23-12-2025 and revised_end_date is 30-12-2025 ,then it is in fourth week
-        // fourth week 22-30 = working_week_days = 8
-        "firstweek": { // first week 1-7 
-          "achieved_quantity": 0, // sum of quantity in daily array of the first week = 0
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        },
-        "secondweek": { // second week 8-14
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        },
-        "thirdweek": { // third week 15-21
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0,
-        },
-        "fourthweek": { // fourth week 22-28 typical month fifth week is added to the fourth week = 22-31 or 22-30 based on month
-          "achieved_quantity": 12, // sum of quantity in daily array  of the fourth week = 8
-          "planned_quantity": 12, // planned_quantity= working_week_days * working_quantity_per_day = 8 * 1.5 = 12 
-          "lag_quantity": 0 // planned_quantity - achieved_quantity = 12 - 12 = 0
-        }
-      },
-      "monthly": {
-        "planned_quantity": 12, // from start_date to revised_end_date
-        "achieved_quantity": 12 // sum of quantity in daily array from start_date to revised_end_date
-      }
-    }
-  ]
-}
-// it is an schedule caluclations where we are calculating the quantity of the work based on the duration and revised duration
-// in this every day the quantity is updated or update weekly the weekly and monthly quantity is calculated based on the daily quantity,
-// if date is reviesed calculated the lag quantity, and weekly caluclation too
 
-
-duration = revised_end_date - start_date
-revised_duration = revised_end_date - start_date
-lag = revised_end_date - end_date
-automatically insert dates
- "daily": [
-  {
-    "date": "2025-12-18",
-    "quantity": 0
-  },
-  {
-    "date": "2025-12-19",
-    "quantity": 0
-  },
-  {
-    "date": "2025-12-20",
-    "quantity": 0
-  },
-  {
-    "date": "2025-12-21",
-    "quantity": 0
-  },
-  {
-    "date": "2025-12-22",
-    "quantity": 0
-  },
-  {
-    "date": "2025-12-23",
-    "quantity": 0
-  },
-  {
-    "date": "2025-12-24",
-    "quantity": 0
-  }
-],
-
-      in weekly automatically insert planned_quantity 
-      "weekly": {
-  "firstweek": {
-    "achieved_quantity": 0,
-    "planned_quantity": 0,
-    "lag_quantity": 0
-  },
-  "secondweek": {
-    "achieved_quantity": 0,
-    "planned_quantity": 0,
-    "lag_quantity": 0
-  },
-  "thirdweek": {
-    "achieved_quantity": 0,
-    "planned_quantity": 0,
-    "lag_quantity": 0,
-  },
-  "fourthweek": {
-    "achieved_quantity": 0,
-    "planned_quantity": 0,
-    "lag_quantity": 0
-  }
-},
-"monthly": {
-  "planned_quantity": 12,
-  "achieved_quantity": 0
-}
-
-
-      {
-  "status": true,
-  "message": "Schedule dates and durations updated successfully",
-  "data": {
-    "_id": "694654e7c72f631a2f6fc338",
-    "tender_id": "TND0014",
-    "items": [
-      {
-        "wbs_id": "WBS007",
-        "description": "Foundation Excavation",
-        "unit": "m³",
-        "quantity": 100,
-        "executed_quantity": 0,
-        "balance_quantity": 100,
-        "duration": 7, // duration = from start_date to end_date days
-        "revised_duration": 7, // revised_duration = from start_date to revised_end_date days
-        "start_date": "2025-12-17T18:30:00.000Z",
-        "end_date": "2025-12-23T18:30:00.000Z",
-        "revised_end_date": "2025-12-23T18:30:00.000Z",
-        "lag": 0,
-        "status": "pending",
-        "daily": [
-          {
-            "date": "2025-12-17T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-18T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-19T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-20T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-21T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-22T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-23T18:30:00.000Z",
-            "quantity": 0
-          }
-        ],
-        "weekly": {
-          //start_date = 2025-12-17T18:30:00.000Z, revised_end_date = 2025-12-23T18:30:00.000Z = 7 days
-          //working_quantity_per_day =(quantity/revised_duration) = 100/7 = 14.29, total_planned_quantity = working_quantity_per_day * duration = 14.29 * 7 = 100
-          "firstweek": {
-            "achieved_quantity": 0,
-            "planned_quantity": 0,
-            "lag_quantity": 0
-          },
-          "secondweek": {
-            "achieved_quantity": 0,
-            "planned_quantity": 0,
-            "lag_quantity": 0
-          },
-          "thirdweek": { // third week 15-21  
-            "achieved_quantity": 0,
-            "planned_quantity": 71.45, // total_planned_quantity = working_quantity_per_day * duration = 14.29 * 5 = 71.45
-            "lag_quantity": 71.45
-          },
-          "fourthweek": { // fourth week 22-28
-            "achieved_quantity": 0,
-            "planned_quantity": 28.58, // total_planned_quantity = working_quantity_per_day * duration = 14.29 * 2 = 28.58
-            "lag_quantity": 28.58
-          }
-          //total_planned_quantity = firstweek + secondweek + thirdweek + fourthweek = 0 + 0 + 71.45 + 28.58 = 100
-        },
-        "monthly": {
-          "planned_quantity": 100,
-          "achieved_quantity": 0
-        }
-      },
-      {
-        "wbs_id": "WBS008",
-        "description": "Concrete Pour",
-        "unit": "m³",
-        "quantity": 50,
-        "executed_quantity": 0,
-        "balance_quantity": 50,
-        "duration": 9, // duration = from start_date to end_date days
-        "revised_duration": 10, // revised_duration = from start_date to revised_end_date days
-        "start_date": "2025-12-19T18:30:00.000Z",
-        "end_date": "2025-12-27T18:30:00.000Z",
-        "revised_end_date": "2025-12-28T18:30:00.000Z",
-        "lag": 1,
-        "status": "pending",
-        "daily": [
-          {
-            "date": "2025-12-19T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-20T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-21T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-22T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-23T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-24T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-25T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-26T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-27T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-28T18:30:00.000Z",
-            "quantity": 0
-          }
-        ],
-        "weekly": {
-          //start_date = 2025-12-19T18:30:00.000Z, revised_end_date = 2025-12-28T18:30:00.000Z = 10 days 
-          //working_quantity_per_day =(quantity/revised_duration) = 50/10 = 5, total_planned_quantity = working_quantity_per_day * duration = 5 * 10 = 50
-          "firstweek": { // first week 1-7
-            "achieved_quantity": 0,
-            "planned_quantity": 0,
-            "lag_quantity": 0
-          },
-          "secondweek": { // second week 8-14
-            "achieved_quantity": 0,
-            "planned_quantity": 0,
-            "lag_quantity": 0
-          },
-          "thirdweek": { // third week 15-21
-            "achieved_quantity": 0,
-            "planned_quantity": 15, // total_planned_quantity = working_quantity_per_day * duration = 5 * 3 = 15
-            "lag_quantity": 15
-          },
-          "fourthweek": { // fourth week 22-31
-            "achieved_quantity": 0,
-            "planned_quantity": 35, // total_planned_quantity = working_quantity_per_day * duration = 5 * 7 = 35
-            "lag_quantity": 35
-          }
-          //total_planned_quantity = firstweek + secondweek + thirdweek + fourthweek = 0 + 0 + 15 + 35 = 50
-        },
-        "monthly": {
-          "planned_quantity": 50,
-          "achieved_quantity": 0
-        }
-      },
-      {
-        "wbs_id": "WBS009",
-        "description": "Brick Laying",
-        "unit": "m²",
-        "quantity": 200,
-        "executed_quantity": 0,
-        "balance_quantity": 200,
-        "duration": 17, // duration = from start_date to end_date days
-        "revised_duration": 21, // revised_duration = from start_date to revised_end_date days
-        "start_date": "2025-12-03T18:30:00.000Z",
-        "end_date": "2025-12-19T18:30:00.000Z",
-        "revised_end_date": "2025-12-23T18:30:00.000Z",
-        "lag": 4,
-        "status": "pending",
-        "daily": [
-          {
-            "date": "2025-12-03T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-04T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-05T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-06T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-07T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-08T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-09T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-10T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-11T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-12T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-13T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-14T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-15T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-16T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-17T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-18T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-19T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-20T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-21T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-22T18:30:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-23T18:30:00.000Z",
-            "quantity": 0
-          }
-        ],
-        "weekly": {
-          //start_date = 2025-12-03T18:30:00.000Z, revised_end_date = 2025-12-23T18:30:00.000Z = 21 days 
-          //working_quantity_per_day =(quantity/revised_duration) = 200/21 = 9.52, total_planned_quantity = working_quantity_per_day * duration = 9.52 * 21 = 200
-          "firstweek": { // first week 1-7
-            "achieved_quantity": 0,
-            "planned_quantity": 47.6, // total_planned_quantity = working_quantity_per_day * duration = 9.52 * 5 = 47.6
-            "lag_quantity": 47.6
-          },
-          "secondweek": { // second week 8-14
-            "achieved_quantity": 0,
-            "planned_quantity": 66.64, // total_planned_quantity = working_quantity_per_day * duration = 9.52 * 7 = 66.64
-            "lag_quantity": 66.64
-          },
-          "thirdweek": { // third week 15-21
-            "achieved_quantity": 0,
-            "planned_quantity": 66.64, // total_planned_quantity = working_quantity_per_day * duration = 9.52 * 7 = 66.64
-            "lag_quantity": 66.64
-          },
-          "fourthweek": { // fourth week 22-28
-            "achieved_quantity": 0,
-            "planned_quantity": 19.04, // total_planned_quantity = working_quantity_per_day * duration = 9.52 * 2 = 19.04
-            "lag_quantity": 19.04
-          }
-          //total_planned_quantity = firstweek + secondweek + thirdweek + fourthweek = 47.6 + 66.64 + 66.64 + 19.04 = 200
-        },
-        "monthly": {
-          "planned_quantity": 200,
-          "achieved_quantity": 0
-        }
-      }
-    ],
-    "createdAt": "2025-12-20T07:48:55.330Z",
-    "updatedAt": "2025-12-20T08:15:34.769Z",
-    "__v": 0
-  }
-}
-
-{
-  "status": true,
-  "message": "Schedule dates and durations updated successfully",
-  "data": {
-    "_id": "69466882cbd4aec38088ed37",
-    "tender_id": "TND0015",
-    "items": [
-      {
-        "wbs_id": "WBS010",
-        "description": "Foundation Excavation",
-        "unit": "m³",
-        "quantity": 50,
-        "executed_quantity": 0,
-        "balance_quantity": 50,
-        "duration": 16,
-        "revised_duration": 17,
-        "start_date": "2025-12-01T00:00:00.000Z",
-        "end_date": "2025-12-16T00:00:00.000Z",
-        "revised_end_date": "2025-12-17T00:00:00.000Z",
-        "lag": 2,
-        "status": "pending",
-        "daily": [
-          {
-            "date": "2025-12-01T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-02T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-03T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-04T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-05T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-06T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-07T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-08T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-09T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-10T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-11T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-12T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-13T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-14T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-15T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-16T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-17T00:00:00.000Z",
-            "quantity": 0
-          }
-        ],
-        "weekly": {
-          //start_date = 2025-12-01T00:00:00.000Z , revised_end_date = 2025-12-17T00:00:00.000Z = 17 days 
-          //working_quantity_per_day =(quantity/revised_duration) = 50/17 = 2.94, total_planned_quantity = working_quantity_per_day * duration = 2.94 * 17 = 50
-          "firstweek": { // first week 1-7
-            "achieved_quantity": 0,
-            "planned_quantity": 20.59, // total_planned_quantity = working_quantity_per_day * duration = 2.94 * 7 = 20.59
-            "lag_quantity": 20.59
-          },
-          "secondweek": { // second week 8-14
-            "achieved_quantity": 0,
-            "planned_quantity": 20.59, // total_planned_quantity = working_quantity_per_day * duration = 2.94 * 7 = 20.59
-            "lag_quantity": 20.59
-          },
-          "thirdweek": { // third week 15-21
-            "achieved_quantity": 0,
-            "planned_quantity": 8.82, // total_planned_quantity = working_quantity_per_day * duration = 2.94 * 3 = 8.82
-            "lag_quantity": 8.82
-          },
-          "fourthweek": { // fourth week 22-31
-            "achieved_quantity": 0,
-            "planned_quantity": 0, // total_planned_quantity = working_quantity_per_day * duration = 2.94 * = 0
-            "lag_quantity": 0
-          }
-        },
-        "monthly": {
-          "planned_quantity": 50,
-          "achieved_quantity": 0
-        }
-      },
-      {
-        "wbs_id": "WBS011",
-        "description": "Concrete Pour",
-        "unit": "m³",
-        "quantity": 160,
-        "executed_quantity": 0,
-        "balance_quantity": 160,
-        "duration": 22,
-        "revised_duration": 24,
-        "start_date": "2025-12-05T00:00:00.000Z",
-        "end_date": "2025-12-26T00:00:00.000Z",
-        "revised_end_date": "2025-12-28T00:00:00.000Z",
-        "lag": 3,
-        "status": "pending",
-        "daily": [
-          {
-            "date": "2025-12-05T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-06T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-07T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-08T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-09T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-10T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-11T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-12T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-13T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-14T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-15T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-16T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-17T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-18T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-19T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-20T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-21T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-22T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-23T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-24T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-25T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-26T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-27T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-28T00:00:00.000Z",
-            "quantity": 0
-          }
-        ],
-        "weekly": {
-          //start_date = 2025-12-05T00:00:00.000Z , revised_end_date = 2025-12-28T00:00:00.000Z = 24 days 
-          //working_quantity_per_day =(quantity/revised_duration) = 160/24 = 6.67, total_planned_quantity = working_quantity_per_day * duration = 6.67 * 24 = 160
-          "firstweek": { // first week 1-7
-            "achieved_quantity": 0,
-            "planned_quantity": 20, // total_planned_quantity = working_quantity_per_day * duration = 6.67 * 3 = 20
-            "lag_quantity": 20
-          },
-          "secondweek": { // second week 8-14
-            "achieved_quantity": 0,
-            "planned_quantity": 46.67, // total_planned_quantity = working_quantity_per_day * duration = 6.67 * 7 = 46.67
-            "lag_quantity": 46.67
-          },
-          "thirdweek": { // third week 15-21
-            "achieved_quantity": 0,
-            "planned_quantity": 46.67, // total_planned_quantity = working_quantity_per_day * duration = 6.67 * 7 = 46.67
-            "lag_quantity": 46.67
-          },
-          "fourthweek": { // fourth week 22-31
-            "achieved_quantity": 0,
-            "planned_quantity": 46.67, // total_planned_quantity = working_quantity_per_day * duration = 6.67 * 7 = 46.67
-            "lag_quantity": 46.67
-          }
-        },
-        "monthly": {
-          "planned_quantity": 160,
-          "achieved_quantity": 0
-        }
-      },
-      {
-        "wbs_id": "WBS012",
-        "description": "Brick Laying",
-        "unit": "m²",
-        "quantity": 28,
-        "executed_quantity": 0,
-        "balance_quantity": 28,
-        "duration": 10,
-        "revised_duration": 10,
-        "start_date": "2025-12-08T00:00:00.000Z",
-        "end_date": "2025-12-17T00:00:00.000Z",
-        "revised_end_date": "2025-12-17T00:00:00.000Z",
-        "lag": 1,
-        "status": "pending",
-        "daily": [
-          {
-            "date": "2025-12-08T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-09T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-10T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-11T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-12T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-13T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-14T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-15T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-16T00:00:00.000Z",
-            "quantity": 0
-          },
-          {
-            "date": "2025-12-17T00:00:00.000Z",
-            "quantity": 0
-          }
-        ],
-        "weekly": {
-          //start_date = 2025-12-08T00:00:00.000Z , revised_end_date = 2025-12-17T00:00:00.000Z = 10 days 
-          //working_quantity_per_day =(quantity/revised_duration) = 28/10 = 2.8, total_planned_quantity = working_quantity_per_day * duration = 2.8 * 10 = 28
-          "firstweek": {
-            "achieved_quantity": 0,
-            "planned_quantity": 0, // total_planned_quantity = working_quantity_per_day * duration = 2.8 * 0 = 0
-            "lag_quantity": 0
-          },
-          "secondweek": {
-            "achieved_quantity": 0,
-            "planned_quantity": 19.6, // total_planned_quantity = working_quantity_per_day * duration = 2.8 * 7 = 19.6
-            "lag_quantity": 19.6
-          },
-          "thirdweek": { // third week 15-21
-            "achieved_quantity": 0,
-            "planned_quantity": 8.4, // total_planned_quantity = working_quantity_per_day * duration = 2.8 * 3 = 8.4
-            "lag_quantity": 8.4
-          },
-          "fourthweek": {
-            "achieved_quantity": 0,
-            "planned_quantity": 0,
-            "lag_quantity": 0
-          }
-        },
-        "monthly": {
-          "planned_quantity": 28,
-          "achieved_quantity": 0
-        }
-      }
-    ],
-    "createdAt": "2025-12-20T09:12:34.998Z",
-    "updatedAt": "2025-12-20T09:23:43.954Z",
-    "__v": 0
-  }
-}
-
-/** 
-* Paste one or more documents here
-*/
-{
-  "tender_id": "TND020",
-  "items": [
-    {
-      "wbs_id": "WBS031",
-      "description": "Foundation Excavation",
-      "unit": "m³",
-      "quantity": 70,
-      "executed_quantity": 0,
-      "balance_quantity": 70,
-      "duration": 23,
-      "revised_duration": 23,
-      "start_date": {
-        "$date": "2025-12-06T00:00:00.000Z"
-      },
-      "end_date": {
-        "$date": "2025-12-28T00:00:00.000Z"
-      },
-      "revised_end_date": {
-        "$date": "2025-12-28T00:00:00.000Z"
-      },
-      "lag": 1,
-      "status": "pending",
-      "daily": [
-        {
-          "date": {
-            "$date": "2025-12-06T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-07T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-08T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-09T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-10T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-11T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-12T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-13T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-14T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-15T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-16T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-17T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-18T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-19T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-20T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-21T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-22T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-23T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-24T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-25T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-26T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-27T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-28T00:00:00.000Z"
-          },
-          "quantity": 0
-        }
-      ],
-      "weekly": {
-        "firstweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 6.09,
-          "lag_quantity": 6.09
-        },
-        "secondweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 21.3,
-          "lag_quantity": 21.3
-        },
-        "thirdweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 21.3,
-          "lag_quantity": 21.3
-        },
-        "fourthweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 21.3,
-          "lag_quantity": 21.3
-        }
-      },
-      "monthly": {
-        "planned_quantity": 70,
-        "achieved_quantity": 0
-      }
-    },
-    {
-      "wbs_id": "WBS032",
-      "description": "Concrete Pour",
-      "unit": "m³",
-      "quantity": 140,
-      "executed_quantity": 0,
-      "balance_quantity": 140,
-      "duration": 9,
-      "revised_duration": 12,
-      "start_date": {
-        "$date": "2025-12-05T00:00:00.000Z"
-      },
-      "end_date": {
-        "$date": "2025-12-13T00:00:00.000Z"
-      },
-      "revised_end_date": {
-        "$date": "2025-12-16T00:00:00.000Z"
-      },
-      "lag": 3,
-      "status": "pending",
-      "daily": [
-        {
-          "date": {
-            "$date": "2025-12-05T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-06T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-07T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-08T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-09T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-10T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-11T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-12T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-13T00:00:00.000Z"
-          },
-          "quantity": 0
-        }
-      ],
-      "weekly": {
-          //start_date = 2025-12-05T00:00:00.000Z , revised_end_date = 2025-12-16T00:00:00.000Z = 12 days 
-          //working_quantity_per_day =(quantity/revised_duration) = 140/12 = 11.67, total_planned_quantity = working_quantity_per_day * duration = 11.67 * 9 = 140                 
-          "firstweek": {
-            "achieved_quantity": 0,
-            "planned_quantity": 35, // total_planned_quantity = working_quantity_per_day * duration = 11.67 * 3 = 35
-            "lag_quantity": 35
-          },
-          "secondweek": {
-            "achieved_quantity": 0,
-            "planned_quantity": 84, // total_planned_quantity = working_quantity_per_day * duration = 11.67 * 7 = 84
-            "lag_quantity": 84
-          },
-          "thirdweek": {
-            "achieved_quantity": 0,
-            "planned_quantity": 12, // total_planned_quantity = working_quantity_per_day * duration = 11.67 * 2 = 23.34
-            "lag_quantity": 12
-          },
-          "fourthweek": {
-            "achieved_quantity": 0,
-            "planned_quantity": 0, // total_planned_quantity = working_quantity_per_day * duration = 12.73 * 0 = 0
-            "lag_quantity": 0
-          }
-          //total_planned_quantity = firstweek + secondweek + thirdweek + fourthweek = 46.67 + 93.33 + 0 + 0 = 140
-        },
-      "monthly": {
-        "planned_quantity": 140,
-        "achieved_quantity": 0
-      }
-    },
-    {
-      "wbs_id": "WBS033",
-      "description": "Brick Laying",
-      "unit": "m²",
-      "quantity": 210,
-      "executed_quantity": 0,
-      "balance_quantity": 210,
-      "duration": 5,
-      "revised_duration": 6,
-      "start_date": {
-        "$date": "2025-12-08T00:00:00.000Z"
-      },
-      "end_date": {
-        "$date": "2025-12-12T00:00:00.000Z"
-      },
-      "revised_end_date": {
-        "$date": "2025-12-13T00:00:00.000Z"
-      },
-      "lag": 2,
-      "status": "pending",
-      "daily": [
-        {
-          "date": {
-            "$date": "2025-12-08T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-09T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-10T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-11T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-12T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-13T00:00:00.000Z"
-          },
-          "quantity": 0
-        }
-      ],
-      "weekly": {
-        "firstweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        },
-        "secondweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 210,
-          "lag_quantity": 210
-        },
-        "thirdweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        },
-        "fourthweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        }
-      },
-      "monthly": {
-        "planned_quantity": 210,
-        "achieved_quantity": 0
-      }
-    }
-  ],
-  "createdAt": {
-    "$date": "2025-12-21T10:14:08.086Z"
-  },
-  "updatedAt": {
-    "$date": "2025-12-21T10:15:11.987Z"
-  },
-  "__v": 0
-}
 
 {
   "status": true,
@@ -1594,21 +316,18 @@ automatically insert dates
   }
 }
 
-/** 
-* Paste one or more documents here
-*/
 {
   "tender_id": "TND020",
   "items": [
     {
-      "wbs_id": "WBS028",
+      "wbs_id": "WBS037",
       "description": "Foundation Excavation",
       "unit": "m³",
       "quantity": 70,
-      "executed_quantity": 0,
-      "balance_quantity": 70,
+      "executed_quantity": 1,
+      "balance_quantity": 69,
       "duration": 23,
-      "revised_duration": 26,
+      "revised_duration": 23,
       "start_date": {
         "$date": "2025-12-06T00:00:00.000Z"
       },
@@ -1616,22 +335,22 @@ automatically insert dates
         "$date": "2025-12-28T00:00:00.000Z"
       },
       "revised_end_date": {
-        "$date": "2025-12-31T00:00:00.000Z"
+        "$date": "2025-12-28T00:00:00.000Z"
       },
-      "lag": 4,
-      "status": "pending",
+      "lag": 0,
+      "status": "inprogress",
       "daily": [
         {
           "date": {
             "$date": "2025-12-06T00:00:00.000Z"
           },
-          "quantity": 4
+          "quantity": 0
         },
         {
           "date": {
             "$date": "2025-12-07T00:00:00.000Z"
           },
-          "quantity": 7
+          "quantity": 0
         },
         {
           "date": {
@@ -1758,55 +477,63 @@ automatically insert dates
             "$date": "2025-12-28T00:00:00.000Z"
           },
           "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-29T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-30T00:00:00.000Z"
-          },
-          "quantity": 0
-        },
-        {
-          "date": {
-            "$date": "2025-12-31T00:00:00.000Z"
-          },
-          "quantity": 0
         }
       ],
-      "weekly": {
-        "firstweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 5.38,
-          "lag_quantity": 5.38
-        },
-        "secondweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 18.85,
-          "lag_quantity": 18.85
-        },
-        "thirdweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 18.85,
-          "lag_quantity": 18.85
-        },
-        "fourthweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 26.92,
-          "lag_quantity": 26.92
+      "schedule_data": [
+        {
+          "month_name": "December",
+          "year": 2025,
+          "month_key": "12-2025",
+          "metrics": {
+            "achieved_quantity": 0,
+            "planned_quantity": 70,
+            "lag_quantity": 70
+          },
+          "weeks": [
+            //start_date = 2025-12-06T00:00:00.000Z , revised_end_date = 2025-12-28T00:00:00.000Z = 29 days 
+            //working_quantity_per_day =(quantity/revised_duration) = 70/29 = 2.41, total_planned_quantity = working_quantity_per_day * duration = 2.41 * 29 = 70 
+            {
+              "week_label": "firstweek", // 1-7
+              "week_number": 1,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 6.08,// total_planned_quantity = working_quantity_per_day * duration = 3.04 * 2 = 6.08
+                "lag_quantity": 6.08
+              }
+            },
+            {
+              "week_label": "secondweek",//7-14
+              "week_number": 2,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 21.3,// total_planned_quantity = working_quantity_per_day * duration = 3.04 * 7 = 21.28
+                "lag_quantity": 21.3
+              }
+            },
+            {
+              "week_label": "thirdweek",//15-21
+              "week_number": 3,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 21.3,// total_planned_quantity = working_quantity_per_day * duration = 3.04 * 7 = 21.28
+                "lag_quantity": 21.3
+              }
+            },
+            {
+              "week_label": "fourthweek",
+              "week_number": 4,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 21.3, // total_planned_quantity = working_quantity_per_day * duration = 3.04 * 7 = 21.28
+                "lag_quantity": 21.3
+              }
+            }
+          ]
         }
-      },
-      "monthly": {
-        "planned_quantity": 70,
-        "achieved_quantity": 0
-      }
+      ]
     },
     {
-      "wbs_id": "WBS029",
+      "wbs_id": "WBS038",
       "description": "Concrete Pour",
       "unit": "m³",
       "quantity": 140,
@@ -1823,7 +550,7 @@ automatically insert dates
       "revised_end_date": {
         "$date": "2025-12-13T00:00:00.000Z"
       },
-      "lag": 1,
+      "lag": 0,
       "status": "pending",
       "daily": [
         {
@@ -1881,35 +608,63 @@ automatically insert dates
           "quantity": 0
         }
       ],
-      "weekly": {
-        "firstweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 46.67,
-          "lag_quantity": 46.67
-        },
-        "secondweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 93.33,
-          "lag_quantity": 93.33
-        },
-        "thirdweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        },
-        "fourthweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0
+      "schedule_data": [
+
+        {
+          "month_name": "December",
+          "year": 2025,
+          "month_key": "12-2025",
+          "metrics": {
+            "achieved_quantity": 0,
+            "planned_quantity": 140,
+            "lag_quantity": 140
+          },
+          "weeks": [
+            //start_date = 2025-12-05T00:00:00.000Z , revised_end_date = 2025-12-13T00:00:00.000Z = 9 days 
+          //working_quantity_per_day =(quantity/revised_duration) = 140/9 = 15.56, total_planned_quantity = working_quantity_per_day * duration = 15.56 * 9 = 140 
+            {
+              "week_label": "firstweek",
+              "week_number": 1,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 46.67,// total_planned_quantity = working_quantity_per_day * duration = 15.56 * 3 = 46.67
+                "lag_quantity": 46.67
+              }
+            },
+            {
+              "week_label": "secondweek",
+              "week_number": 2,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 93.33,// total_planned_quantity = working_quantity_per_day * duration = 15.56 * 6 = 93.33
+                "lag_quantity": 93.33
+              }
+            },
+            {
+              "week_label": "thirdweek",
+              "week_number": 3,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 0,
+                "lag_quantity": 0
+              }
+            },
+            {
+              "week_label": "fourthweek",
+              "week_number": 4,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 0,
+                "lag_quantity": 0
+              }
+            }
+            //total_planned_quantity = firstweek + secondweek + thirdweek + fourthweek = 46.67 + 93.33 + 0 + 0 = 140 
+          ]
         }
-      },
-      "monthly": {
-        "planned_quantity": 140,
-        "achieved_quantity": 0
-      }
+      ]
     },
     {
-      "wbs_id": "WBS030",
+      "wbs_id": "WBS039",
       "description": "Brick Laying",
       "unit": "m²",
       "quantity": 210,
@@ -1926,7 +681,7 @@ automatically insert dates
       "revised_end_date": {
         "$date": "2025-12-13T00:00:00.000Z"
       },
-      "lag": 2,
+      "lag": 1,
       "status": "pending",
       "daily": [
         {
@@ -1966,39 +721,63 @@ automatically insert dates
           "quantity": 0
         }
       ],
-      "weekly": {
-        "firstweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        },
-        "secondweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 210,
-          "lag_quantity": 210
-        },
-        "thirdweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0
-        },
-        "fourthweek": {
-          "achieved_quantity": 0,
-          "planned_quantity": 0,
-          "lag_quantity": 0
+      "schedule_data": [
+        {
+          "month_name": "December",
+          "year": 2025,
+          "month_key": "12-2025",
+          "metrics": {
+            "achieved_quantity": 0,
+            "planned_quantity": 210,
+            "lag_quantity": 210
+          },
+          "weeks": [
+            {
+              "week_label": "firstweek",
+              "week_number": 1,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 0,
+                "lag_quantity": 0
+              }
+            },
+            {
+              "week_label": "secondweek",
+              "week_number": 2,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 210,
+                "lag_quantity": 210
+              }
+            },
+            {
+              "week_label": "thirdweek",
+              "week_number": 3,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 0,
+                "lag_quantity": 0
+              }
+            },
+            {
+              "week_label": "fourthweek",
+              "week_number": 4,
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 0,
+                "lag_quantity": 0
+              }
+            }
+          ]
         }
-      },
-      "monthly": {
-        "planned_quantity": 210,
-        "achieved_quantity": 0
-      }
+      ]
     }
   ],
   "createdAt": {
-    "$date": "2025-12-20T11:32:28.928Z"
+    "$date": "2025-12-21T12:35:41.212Z"
   },
   "updatedAt": {
-    "$date": "2025-12-20T12:26:08.846Z"
+    "$date": "2025-12-21T13:17:41.813Z"
   },
-  "__v": 3
+  "__v": 6
 }

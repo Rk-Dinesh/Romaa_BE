@@ -11,8 +11,8 @@ const DailySchema = new Schema(
   { _id: false }
 );
 
-// Weekly metrics schema
-const WeeklyMetricsSchema = new Schema(
+// Generic Metrics Schema
+const MetricsSchema = new Schema(
   {
     achieved_quantity: { type: Number, default: 0 },
     planned_quantity: { type: Number, default: 0 },
@@ -21,25 +21,27 @@ const WeeklyMetricsSchema = new Schema(
   { _id: false }
 );
 
-// Weekly schema with all weeks
-const WeeklySchema = new Schema(
+// Weekly Schema
+const WeekDetailSchema = new Schema(
   {
-    firstweek: { type: WeeklyMetricsSchema, default: {} },
-    secondweek: { type: WeeklyMetricsSchema, default: {} },
-    thirdweek: { type: WeeklyMetricsSchema, default: {} },
-    fourthweek: { type: WeeklyMetricsSchema, default: {} },
+    week_label: { type: String }, // e.g., "firstweek", "secondweek" or "Week 1"
+    week_number: { type: Number }, // 1, 2, 3, 4, 5
+    start_date: { type: Date },    // Useful to know specific range of this week
+    end_date: { type: Date },
+    metrics: { type: MetricsSchema, default: {} }
   },
   { _id: false }
 );
 
-// Monthly schema
+// Monthly Schema
 const MonthlySchema = new Schema(
   {
-    planned_quantity: { type: Number, default: 0 },
-    achieved_quantity: { type: Number, default: 0 },
-    lag_quantity: { type: Number, default: 0 },
-    month: { type: String },
-    year: { type: Number },
+    month_name: { type: String }, // e.g., "December"
+    year: { type: Number },       // e.g., 2025
+    month_key: { type: String },  // e.g., "12-2025" (for easy searching)
+    metrics: { type: MetricsSchema, default: {} },
+    // THE FIX: Weeks are now children of the Month
+    weeks: { type: [WeekDetailSchema], default: [] } 
   },
   { _id: false }
 );
@@ -51,18 +53,21 @@ const ItemSchema = new Schema(
     description: { type: String, required: true },
     unit: { type: String, required: true },
     quantity: { type: Number, required: true },
+    // Aggregates
     executed_quantity: { type: Number, default: 0 },
-    balance_quantity: { type: Number, default: 0 },
+    balance_quantity: { type: Number, default: 0 },   
+    // Durations & Dates
     duration: { type: Number },
     revised_duration: { type: Number },
     start_date: { type: Date },
     end_date: { type: Date },
-    revised_end_date: { type: Date },
+    revised_end_date: { type: Date },   
     lag: { type: Number, default: 0 },
-    status: { type: String, enum: ["pending", "inprogress", "completed"], default: "pending" },
+    status: { type: String, enum: ["pending", "inprogress", "completed"], default: "pending" },   
+    // Data Arrays
     daily: { type: [DailySchema], default: [] },
-    weekly: { type: WeeklySchema, default: {} },
-    monthly: { type: [MonthlySchema], default: [] },
+    // THE FIX: We only keep 'schedule_data' (monthly array) which holds the weeks inside
+    schedule_data: { type: [MonthlySchema], default: [] }, 
   },
   { _id: false }
 );
