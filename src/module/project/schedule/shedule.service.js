@@ -1,6 +1,7 @@
 import mongoose from "mongoose";
 import IdcodeServices from "../../idcode/idcode.service.js";
 import ScheduleModel from "./schedule.model.js";
+import moment from "moment";
 
 class ScheduleService {
     /**
@@ -268,72 +269,238 @@ class ScheduleService {
     }
 
     static async getSchedule(tender_id) {
-       const schedule = await ScheduleModel.findOne({ tender_id });
-       const items = schedule.items.map((item) => {
-        return {
-            wbs_id: item.wbs_id,
-            description: item.description,
-            unit: item.unit,
-            quantity: item.quantity,
-            executed_quantity: item.executed_quantity,
-            balance_quantity: item.balance_quantity,
-            duration: item.duration,
-            revised_duration: item.revised_duration,
-            lag: item.lag,
-            start_date: item.start_date,
-            end_date: item.end_date,
-            revised_end_date: item.revised_end_date,
-            status: item.status,
-        };
-       });
-       return items;
+        const schedule = await ScheduleModel.findOne({ tender_id });
+        const items = schedule.items.map((item) => {
+            return {
+                wbs_id: item.wbs_id,
+                description: item.description,
+                unit: item.unit,
+                quantity: item.quantity,
+                executed_quantity: item.executed_quantity,
+                balance_quantity: item.balance_quantity,
+                duration: item.duration,
+                revised_duration: item.revised_duration,
+                lag: item.lag,
+                start_date: item.start_date,
+                end_date: item.end_date,
+                revised_end_date: item.revised_end_date,
+                status: item.status,
+            };
+        });
+        return items;
     }
 
     static async getDailySchedule(tender_id) {
-       const schedule = await ScheduleModel.findOne({ tender_id });
-       const items = schedule.items.map((item) => {
-        return {
-            wbs_id: item.wbs_id,
-            description: item.description,
-            unit: item.unit,
-            quantity: item.quantity,
-            daily: item.daily,
-            weekly: item.weekly,
-        };
-       });
-       return items;
+        const schedule = await ScheduleModel.findOne({ tender_id });
+        const items = schedule.items.map((item) => {
+            return {
+                wbs_id: item.wbs_id,
+                description: item.description,
+                unit: item.unit,
+                quantity: item.quantity,
+                start_date: item.start_date,
+                end_date: item.end_date,
+                revised_end_date: item.revised_end_date,
+                daily: item.daily,
+                weekly: item.weekly,
+            };
+        });
+        return items;
     }
-    
+
 
     static async getWeeklySchedule(tender_id) {
-       const schedule = await ScheduleModel.findOne({ tender_id });
-       const items = schedule.items.map((item) => {
-        return {
-            wbs_id: item.wbs_id,
-            description: item.description,
-            unit: item.unit,
-            quantity: item.quantity,
-            weekly: item.weekly,
-        };
-       });
-       return items;
+        const schedule = await ScheduleModel.findOne({ tender_id });
+        const items = schedule.items.map((item) => {
+            return {
+                wbs_id: item.wbs_id,
+                description: item.description,
+                unit: item.unit,
+                quantity: item.quantity,
+                weekly: item.weekly,
+            };
+        });
+        return items;
     }
 
     static async getMonthlySchedule(tender_id) {
-       const schedule = await ScheduleModel.findOne({ tender_id });
-       const items = schedule.items.map((item) => {
-        return {
-            wbs_id: item.wbs_id,
-            description: item.description,
-            unit: item.unit,
-            quantity: item.quantity,
-            monthly: item.monthly,
-        };
-       });
-       return items;
-    }   
+        const schedule = await ScheduleModel.findOne({ tender_id });
+        const items = schedule.items.map((item) => {
+            return {
+                wbs_id: item.wbs_id,
+                description: item.description,
+                unit: item.unit,
+                quantity: item.quantity,
+                monthly: item.monthly,
+            };
+        });
+        return items;
+    }
 
-    
+
+
+    // Helper: Get difference in days
+    static getDaysDiff(start, end) {
+        const a = moment(start).startOf('day');
+        const b = moment(end).startOf('day');
+        return b.diff(a, 'days') + 1; // Inclusive
+    }
+
+    // Helper: Generate daily array structure
+    static generateDailyArray(startDate, endDate, existingDaily = []) {
+        const start = moment(startDate).startOf('day');
+        const end = moment(endDate).startOf('day');
+        const days = end.diff(start, 'days') + 1;
+
+        const newDaily = [];
+        const existingMap = new Map();
+
+        // Map existing data for quick lookup
+        existingDaily.forEach(d => {
+            const dateKey = moment(d.date).format('YYYY-MM-DD');
+            existingMap.set(dateKey, d.quantity);
+        });
+
+        for (let i = 0; i < days; i++) {
+            const current = moment(start).add(i, 'days');
+            const dateKey = current.format('YYYY-MM-DD');
+
+            newDaily.push({
+                date: current.toDate(),
+                quantity: existingMap.has(dateKey) ? existingMap.get(dateKey) : 0
+            });
+        }
+        return newDaily;
+    }
+
+    // Helper: Recalculate Weekly Metrics
+    static calculateWeeklyMetrics1(item) {
+        const dailyRate = item.quantity / item.revised_duration;
+        const weeklyData = {
+            firstweek: { achieved_quantity: 0, planned_quantity: 0, lag_quantity: 0 },
+            secondweek: { achieved_quantity: 0, planned_quantity: 0, lag_quantity: 0 },
+            thirdweek: { achieved_quantity: 0, planned_quantity: 0, lag_quantity: 0 },
+            fourthweek: { achieved_quantity: 0, planned_quantity: 0, lag_quantity: 0 },
+        };
+
+        const monthStart = moment(item.start_date).startOf('month'); // Context is start date's month
+
+        item.daily.forEach(day => {
+            const dayMoment = moment(day.date);
+            const dayNum = dayMoment.date(); // 1-31
+            let weekKey = "";
+
+            if (dayNum <= 7) weekKey = "firstweek";
+            else if (dayNum <= 14) weekKey = "secondweek";
+            else if (dayNum <= 21) weekKey = "thirdweek";
+            else weekKey = "fourthweek";
+
+            // Add Achieved
+            weeklyData[weekKey].achieved_quantity += (day.quantity || 0);
+
+            // Add Planned
+            weeklyData[weekKey].planned_quantity += dailyRate;
+        });
+
+        // Finalize Lag and Rounding
+        Object.keys(weeklyData).forEach(key => {
+            const w = weeklyData[key];
+            w.planned_quantity = parseFloat(w.planned_quantity.toFixed(2));
+            w.achieved_quantity = parseFloat(w.achieved_quantity.toFixed(2));
+
+            // Lag logic: Planned - Achieved
+            // If planned is 0 (week not active), lag is 0.
+            if (w.planned_quantity > 0) {
+                w.lag_quantity = parseFloat((w.planned_quantity - w.achieved_quantity).toFixed(2));
+            } else {
+                w.lag_quantity = 0;
+            }
+        });
+
+        return weeklyData;
+    }
+
+    static async updateSchedule(tenderId, payload) {
+        try {
+            const { daily_updates, new_start_dates, revised_end_dates } = payload;
+            const schedule = await ScheduleModel.findOne({ tender_id: tenderId });
+
+            if (!schedule) throw new Error("Schedule not found");
+
+            // We process each item in the schedule to check for updates
+            for (let item of schedule.items) {
+                let isModified = false;
+
+                // 1. Handle Date Shifts (Start or End changed)
+                const newStart = new_start_dates && new_start_dates[item.wbs_id];
+                const newEnd = revised_end_dates && revised_end_dates[item.wbs_id];
+
+                if (newStart || newEnd) {
+                    const startDate = newStart ? new Date(newStart) : item.start_date;
+                    const endDate = newEnd ? new Date(newEnd) : item.revised_end_date;
+
+                    // Update fields
+                    if (newStart) item.start_date = startDate;
+                    if (newEnd) item.revised_end_date = endDate;
+
+                    // Calculate new duration
+                    const newDuration = this.getDaysDiff(startDate, endDate);
+                    item.revised_duration = newDuration > 0 ? newDuration : 0;
+
+                    // Reconstruct Daily Array (Add/Remove dates, keep existing qty)
+                    item.daily = this.generateDailyArray(startDate, endDate, item.daily);
+                    isModified = true;
+                }
+
+                // 2. Handle Daily Quantity Updates (User typed in cells)
+                if (daily_updates) {
+                    item.daily.forEach(dayRecord => {
+                        // Key format matches frontend: "WBS029-2025-12-06T18:30:00.000Z"
+                        const key = `${item.wbs_id}-${dayRecord.date.toISOString()}`;
+
+                        if (daily_updates.hasOwnProperty(key)) {
+                            const newQty = parseFloat(daily_updates[key]);
+                            if (!isNaN(newQty)) {
+                                dayRecord.quantity = newQty;
+                                isModified = true;
+                            }
+                        }
+                    });
+                }
+
+                // 3. Recalculate Aggregates (Executed, Balance, Weekly, Monthly)
+                if (isModified) {
+                    // Total Executed
+                    const totalExecuted = item.daily.reduce((sum, d) => sum + (d.quantity || 0), 0);
+                    item.executed_quantity = parseFloat(totalExecuted.toFixed(2));
+                    item.balance_quantity = parseFloat((item.quantity - item.executed_quantity).toFixed(2));
+
+                    // Status Update
+                    if (item.executed_quantity >= item.quantity) item.status = "completed";
+                    else if (item.executed_quantity > 0) item.status = "inprogress";
+                    else item.status = "pending";
+
+                    if (item.revised_duration !== undefined && item.duration !== undefined) {
+                        item.lag = item.revised_duration - item.duration;
+                    }
+
+                    // Recalculate Weekly Metrics (Includes Lag)
+                    item.weekly = this.calculateWeeklyMetrics1(item);
+
+                    // Monthly Metrics
+                    item.monthly.executed_quantity = item.executed_quantity;
+                    item.monthly.planned_quantity = item.quantity; // Assuming 1 month view for now
+                }
+            }
+
+            await schedule.save();
+            return schedule;
+
+        } catch (error) {
+            throw error;
+        }
+    }
+
 }
 
 export default ScheduleService;

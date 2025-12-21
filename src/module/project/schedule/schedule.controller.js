@@ -212,7 +212,38 @@ export const getMonthlySchedule = async (req, res, next) => {
     next(error);
   }
 };
-    
+
+export const updateScheduleData = async (req, res) => {
+    try {
+      const { tender_id } = req.params;
+      const payload = req.body;
+
+      // Validation
+      if (!tender_id) {
+        return res.status(400).json({ status: false, message: "Tender ID is required" });
+      }
+
+      if (!payload || (!payload.daily_updates && !payload.new_start_dates && !payload.revised_end_dates)) {
+         return res.status(400).json({ status: false, message: "No update data provided" });
+      }
+
+      const updatedSchedule = await ScheduleService.updateSchedule(tender_id, payload);
+
+      return res.status(200).json({
+        status: true,
+        message: "Schedule updated successfully",
+        data: updatedSchedule
+      });
+
+    } catch (error) {
+      console.error("Update Schedule Error:", error);
+      return res.status(500).json({
+        status: false,
+        message: error.message || "Internal Server Error"
+      });
+    }
+  }
+
 
 
 
