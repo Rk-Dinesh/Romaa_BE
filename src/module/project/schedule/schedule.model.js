@@ -60,6 +60,7 @@ const ItemSchema = new Schema(
     duration: { type: Number },
     revised_duration: { type: Number },
     start_date: { type: Date },
+    revised_start_date: { type: Date },
     end_date: { type: Date },
     revised_end_date: { type: Date },   
     lag: { type: Number, default: 0 },

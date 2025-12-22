@@ -128,6 +128,16 @@ export const getSchedule = async (req, res, next) => {
     }
 };
 
+export const getScheduleforcsv = async (req, res, next) => {
+    try {
+        const { tender_id } = req.params;
+        const data = await ScheduleService.getScheduleforcsv(tender_id);
+        res.status(200).json({ status: true, message: "Success", data });
+    } catch (error) {
+        next(error);
+    }
+};  
+
 export const getDailySchedule = async (req, res, next) => {
     try {
         const { tender_id } = req.params;

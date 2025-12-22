@@ -220,6 +220,7 @@ const tenderSchema = new mongoose.Schema(
     tender_start_date: { type: Date, default: null },
     tender_end_date: { type: Date, default: null },
     tender_duration: { type: String, default: "" },
+    tender_duration_unit: { type: String, default: "" },
     workOrder_id: { type: String, default: "" },
     workOrder_issued_date: { type: Date, default: null },
     agreement_id: { type: String, default: "" },

@@ -3,6 +3,7 @@ import multer from "multer";
 import { 
     getDailySchedule, 
     getSchedule, 
+    getScheduleforcsv, 
     updateScheduleData, 
     uploadScheduleCSV, 
     uploadScheduleDatesCSV 
@@ -16,7 +17,7 @@ schedulerouter.post("/upload-csv-dates", upload.single("file"), uploadScheduleDa
 
 schedulerouter.get("/get-schedule/:tender_id", getSchedule);
 schedulerouter.get("/get-daily-schedule/:tender_id", getDailySchedule);
-
+schedulerouter.get("/get-schedule-for-csv/:tender_id", getScheduleforcsv);
 schedulerouter.put("/update-daily-schedule/:tender_id", updateScheduleData);
 
 export default schedulerouter;

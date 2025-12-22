@@ -1,5 +1,5 @@
-import ScheduleModel from "./schedule.model.js"; 
-import IdcodeServices from "../../idcode/idcode.service.js"; 
+import ScheduleModel from "./schedule.model.js";
+import IdcodeServices from "../../idcode/idcode.service.js";
 import mongoose from "mongoose";
 import moment from "moment";
 
@@ -26,7 +26,7 @@ class ScheduleService {
         const a = moment.utc(start).startOf('day');
         const b = moment.utc(end).startOf('day');
         // add 1 for inclusive duration (e.g., 5th to 5th is 1 day)
-        return b.diff(a, 'days') + 1; 
+        return b.diff(a, 'days') + 1;
     }
 
     /**
@@ -68,16 +68,16 @@ class ScheduleService {
     static calculateHierarchicalMetrics(item) {
         // Prevent division by zero
         const dailyRate = item.revised_duration > 0 ? (item.quantity / item.revised_duration) : 0;
-        
+
         const monthMap = new Map();
 
         item.daily.forEach(day => {
             // STRICT UTC PARSING for bucketing
             const dateObj = moment.utc(day.date);
-            const monthKey = dateObj.format("MM-YYYY"); 
+            const monthKey = dateObj.format("MM-YYYY");
             const monthName = dateObj.format("MMMM");
             const year = dateObj.year();
-            const dayNum = dateObj.date(); 
+            const dayNum = dateObj.date();
 
             // Initialize Month Bucket
             if (!monthMap.has(monthKey)) {
@@ -106,7 +106,7 @@ class ScheduleService {
             else weekKey = "fourthweek";
 
             const qty = day.quantity || 0;
-            
+
             // Add to Week
             mData.weeks[weekKey].achieved += qty;
             mData.weeks[weekKey].planned += dailyRate;
@@ -202,14 +202,14 @@ class ScheduleService {
                     item.daily.forEach(dayRecord => {
                         // Key Matching: We use ISO String for exact match or Date Key
                         // Frontend likely sends ISO string. We should check if that ISO string matches.
-                        
+
                         // Option A: Exact String Match (if frontend sends exact UTC ISO)
                         const keyISO = `${item.wbs_id}-${dayRecord.date.toISOString()}`;
-                        
+
                         // Option B: Date-Key Match (Safer if frontend sends local time ISO)
                         // This reconstructs the key as "WBS-YYYY-MM-DD" style check if needed, 
                         // but sticking to your current key format:
-                        
+
                         if (daily_updates.hasOwnProperty(keyISO)) {
                             const newQty = parseFloat(daily_updates[keyISO]);
                             if (!isNaN(newQty)) {
@@ -300,11 +300,11 @@ class ScheduleService {
             throw err;
         }
     }
-
-    // Bulk Update (CSV) - Date Uploads
+    // --- Bulk Update Dates from CSV (Fill Missing Only) ---
     static async bulkUpdateSchedule(csvRows, tender_id) {
         const session = await mongoose.startSession();
         session.startTransaction();
+
         try {
             const schedule = await ScheduleModel.findOne({ tender_id }).session(session);
             if (!schedule) throw new Error(`Schedule not found for tender_id: ${tender_id}`);
@@ -312,10 +312,17 @@ class ScheduleService {
             for (const row of csvRows) {
                 const wbs_id = row.wbs_id?.trim();
                 if (!wbs_id) continue;
+
                 const itemIndex = schedule.items.findIndex((i) => i.wbs_id === wbs_id);
                 if (itemIndex === -1) continue;
 
                 const item = schedule.items[itemIndex];
+
+                // *** NEW CHECK: Skip if dates already exist ***
+                // If the item already has a start date, we assume it's set up and shouldn't be touched by bulk upload.
+                if (item.start_date && item.end_date && item.revised_end_date) {
+                    continue;
+                }
 
                 // Parse Dates using UTC Helper
                 const startDate = this.parseDate(row.start_date);
@@ -333,8 +340,8 @@ class ScheduleService {
 
                     item.daily = this.generateDailyEntries(startDate, revisedEndDate);
                     item.schedule_data = this.calculateHierarchicalMetrics(item);
+                    schedule.items[itemIndex] = item;
                 }
-                schedule.items[itemIndex] = item;
             }
 
             await schedule.save({ session });
@@ -352,7 +359,7 @@ class ScheduleService {
     static parseDate(dateString) {
         if (!dateString) return null;
         // Treats input as UTC, ignoring local time
-        const date = moment.utc(dateString, ["MM/DD/YYYY", "YYYY-MM-DD", "DD-MM-YYYY"]).startOf('day');
+        const date = moment.utc(dateString, ["DD-MM-YYYY"]).startOf('day');
         return date.isValid() ? date.toDate() : null;
     }
 
@@ -373,9 +380,23 @@ class ScheduleService {
         return await ScheduleModel.findOne({ tender_id });
     }
 
+    static async getScheduleforcsv(tender_id) {
+        const schedule = await ScheduleModel.findOne({ tender_id });
+        if (!schedule) return [];
+        return schedule.items.map(item => ({
+            wbs_id: item.wbs_id,
+            description: item.description,
+            unit: item.unit,
+            quantity: item.quantity,
+            start_date: item.start_date,
+            end_date: item.end_date,
+            revised_end_date: item.revised_end_date,
+        }));
+    }
+
     static async getDailySchedule(tender_id) {
         const schedule = await ScheduleModel.findOne({ tender_id });
-        if(!schedule) return [];
+        if (!schedule) return [];
         return schedule.items.map(item => ({
             wbs_id: item.wbs_id,
             description: item.description,
