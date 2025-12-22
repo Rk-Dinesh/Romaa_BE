@@ -156,7 +156,7 @@ class ScheduleService {
     //  MAIN LOGIC: UPDATE SCHEDULE
     // ============================================================
 
-    static async updateSchedule(tenderId, payload) {
+static async updateSchedule(tenderId, payload) {
         try {
             const { daily_updates, new_start_dates, revised_end_dates } = payload;
             const schedule = await ScheduleModel.findOne({ tender_id: tenderId });
@@ -172,44 +172,46 @@ class ScheduleService {
 
                 if (newStartStr || newRevisedEndStr) {
                     // FIX: Force inputs to UTC Midnight immediately
-                    const effectiveStart = newStartStr ? this.parseToUTC(newStartStr) : item.start_date;
-                    const effectiveRevisedEnd = newRevisedEndStr ? this.parseToUTC(newRevisedEndStr) : item.revised_end_date;
-                    const originalEnd = item.end_date;
+                    // If no new start is provided, fallback to existing revised_start, then existing start
+                    const currentRevisedStart = item.revised_start_date || item.start_date;
+                    const currentRevisedEnd = item.revised_end_date || item.end_date;
 
-                    // A. Update Start & Original Duration
+                    const effectiveRevisedStart = newStartStr ? this.parseToUTC(newStartStr) : currentRevisedStart;
+                    const effectiveRevisedEnd = newRevisedEndStr ? this.parseToUTC(newRevisedEndStr) : currentRevisedEnd;
+
+                    // A. Update Revised Start Date (If Changed)
                     if (newStartStr) {
-                        item.start_date = effectiveStart;
-                        const newOrgDuration = this.getDaysDiff(effectiveStart, originalEnd);
-                        item.duration = newOrgDuration > 0 ? newOrgDuration : 0;
+                        // When user moves start date, we update the Revised Start Date.
+                        // We usually KEEP the original 'start_date' for historical comparison, 
+                        // unless your business logic explicitly says to overwrite it.
+                        // Assuming standard practice: Update Revised Start.
+                        item.revised_start_date = effectiveRevisedStart;
+                        
+                        // If the item had no start date previously (first time setup), set original too.
+                        if (!item.start_date) item.start_date = effectiveRevisedStart;
                     }
 
-                    // B. Update Revised End
+                    // B. Update Revised End Date (If Changed)
                     if (newRevisedEndStr) {
                         item.revised_end_date = effectiveRevisedEnd;
+                        // If first time setup
+                        if (!item.end_date) item.end_date = effectiveRevisedEnd;
                     }
 
-                    // C. Update Revised Duration (Time difference between Start and Revised End)
-                    const newRevDuration = this.getDaysDiff(effectiveStart, effectiveRevisedEnd);
+                    // C. Update Revised Duration (Active Window: Revised Start -> Revised End)
+                    // Note: Original Duration (start_date -> end_date) remains unchanged unless you want to sync them.
+                    const newRevDuration = this.getDaysDiff(effectiveRevisedStart, effectiveRevisedEnd);
                     item.revised_duration = newRevDuration > 0 ? newRevDuration : 0;
 
-                    // D. Regenerate Daily Array (UTC Safe)
-                    item.daily = this.generateDailyArray(effectiveStart, effectiveRevisedEnd, item.daily);
+                    // D. Regenerate Daily Array (Based on Active Window)
+                    item.daily = this.generateDailyArray(effectiveRevisedStart, effectiveRevisedEnd, item.daily);
                     isModified = true;
                 }
 
                 // --- 2. Handle Daily Quantity Updates ---
                 if (daily_updates) {
                     item.daily.forEach(dayRecord => {
-                        // Key Matching: We use ISO String for exact match or Date Key
-                        // Frontend likely sends ISO string. We should check if that ISO string matches.
-
-                        // Option A: Exact String Match (if frontend sends exact UTC ISO)
                         const keyISO = `${item.wbs_id}-${dayRecord.date.toISOString()}`;
-
-                        // Option B: Date-Key Match (Safer if frontend sends local time ISO)
-                        // This reconstructs the key as "WBS-YYYY-MM-DD" style check if needed, 
-                        // but sticking to your current key format:
-
                         if (daily_updates.hasOwnProperty(keyISO)) {
                             const newQty = parseFloat(daily_updates[keyISO]);
                             if (!isNaN(newQty)) {
@@ -231,7 +233,12 @@ class ScheduleService {
                     else if (item.executed_quantity > 0) item.status = "inprogress";
                     else item.status = "pending";
 
-                    // Lag Update
+                    // Lag Update (Revised Duration - Original Duration)
+                    // Ensure original duration exists, if not calculate it
+                    if (!item.duration && item.start_date && item.end_date) {
+                        item.duration = this.getDaysDiff(item.start_date, item.end_date);
+                    }
+                    
                     if (item.revised_duration !== undefined && item.duration !== undefined) {
                         item.lag = item.revised_duration - item.duration;
                     }
@@ -326,12 +333,14 @@ class ScheduleService {
 
                 // Parse Dates using UTC Helper
                 const startDate = this.parseDate(row.start_date);
+
                 const endDate = this.parseDate(row.end_date);
                 const revisedEndDate = this.parseDate(row.revised_end_date);
 
                 if (startDate && endDate && revisedEndDate) {
                     item.start_date = startDate;
                     item.end_date = endDate;
+                    item.revised_start_date = startDate;
                     item.revised_end_date = revisedEndDate;
 
                     item.duration = this.getDaysDiff(startDate, endDate);
@@ -403,10 +412,13 @@ class ScheduleService {
             unit: item.unit,
             quantity: item.quantity,
             start_date: item.start_date,
+            revised_start_date: item.revised_start_date,
             end_date: item.end_date,
             revised_end_date: item.revised_end_date,
             executed_quantity: item.executed_quantity,
             balance_quantity: item.balance_quantity,
+            duration: item.duration,
+            revised_duration: item.revised_duration,
             status: item.status,
             lag: item.lag,
             daily: item.daily,

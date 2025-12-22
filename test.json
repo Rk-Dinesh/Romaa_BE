@@ -781,3 +781,30 @@
   },
   "__v": 6
 }
+
+
+// let original start date OS 7/12/2025
+// let Original end date OE 13/12/2025
+// let revised start date RS 8/12/2025
+// let revised end date RE 14/12/2025
+
+// on double click on Original end date OE:
+//ask want to revise start date or revise end date 
+// if revise start date ,revise the date and update the revised end date RE
+// if revise end date ,revise the date and update the revised start date RS
+
+//In original end date OE , revised end date RE and revised start date RS can be there,
+
+//On double click between OS and OE, i can able to revise start date
+//RS can be from 7/12/2025 to 13/12/2025 (possible dates 7/12/2025, 8/12/2025, 9/12/2025, 10/12/2025, 11/12/2025, 12/12/2025, 13/12/2025) but not above 13/12/2025 and not below 7/12/2025
+//if RS delayed one day ask want to extend RE by one day if yes update RE by one day else update RS by one day 
+//if RS is backward one day just update RS by one day (if RS is in 11/12/2025 i can go upto 10/12/2025,9/12/2025,8/12/2025,7/12/2025)
+
+//on double click above OE i can able to revise end date
+// can be from 13/12/2025 to etc... (possible dates 13/12/2025, 14/12/2025, 15/12/2025, etc...)
+//but not below OE (not allowed dates 12/12/2025, 11/12/2025, 10/12/2025, 9/12/2025, 8/12/2025, 7/12/2025...)
+
+// first week 1-7
+// second week 8-14
+// third week 15-21
+// fourth week 22-28
