@@ -13,6 +13,8 @@ import {
   getBoqByTenderId,
   uploadBoqCSV,
   getBoqItems,
+  getDrawingQuantity,
+  bulkUpdateDrawingQuantity,
 } from "./boq.controller.js";
 
 const boqrouter = Router();
@@ -30,10 +32,12 @@ boqrouter.delete("/delete/:boq_id", deleteBoq);
 // Add/Remove single items
 boqrouter.post("/additem/:boq_id", addItemToBoq);
 boqrouter.delete("/removeitem/:tender_id/:item_code", removeItemFromBoq);
-boqrouter.get("/items/:tender_id", getBoqItemsPaginated);
+boqrouter.get("/items/:tender_id", getBoqItemsPaginated); //in use
 boqrouter.get("/by-tender/:tender_id", getBoqByTenderId);
 boqrouter.post("/uploadcsv", upload.single("file"), uploadBoqCSV);
 
-boqrouter.get("/get-items/:tender_id", getBoqItems);
+boqrouter.get("/get-items/:tender_id", getBoqItems); //in use
+boqrouter.get("/get-drawing-quantity/:tender_id", getDrawingQuantity);
+boqrouter.put("/bulk-update-drawing-quantity/:tender_id", bulkUpdateDrawingQuantity);
 
 export default boqrouter;

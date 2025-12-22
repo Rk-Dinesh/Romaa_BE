@@ -333,7 +333,6 @@ static async updateSchedule(tenderId, payload) {
 
                 // Parse Dates using UTC Helper
                 const startDate = this.parseDate(row.start_date);
-
                 const endDate = this.parseDate(row.end_date);
                 const revisedEndDate = this.parseDate(row.revised_end_date);
 

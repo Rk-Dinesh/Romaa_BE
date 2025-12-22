@@ -179,3 +179,34 @@ export const getBoqItems = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
+export const getDrawingQuantity = async (req, res) => {
+  try {
+    const boq = await BoqService.getDrawingQuantity(req.params.tender_id);
+    res.status(200).json({ status: true, data: boq });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const bulkUpdateDrawingQuantity = async (req, res) => {
+    try {
+       const tender_id = req.params.tender_id;
+        const {  items } = req.body; 
+
+        // Validate before calling service
+        if (!items || !Array.isArray(items)) {
+            return res.status(400).json({ 
+                status: false, 
+                message: "Invalid items format. Expected an array." 
+            });
+        }
+
+        await BoqService.bulkUpdateDrawingQuantity(tender_id, items);
+        
+        return res.status(200).json({ status: true, message: "Updated successfully" });
+    } catch (error) {
+        console.error("Update Error:", error);
+        return res.status(500).json({ status: false, message: error.message });
+    }
+};

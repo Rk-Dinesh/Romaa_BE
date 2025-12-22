@@ -377,6 +377,72 @@ static async getBoqItems(tender_id) {
   return boq; 
 }
 
+static async getDrawingQuantity(tender_id) {
+  const boq = await BoqModel.findOne({ tender_id }).lean();
+          if (!boq) return [];
+        return boq.items.map(item => ({
+            item_id: item.item_id,
+            item_name: item.item_name,
+            unit: item.unit,
+            quantity: item.quantity,
+            n_rate: item.n_rate,
+            drawing_quantity: item.drawing_quantity,
+            variable_quantity: item.variable_quantity,
+            variable_amount: item.variable_amount,
+        }));
+}
+
+static async bulkUpdateDrawingQuantity(tender_id, itemsPayload) {
+    // 1. Validation
+    if (!itemsPayload || !Array.isArray(itemsPayload)) {
+        throw new Error("Invalid data: 'items' must be an array.");
+    }
+
+    // 2. Fetch BOQ
+    const boq = await BoqModel.findOne({ tender_id });
+    if (!boq) throw new Error("BOQ not found for this tender");
+
+    // 3. Create Lookup Map 
+    // Key: item_code (from payload) -> Value: drawing_quantity
+    const updateMap = new Map();
+    itemsPayload.forEach(payloadItem => {
+        if (payloadItem.item_code && payloadItem.drawing_quantity !== undefined) {
+            updateMap.set(payloadItem.item_code, Number(payloadItem.drawing_quantity));
+        }
+    });
+
+    let isModified = false;
+
+    // 4. Iterate DB Items
+    for (const item of boq.items) {
+        // MATCHING LOGIC: 
+        // We check if the DB item's "item_id" exists as a key in our map (which used payload's "item_code")
+        if (updateMap.has(item.item_id)) {
+            const newDrawingQty = updateMap.get(item.item_id);
+
+            // Update fields
+            item.drawing_quantity = newDrawingQty;
+            
+            // Recalculate variables based on DB source of truth
+            if (newDrawingQty === 0) {
+                item.variable_quantity = 0;
+                item.variable_amount = 0;
+            } else {
+                item.variable_quantity = item.quantity - newDrawingQty;
+                item.variable_amount = item.variable_quantity * item.n_rate;
+            }
+            
+            isModified = true;
+        }
+    }
+
+    // 5. Save if changes occurred
+    if (isModified) {
+        await boq.save();
+    }
+
+    return { success: true, message: "Bulk update successful" };
+}
 
 
 }

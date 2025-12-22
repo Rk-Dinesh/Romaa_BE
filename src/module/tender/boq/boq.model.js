@@ -12,6 +12,9 @@ const boqItemSchema = new mongoose.Schema(
     n_amount: Number, // Calculated (quantity * unit_rate)
     remarks: String,
     work_section: String, // Foundation, Superstructure, etc.
+    drawing_quantity: { type: Number, default: 0 },
+    variable_quantity: { type: Number, default: 0 },
+    variable_amount: { type: Number, default: 0 },
     consumable_material_rate: { type: Number, default: 0 },
     consumable_material_amount: { type: Number, default: 0 },
     bulk_material_rate: { type: Number, default: 0 },
