@@ -1,0 +1,74 @@
+my dataflow is like i have an workGroup inside this workGroup i have workItems and inside this workItems i have workTasks has many subtasks each subtask has many tasks
+An Schedule can have many workGroups and each workGroup can have many workItems and each workItem can have many workTasks and each workTask can have many subtasks and each subtask can have many tasks
+
+sample data:
+
+schedule:
+tender_id:""
+workGroups:[
+    {
+        workItems:[
+            {
+                workTasks:[
+                    {
+                        subtasks:[
+                            {
+                                tasks:[
+                                    {
+                                        wbs_id:"",
+                                        description:"",
+                                        unit:"",
+                                        quantity:0,
+                                        executed_quantity:0,
+                                        balance_quantity:0,
+                                        duration:0,
+                                        revised_duration:0,
+                                        start_date:"",
+                                        end_date:"",
+                                        revised_start_date:"",
+                                        revised_end_date:"",
+                                        lag:0,
+                                        status:"",
+                                        daily:[
+                                            {
+                                                date:"",
+                                                quantity:0
+                                            }
+                                        ],
+                                        schedule_data:[
+                                            {
+                                                month_name:"",
+                                                year:0,
+                                                month_key:"",
+                                                metrics:{
+                                                    achieved_quantity:0,
+                                                    planned_quantity:0,
+                                                    lag_quantity:0
+                                                },
+                                                weeks:[
+                                                    {
+                                                        week_label:"",
+                                                        week_number:0,
+                                                        start_date:"",
+                                                        end_date:"",
+                                                        metrics:{
+                                                            achieved_quantity:0,
+                                                            planned_quantity:0,
+                                                            lag_quantity:0
+                                                        }
+                                                    }
+                                                ]
+                                            }
+                                        ],
+                                    }
+                                ]
+                            }
+                        ]
+                    }
+                ]
+            }
+        ]
+    }
+]
+
+
