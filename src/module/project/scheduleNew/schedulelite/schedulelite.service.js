@@ -204,15 +204,15 @@ class ScheduleLiteService {
     static excelDateToJSDate(serial) {
         // Excel base date is Dec 30, 1899
         // 86,400,000 milliseconds per day
-        const utc_days  = Math.floor(serial - 25569);
-        const utc_value = utc_days * 86400;                                      
+        const utc_days = Math.floor(serial - 25569);
+        const utc_value = utc_days * 86400;
         const date_info = new Date(utc_value * 1000);
-        
+
         // Adjust for JS Date timezone issues by forcing UTC
         const fractional_day = serial - Math.floor(serial) + 0.0000001;
         const total_seconds = Math.floor(86400 * fractional_day);
         const seconds = total_seconds % 60;
-        
+
         return new Date(Date.UTC(date_info.getUTCFullYear(), date_info.getUTCMonth(), date_info.getUTCDate(), 0, 0, 0));
     }
 
@@ -529,18 +529,18 @@ class ScheduleLiteService {
         }
     }
 
-static async bulkUpdateScheduleStrict(csvRows, tender_id) {
+    static async bulkUpdateScheduleStrict(csvRows, tender_id) {
         const session = await mongoose.startSession();
         session.startTransaction();
 
         try {
-            // 1. Fetch Existing Data (including all date/metric fields to preserve them)
+            // 1. Fetch Existing Data
             const existingTasks = await TaskModel.find({ tender_id })
-                .select("wbs_id description work_group_id work_item_id work_task_id quantity unit start_date end_date revised_start_date revised_end_date duration revised_duration lag daily schedule_data") 
+                .select("wbs_id description work_group_id work_item_id work_task_id quantity unit start_date end_date revised_start_date revised_end_date duration revised_duration lag daily schedule_data")
                 .session(session);
-            
+
             const taskLookup = new Map();
-            const taskDataMap = new Map(); 
+            const taskDataMap = new Map();
 
             existingTasks.forEach(t => {
                 const key = `${t.work_group_id?.trim()}|${t.work_item_id?.trim()}|${t.work_task_id?.trim()}|${t.description?.trim()}`.toLowerCase();
@@ -548,21 +548,21 @@ static async bulkUpdateScheduleStrict(csvRows, tender_id) {
                 taskDataMap.set(t.wbs_id, t);
             });
 
-            // (ID Counting Logic skipped for brevity - Same as before)
+            // Count New IDs
             let neededIdCount = 0;
             let tempGroup = null, tempItem = null, tempTask = null;
             for (const row of csvRows) {
-                 const code = row.Code ? row.Code.toString().trim() : "";
-                 if (!code) continue;
-                 const level = this.getLevelFromCode(code);
-                 const desc = (row.Description || "Untitled").trim();
-                 if (level === 1) tempGroup = desc;
-                 else if (level === 2) tempItem = desc;
-                 else if (level === 3) tempTask = desc;
-                 else if (level === 4) {
+                const code = row.Code ? row.Code.toString().trim() : "";
+                if (!code) continue;
+                const level = this.getLevelFromCode(code);
+                const desc = (row.Description || "Untitled").trim();
+                if (level === 1) tempGroup = desc;
+                else if (level === 2) tempItem = desc;
+                else if (level === 3) tempTask = desc;
+                else if (level === 4) {
                     const hierarchyKey = `${tempGroup}|${tempItem}|${tempTask}|${desc}`.toLowerCase();
                     if (!taskLookup.has(hierarchyKey)) neededIdCount++;
-                 }
+                }
             }
 
             const idNameWBS = "WBS";
@@ -578,22 +578,20 @@ static async bulkUpdateScheduleStrict(csvRows, tender_id) {
             let currentItem = null;
             let currentWTask = null;
 
-            // --- HELPER: "Freeze" or "Calculate" Logic ---
+            // --- HELPER: Process Row Data ---
             const processRowData = (row, existingData = null) => {
-                
                 let qty, unit, startDate, endDate, duration, revStart, revEnd, revDuration, lag;
                 let daily = [], schedule_data = [];
 
-                // 1. QUANTITY & UNIT (Always Freeze if exists)
                 if (existingData) {
-                    qty = existingData.quantity; 
+                    qty = existingData.quantity;
                     unit = existingData.unit;
                 } else {
                     qty = Number(row.Quantity || 0);
                     unit = row.Unit || "";
                 }
 
-                // 2. CHECK IF DATES EXIST (Your requested logic)
+                // Check DB for Dates
                 const dbHasDates = existingData && existingData.start_date && existingData.end_date;
 
                 if (dbHasDates) {
@@ -604,7 +602,6 @@ static async bulkUpdateScheduleStrict(csvRows, tender_id) {
                     startDate = existingData.start_date;
                     endDate = existingData.end_date;
                     duration = existingData.duration;
-                    
                     revStart = existingData.revised_start_date;
                     revEnd = existingData.revised_end_date;
                     revDuration = existingData.revised_duration;
@@ -613,14 +610,11 @@ static async bulkUpdateScheduleStrict(csvRows, tender_id) {
                     // Preserve the heavy arrays too! No need to regenerate them.
                     daily = existingData.daily;
                     schedule_data = existingData.schedule_data;
-
                 } else {
-                    // --- CASE B: ADD NEW (Calculate from CSV) ---
-                    // Either it's a new task, OR the existing task had null dates.
-                    
+                    // Start fresh from CSV
                     startDate = this.parseDate(row.StartDate);
                     endDate = this.parseDate(row.EndDate);
-                    
+
                     duration = 0;
                     if (startDate && endDate) {
                         duration = this.getDaysDiff(startDate, endDate);
@@ -630,9 +624,8 @@ static async bulkUpdateScheduleStrict(csvRows, tender_id) {
                     revStart = startDate;
                     revEnd = endDate;
                     revDuration = duration;
-                    lag = 0; 
+                    lag = 0;
 
-                    // Generate Metrics
                     if (revStart && revEnd) {
                         daily = this.generateDailyEntries(revStart, revEnd);
                         // No splitting quantity (keep daily 0)
@@ -651,7 +644,6 @@ static async bulkUpdateScheduleStrict(csvRows, tender_id) {
                 };
             };
 
-            // ... (Loop through CSV rows same as before, calling processRowData) ...
             for (const row of csvRows) {
                 const code = row.Code ? row.Code.toString().trim() : "";
                 if (!code) continue;
@@ -667,8 +659,7 @@ static async bulkUpdateScheduleStrict(csvRows, tender_id) {
                 }
                 else if (level === 2) {
                     if (!currentGroup) throw new Error(`Row "${code}" (Level 2) missing Parent Group.`);
-                    // L2 Containers don't map to TaskModel, so we pass null (always calculate metrics if csv has data)
-                    const data = processRowData(row, null); 
+                    const data = processRowData(row, null);
                     currentItem = { item_name: desc, row_index: globalRowIndex, ...data, tasks: [] };
                     currentGroup.items.push(currentItem);
                     currentWTask = null;
@@ -682,13 +673,29 @@ static async bulkUpdateScheduleStrict(csvRows, tender_id) {
                 else if (level === 4) {
                     if (!currentWTask) throw new Error(`Row "${code}" (Level 4) missing Parent Task.`);
 
+                    // *** CONDITION CHECK: IF L3 HAS CHILDREN, OMIT L3 DATES ***
+                    // We found a child (L4), so the parent (L3 - currentWTask) must act as a container.
+                    // We explicitly wipe any dates we assigned to it in the previous step.
+                    if (currentWTask) {
+                        currentWTask.start_date = null;
+                        currentWTask.end_date = null;
+                        currentWTask.duration = 0;
+                        currentWTask.revised_start_date = null;
+                        currentWTask.revised_end_date = null;
+                        currentWTask.revised_duration = 0;
+                        currentWTask.daily = [];
+                        currentWTask.schedule_data = [];
+                        currentWTask.lag = 0;
+                        // Note: We leave Quantity/Unit alone as per your previous instruction
+                    }
+
                     const hierarchyKey = `${currentGroup.group_name}|${currentItem.item_name}|${currentWTask.task_name}|${desc}`.toLowerCase();
                     let targetWbsId = taskLookup.get(hierarchyKey);
-                    
+
                     const existingDoc = targetWbsId ? taskDataMap.get(targetWbsId) : null;
 
                     if (!targetWbsId) targetWbsId = newIdsPool.shift();
-                    
+
                     activeWbsIds.add(targetWbsId);
                     currentWTask.task_wbs_ids.push({ wbs_id: targetWbsId, row_index: globalRowIndex });
 
@@ -698,8 +705,7 @@ static async bulkUpdateScheduleStrict(csvRows, tender_id) {
                     const taskDoc = {
                         tender_id, wbs_id: targetWbsId, row_index: globalRowIndex,
                         work_group_id: currentGroup.group_name, work_item_id: currentItem.item_name, work_task_id: currentWTask.task_name,
-                        description: desc, 
-                        balance_quantity: data.quantity, 
+                        description: desc, balance_quantity: data.quantity,
                         ...data
                     };
 
