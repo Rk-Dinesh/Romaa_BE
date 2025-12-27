@@ -32,7 +32,7 @@ import purhcaseRequestrouter from './src/module/purchase/purchaseorderReqIssue/p
 import machineryrouter from './src/module/assets/machinery/machineryasset.route.js';
 import siteoverheadrouter from './src/module/tender/siteoverheads/siteoverhead.route.js';
 import rateanalysisquantitesrouter from './src/module/tender/rateanalyisquantites/rateanalysisquantites.route.js';
-import scheduleLightRouter from './src/module/project/scheduleNew/schedulelight/scheduleLight.route.js';
+import scheduleLiteRouter from './src/module/project/scheduleNew/schedulelite/schedulelite.route.js';
 
 
 
@@ -93,7 +93,7 @@ app.use('/material',materialrouter);
 app.use('/machineryasset',machineryrouter);
 app.use('/siteoverhead',siteoverheadrouter);
 app.use('/raquantities',rateanalysisquantitesrouter);
-app.use('/schedulelight',scheduleLightRouter);
+app.use('/schedulelite',scheduleLiteRouter);
 
 app.get('/',(req,res)=>{
     res.send(`Welcome to Romaa Backend`)

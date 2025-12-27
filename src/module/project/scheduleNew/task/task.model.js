@@ -64,7 +64,8 @@ const TaskSchema = new Schema(
   {
     // --- 1. Linking Fields (The "Flat" Hierarchy) ---
     // These allow you to filter tasks quickly without deep nesting.
-    tender_id: { type: String, required: true, index: true }, 
+    tender_id: { type: String, required: true, index: true },
+    row_index: { type: Number }, 
     work_group_id: { type: String, index: true }, // e.g., ID for "Civil Works"
     work_item_id: { type: String, index: true },  // e.g., ID for "Foundation"
     work_task_id: { type: String, index: true },  // e.g., ID for "Foundation"

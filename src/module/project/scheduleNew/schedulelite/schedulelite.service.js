@@ -1,10 +1,10 @@
 import mongoose from "mongoose";
 import { addDays } from "date-fns";
 import IdcodeServices from "../../../idcode/idcode.service.js";
-import ScheduleLightModel from "./scheduleLight.model.js"; // Structure Only
+import ScheduleLiteModel from "./schedulelite.model.js"; 
 import TaskModel from "../task/task.model.js";
 
-class ScheduleLightService {
+class ScheduleLiteService {
 
 static getLevelFromCode(code) {
         code = code.trim();
@@ -144,11 +144,11 @@ static getLevelFromCode(code) {
 
             // 3. Save Structure (Completely Overwrite)
             // This effectively removes any Groups/Items that were deleted from the CSV
-            let scheduleDoc = await ScheduleLightModel.findOne({ tender_id }).session(session);
+            let scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
             if (scheduleDoc) {
                 scheduleDoc.structure = structure;
             } else {
-                scheduleDoc = new ScheduleLightModel({ tender_id, structure });
+                scheduleDoc = new ScheduleLiteModel({ tender_id, structure });
             }
             await scheduleDoc.save({ session });
 
@@ -182,7 +182,7 @@ static getLevelFromCode(code) {
 
     static async getPopulatedSchedule(tender_id) {
         // 1. Fetch the Structure (Use .lean() for performance and mutability)
-        const scheduleDoc = await ScheduleLightModel.findOne({ tender_id }).lean();
+        const scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).lean();
         
         if (!scheduleDoc) {
             throw new Error("Schedule not found");
@@ -248,4 +248,4 @@ static getLevelFromCode(code) {
     }
 }
 
-export default ScheduleLightService;
+export default ScheduleLiteService;

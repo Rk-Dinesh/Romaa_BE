@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import csvParser from "csv-parser";
 import { fileURLToPath } from "url";
-import ScheduleLightService from "./scheduleLight.service.js";
+import ScheduleLiteService from "./schedulelite.service.js";
 import { createRequire } from "module";
 const require = createRequire(import.meta.url);
 const XLSX = require("xlsx");
@@ -52,7 +52,7 @@ export const uploadScheduleCSV1 = async (req, res, next) => {
 
           // 4. Call Service 
           // FIX: Passed arguments correctly matching the Service definition (rows, tender_id)
-          const result = await ScheduleLightService.bulkInsert(csvRows, tender_id);
+          const result = await ScheduleLiteService.bulkInsert(csvRows, tender_id);
 
           res.status(200).json({
             status: true,
@@ -161,7 +161,7 @@ export const uploadScheduleCSV = async (req, res, next) => {
     }
 
     // 4. Call Service
-    const result = await ScheduleLightService.bulkInsert(dataRows, tender_id);
+    const result = await ScheduleLiteService.bulkInsert(dataRows, tender_id);
 
     res.status(200).json({
       status: true,
@@ -191,7 +191,7 @@ export const getSchedule = async (req, res) => {
             return res.status(400).json({ status: false, message: "Tender ID is required" });
         }
 
-        const data = await ScheduleLightService.getPopulatedSchedule(tender_id);
+        const data = await ScheduleLiteService.getPopulatedSchedule(tender_id);
 
         return res.status(200).json({
             status: true,
