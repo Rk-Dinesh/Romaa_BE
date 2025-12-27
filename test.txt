@@ -39,7 +39,22 @@ Three concepts to control dates.
 
 In excel or csv upload i will upload start date , end date for each code. The duration will be calculated automatically.
 
-First concept:
+Predecessor and Successor will be calculated automatically.
 
+Predecessor: 
+
+FS = Finish to Start
+FF = Finish to Finish
+SS = Start to Start
+SF = Start to Finish
+
+2FS+3 = 2nd row start date + 3 days 
+3SS = 3rd row start date
+3SS+2 = 3rd row start date + 2 days
+4SS+1 = 4th row start date + 1 day
+5SS-2 = 5th row start date - 2 days
+5FF-2 = 5th row end date - 2 days
+
+like this i want to control dates.
 
 

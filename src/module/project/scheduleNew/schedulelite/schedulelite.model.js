@@ -71,10 +71,12 @@ const ScheduleLiteSchema = new Schema({
   structure: [
     {
       group_name: String,
+      group_id: String,
       row_index: { type: Number },
       items: [
         {
           item_name: String,
+          work_group_id: String,
           row_index: { type: Number },
           unit: String,
           quantity: Number,
@@ -88,6 +90,8 @@ const ScheduleLiteSchema = new Schema({
           revised_duration: Number,
           lag: Number,
           status: String,
+          predecessor: String,
+          successor: String,
 
           // A. Daily Logs: The raw history of every update.
           // Great for charts: "Show me progress over time"
@@ -99,6 +103,7 @@ const ScheduleLiteSchema = new Schema({
           tasks: [
             {
               task_name: String,
+              work_item_id: String,
               row_index: { type: Number },
               unit: String,
               quantity: Number,
@@ -112,6 +117,8 @@ const ScheduleLiteSchema = new Schema({
               revised_duration: Number,
               lag: Number,
               status: String,
+              predecessor: String,
+              successor: String,
 
               // A. Daily Logs: The raw history of every update.
               // Great for charts: "Show me progress over time"

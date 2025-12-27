@@ -91,6 +91,8 @@ const TaskSchema = new Schema(
     revised_start_date: { type: Date },
     revised_end_date: { type: Date },
     lag: { type: Number, default: 0 },
+    predecessor: String,
+    successor: String,
     
     status: { 
       type: String, 

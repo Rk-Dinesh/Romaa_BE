@@ -534,9 +534,9 @@ class ScheduleLiteService {
         session.startTransaction();
 
         try {
-            // 1. Fetch Existing Data
+            // 1. Fetch Existing Data (Added 'predecessor' to the select list)
             const existingTasks = await TaskModel.find({ tender_id })
-                .select("wbs_id description work_group_id work_item_id work_task_id quantity unit start_date end_date revised_start_date revised_end_date duration revised_duration lag daily schedule_data")
+                .select("wbs_id description work_group_id work_item_id work_task_id quantity unit start_date end_date revised_start_date revised_end_date duration revised_duration lag daily schedule_data predecessor")
                 .session(session);
 
             const taskLookup = new Map();
@@ -580,15 +580,19 @@ class ScheduleLiteService {
 
             // --- HELPER: Process Row Data ---
             const processRowData = (row, existingData = null) => {
-                let qty, unit, startDate, endDate, duration, revStart, revEnd, revDuration, lag;
+                let qty, unit, startDate, endDate, duration, revStart, revEnd, revDuration, lag, predecessor;
                 let daily = [], schedule_data = [];
 
                 if (existingData) {
                     qty = existingData.quantity;
                     unit = existingData.unit;
+                    // Freeze Predecessor if it exists in DB
+                    predecessor = existingData.predecessor || null;
                 } else {
                     qty = Number(row.Quantity || 0);
                     unit = row.Unit || "";
+                    // New Task: Take Predecessor from CSV
+                    predecessor = row.Predecessor || null;
                 }
 
                 // Check DB for Dates
@@ -636,7 +640,7 @@ class ScheduleLiteService {
                 }
 
                 return {
-                    unit, quantity: qty,
+                    unit, quantity: qty, predecessor, // Added Predecessor to return object
                     start_date: startDate, end_date: endDate, duration,
                     revised_start_date: revStart, revised_end_date: revEnd, revised_duration: revDuration,
                     lag, status: "pending",
@@ -666,7 +670,9 @@ class ScheduleLiteService {
                 }
                 else if (level === 3) {
                     if (!currentItem) throw new Error(`Row "${code}" (Level 3) missing Parent Item.`);
+
                     const data = processRowData(row, null);
+
                     currentWTask = { task_name: desc, row_index: globalRowIndex, ...data, task_wbs_ids: [] };
                     currentItem.tasks.push(currentWTask);
                 }
@@ -686,12 +692,11 @@ class ScheduleLiteService {
                         currentWTask.daily = [];
                         currentWTask.schedule_data = [];
                         currentWTask.lag = 0;
-                        // Note: We leave Quantity/Unit alone as per your previous instruction
+                        currentWTask.predecessor = ""; // Clear predecessor on parent if it becomes a summary
                     }
 
                     const hierarchyKey = `${currentGroup.group_name}|${currentItem.item_name}|${currentWTask.task_name}|${desc}`.toLowerCase();
                     let targetWbsId = taskLookup.get(hierarchyKey);
-
                     const existingDoc = targetWbsId ? taskDataMap.get(targetWbsId) : null;
 
                     if (!targetWbsId) targetWbsId = newIdsPool.shift();
@@ -699,14 +704,13 @@ class ScheduleLiteService {
                     activeWbsIds.add(targetWbsId);
                     currentWTask.task_wbs_ids.push({ wbs_id: targetWbsId, row_index: globalRowIndex });
 
-                    // PASS EXISTING DOC to check dates
-                    const data = processRowData(row, existingDoc); 
+                    const data = processRowData(row, existingDoc);
 
                     const taskDoc = {
                         tender_id, wbs_id: targetWbsId, row_index: globalRowIndex,
                         work_group_id: currentGroup.group_name, work_item_id: currentItem.item_name, work_task_id: currentWTask.task_name,
                         description: desc, balance_quantity: data.quantity,
-                        ...data
+                        ...data // predecessor is spread here
                     };
 
                     leafTasksToSave.push({
@@ -715,8 +719,7 @@ class ScheduleLiteService {
                 }
             }
 
-            // ... (Save Logic same as before) ...
-            
+            // 3. Save Structure
             let scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
             if (scheduleDoc) {
                 scheduleDoc.structure = structure;
@@ -725,6 +728,7 @@ class ScheduleLiteService {
             }
             await scheduleDoc.save({ session });
 
+            // 4. Save Tasks & Cleanup
             if (leafTasksToSave.length > 0) await TaskModel.bulkWrite(leafTasksToSave, { session });
             const deleteResult = await TaskModel.deleteMany({ tender_id, wbs_id: { $nin: Array.from(activeWbsIds) } }).session(session);
 
