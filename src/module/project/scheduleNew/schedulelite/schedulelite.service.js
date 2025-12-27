@@ -16,7 +16,7 @@ static getLevelFromCode(code) {
         return 0;
     }
 
-    static async bulkInsert(csvRows, tender_id) {
+static async bulkInsert(csvRows, tender_id) {
         const session = await mongoose.startSession();
         session.startTransaction();
 
@@ -42,6 +42,9 @@ static getLevelFromCode(code) {
             let currentItem = null;  
             let currentWTask = null; 
 
+            // --- ADDED: Row Counter ---
+            let globalRowIndex = 0;
+
             const idNameWBS = "WBS";
             await IdcodeServices.addIdCode(idNameWBS, "WBS");
 
@@ -49,12 +52,19 @@ static getLevelFromCode(code) {
                 const code = row.Code ? row.Code.toString().trim() : "";
                 if (!code) continue;
 
+                // --- ADDED: Increment Row Index ---
+                globalRowIndex++;
+
                 const level = this.getLevelFromCode(code);
                 const desc = (row.Description || "Untitled").trim();
 
                 // --- LEVEL 1: Work Group ---
                 if (level === 1) {
-                    currentGroup = { group_name: desc, items: [] };
+                    currentGroup = { 
+                        group_name: desc, 
+                        row_index: globalRowIndex, // <--- ADDED
+                        items: [] 
+                    };
                     structure.push(currentGroup);
                     currentItem = null; currentWTask = null;
                 }
@@ -62,7 +72,13 @@ static getLevelFromCode(code) {
                 // --- LEVEL 2: Work Item ---
                 else if (level === 2) {
                     if (!currentGroup) throw new Error(`Row "${code}" (Level 2) missing Parent Group.`);
-                    currentItem = { item_name: desc,unit: row.Unit || "", quantity: Number(row.Quantity || 0), tasks: [] };
+                    currentItem = { 
+                        item_name: desc,
+                        row_index: globalRowIndex, // <--- ADDED
+                        unit: row.Unit || "", 
+                        quantity: Number(row.Quantity || 0), 
+                        tasks: [] 
+                    };
                     currentGroup.items.push(currentItem);
                     currentWTask = null;
                 }
@@ -71,13 +87,14 @@ static getLevelFromCode(code) {
                 else if (level === 3) {
                     if (!currentItem) throw new Error(`Row "${code}" (Level 3) missing Parent Item.`);
                    // currentWTask = { task_name: desc,unit: row.Unit || "", quantity: Number(row.Quantity || 0), task_wbs_ids: [] };
-                   currentWTask = { 
+                    currentWTask = { 
                         task_name: desc, 
+                        row_index: globalRowIndex, // <--- ADDED
                         unit: row.Unit || "", 
-                        quantity: 0, // Start at 0
+                        quantity: 0, 
                         task_wbs_ids: [] 
                     };
-                   currentItem.tasks.push(currentWTask);
+                    currentItem.tasks.push(currentWTask);
                 }
 
                 // --- LEVEL 4: Leaf Task ---
@@ -97,8 +114,11 @@ static getLevelFromCode(code) {
                     // Mark ID as "Active" so we don't delete it later
                     activeWbsIds.add(targetWbsId);
                     
-                    // Link to Structure
-                    currentWTask.task_wbs_ids.push(targetWbsId);
+                    // --- CHANGED: Push Object instead of String ---
+                    currentWTask.task_wbs_ids.push({
+                        wbs_id: targetWbsId,
+                        row_index: globalRowIndex // <--- ADDED
+                    });
 
                     // B. Prepare Data
                     const qty = Number(row.Quantity || 0);
@@ -116,6 +136,9 @@ static getLevelFromCode(code) {
                         tender_id: tender_id,
                         wbs_id: targetWbsId,
                         
+                        // Optional: Add row_index to TaskModel if needed
+                        row_index: globalRowIndex, // <--- ADDED
+
                         work_group_id: currentGroup.group_name, 
                         work_item_id: currentItem.item_name,
                         work_task_id: currentWTask.task_name,
@@ -180,8 +203,8 @@ static getLevelFromCode(code) {
         }
     }
 
-    static async getPopulatedSchedule(tender_id) {
-        // 1. Fetch the Structure (Use .lean() for performance and mutability)
+static async getPopulatedSchedule(tender_id) {
+        // 1. Fetch the Structure
         const scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).lean();
         
         if (!scheduleDoc) {
@@ -195,7 +218,9 @@ static getLevelFromCode(code) {
             group.items.forEach(item => {
                 item.tasks.forEach(taskContainer => {
                     if (Array.isArray(taskContainer.task_wbs_ids)) {
-                        allWbsIds.push(...taskContainer.task_wbs_ids);
+                        // FIX 1: Map over the objects to extract just the wbs_id string
+                        const ids = taskContainer.task_wbs_ids.map(ref => ref.wbs_id);
+                        allWbsIds.push(...ids);
                     }
                 });
             });
@@ -208,7 +233,6 @@ static getLevelFromCode(code) {
         }).lean();
 
         // 4. Create a Lookup Map for O(1) access
-        // Key: wbs_id -> Value: Task Object
         const taskMap = new Map();
         taskDocuments.forEach(task => {
             taskMap.set(task.wbs_id, task);
@@ -218,24 +242,21 @@ static getLevelFromCode(code) {
         scheduleDoc.structure.forEach(group => {
             group.items.forEach(item => {
                 item.tasks.forEach(taskContainer => {
-                    // Replace array of Strings (IDs) with array of Objects (Task Data)
-                    // const populatedTasks = taskContainer.task_wbs_ids.map(id => {
-                    //     return taskMap.get(id) || null; // Return task or null if missing
-                    // }).filter(t => t !== null); // Remove nulls
-
-                    // Create a new field 'tasks_data' or overwrite 'task_wbs_ids'
-                    // Overwriting is usually cleaner for the frontend
-
-                    const populatedTasks = taskContainer.task_wbs_ids.map(id => {
-                        const fullTask = taskMap.get(id);
+                    
+                    // FIX 2: Iterate over the reference objects ({ wbs_id, row_index })
+                    const populatedTasks = taskContainer.task_wbs_ids.map(ref => {
+                        const fullTask = taskMap.get(ref.wbs_id);
                         if (!fullTask) return null;
                         
-                        // Extract specific fields
+                        // Combine the Structure data (row_index) with the Heavy Task data
                         return {
                             wbs_id: fullTask.wbs_id,
                             description: fullTask.description,
                             unit: fullTask.unit,
-                            quantity: fullTask.quantity
+                            quantity: fullTask.quantity,
+                            
+                            // Important: Pass the row_index from the structure to the frontend
+                            row_index: ref.row_index 
                         };
                     }).filter(t => t !== null);
 

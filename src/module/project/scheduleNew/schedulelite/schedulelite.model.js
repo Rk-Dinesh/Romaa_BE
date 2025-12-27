@@ -1,6 +1,11 @@
 import mongoose from "mongoose";
 const { Schema } = mongoose;
 
+const LeafReferenceSchema = new Schema({
+  wbs_id: { type: String, required: true },
+  row_index: { type: Number } 
+}, { _id: false });
+
 // Hierarchy only stores IDs or basic info, not the full task data
 const ScheduleLiteSchema = new Schema({
   tender_id: { type: String, required: true, unique: true },
@@ -36,7 +41,7 @@ const ScheduleLiteSchema = new Schema({
               revised_duration: Number,
               lag: Number,
               status: String,
-              task_wbs_ids: [{ type: String }] 
+              task_wbs_ids: [LeafReferenceSchema] 
             }
           ]
         }
