@@ -529,16 +529,18 @@ class ScheduleLiteService {
         }
     }
 
-    static async bulkUpdateScheduleStrict(csvRows, tender_id) {
+static async bulkUpdateScheduleStrict(csvRows, tender_id) {
         const session = await mongoose.startSession();
         session.startTransaction();
 
         try {
-            // 1. Prepare Lookup Map & Fetch Existing Data
-            const existingTasks = await TaskModel.find({ tender_id }).select("wbs_id description work_group_id work_item_id work_task_id quantity unit").session(session);
-
+            // 1. Fetch Existing Data (including all date/metric fields to preserve them)
+            const existingTasks = await TaskModel.find({ tender_id })
+                .select("wbs_id description work_group_id work_item_id work_task_id quantity unit start_date end_date revised_start_date revised_end_date duration revised_duration lag daily schedule_data") 
+                .session(session);
+            
             const taskLookup = new Map();
-            const taskDataMap = new Map();
+            const taskDataMap = new Map(); 
 
             existingTasks.forEach(t => {
                 const key = `${t.work_group_id?.trim()}|${t.work_item_id?.trim()}|${t.work_task_id?.trim()}|${t.description?.trim()}`.toLowerCase();
@@ -546,21 +548,21 @@ class ScheduleLiteService {
                 taskDataMap.set(t.wbs_id, t);
             });
 
-            // Count New IDs
+            // (ID Counting Logic skipped for brevity - Same as before)
             let neededIdCount = 0;
             let tempGroup = null, tempItem = null, tempTask = null;
             for (const row of csvRows) {
-                const code = row.Code ? row.Code.toString().trim() : "";
-                if (!code) continue;
-                const level = this.getLevelFromCode(code);
-                const desc = (row.Description || "Untitled").trim();
-                if (level === 1) tempGroup = desc;
-                else if (level === 2) tempItem = desc;
-                else if (level === 3) tempTask = desc;
-                else if (level === 4) {
+                 const code = row.Code ? row.Code.toString().trim() : "";
+                 if (!code) continue;
+                 const level = this.getLevelFromCode(code);
+                 const desc = (row.Description || "Untitled").trim();
+                 if (level === 1) tempGroup = desc;
+                 else if (level === 2) tempItem = desc;
+                 else if (level === 3) tempTask = desc;
+                 else if (level === 4) {
                     const hierarchyKey = `${tempGroup}|${tempItem}|${tempTask}|${desc}`.toLowerCase();
                     if (!taskLookup.has(hierarchyKey)) neededIdCount++;
-                }
+                 }
             }
 
             const idNameWBS = "WBS";
@@ -576,47 +578,68 @@ class ScheduleLiteService {
             let currentItem = null;
             let currentWTask = null;
 
-            // --- HELPER: Auto-Calculate Dates & Metrics ---
+            // --- HELPER: "Freeze" or "Calculate" Logic ---
             const processRowData = (row, existingData = null) => {
+                
+                let qty, unit, startDate, endDate, duration, revStart, revEnd, revDuration, lag;
+                let daily = [], schedule_data = [];
 
-                // A. RESTRICTION: Preserve Quantity/Unit if exists
-                let qty, unit;
+                // 1. QUANTITY & UNIT (Always Freeze if exists)
                 if (existingData) {
-                    qty = existingData.quantity; // Keep DB Value
-                    unit = existingData.unit;    // Keep DB Value
+                    qty = existingData.quantity; 
+                    unit = existingData.unit;
                 } else {
                     qty = Number(row.Quantity || 0);
                     unit = row.Unit || "";
                 }
 
-                // B. PARSE DATES (Only Start & End are inputs)
-                const startDate = this.parseDate(row.StartDate);
-                const endDate = this.parseDate(row.EndDate);
+                // 2. CHECK IF DATES EXIST (Your requested logic)
+                const dbHasDates = existingData && existingData.start_date && existingData.end_date;
 
-                // C. AUTO-CALCULATE DURATION
-                let duration = 0;
-                if (startDate && endDate) {
-                    duration = this.getDaysDiff(startDate, endDate);
-                }
+                if (dbHasDates) {
+                    // --- CASE A: FREEZE EXISTING (Skip Calculation) ---
+                    // Since DB has dates, we trust it completely.
+                    // We copy everything directly from existingData.
+                    
+                    startDate = existingData.start_date;
+                    endDate = existingData.end_date;
+                    duration = existingData.duration;
+                    
+                    revStart = existingData.revised_start_date;
+                    revEnd = existingData.revised_end_date;
+                    revDuration = existingData.revised_duration;
+                    lag = existingData.lag;
 
-                // D. AUTO-POPULATE REVISED FIELDS (Mirror Planned)
-                const revStart = startDate;
-                const revEnd = endDate;
-                const revDuration = duration;
-                const lag = 0; // No lag initially
+                    // Preserve the heavy arrays too! No need to regenerate them.
+                    daily = existingData.daily;
+                    schedule_data = existingData.schedule_data;
 
-                // E. GENERATE METRICS
-                let daily = [];
-                let schedule_data = [];
+                } else {
+                    // --- CASE B: ADD NEW (Calculate from CSV) ---
+                    // Either it's a new task, OR the existing task had null dates.
+                    
+                    startDate = this.parseDate(row.StartDate);
+                    endDate = this.parseDate(row.EndDate);
+                    
+                    duration = 0;
+                    if (startDate && endDate) {
+                        duration = this.getDaysDiff(startDate, endDate);
+                    }
 
-                if (revStart && revEnd) {
-                    daily = this.generateDailyEntries(revStart, revEnd);
-                    // Distribute Quantity
-                    // const dailyRate = revDuration > 0 ? qty / revDuration : 0;
-                    // daily.forEach(d => d.quantity = dailyRate);
+                    // Auto-fill Revised = Planned
+                    revStart = startDate;
+                    revEnd = endDate;
+                    revDuration = duration;
+                    lag = 0; 
 
-                    const calcContext = { quantity: qty, revised_duration: revDuration, daily: daily };
-                    schedule_data = this.calculateHierarchicalMetrics(calcContext);
+                    // Generate Metrics
+                    if (revStart && revEnd) {
+                        daily = this.generateDailyEntries(revStart, revEnd);
+                        // No splitting quantity (keep daily 0)
+                        
+                        const calcContext = { quantity: qty, revised_duration: revDuration, daily: daily };
+                        schedule_data = this.calculateHierarchicalMetrics(calcContext);
+                    }
                 }
 
                 return {
@@ -628,6 +651,7 @@ class ScheduleLiteService {
                 };
             };
 
+            // ... (Loop through CSV rows same as before, calling processRowData) ...
             for (const row of csvRows) {
                 const code = row.Code ? row.Code.toString().trim() : "";
                 if (!code) continue;
@@ -643,7 +667,8 @@ class ScheduleLiteService {
                 }
                 else if (level === 2) {
                     if (!currentGroup) throw new Error(`Row "${code}" (Level 2) missing Parent Group.`);
-                    const data = processRowData(row, null);
+                    // L2 Containers don't map to TaskModel, so we pass null (always calculate metrics if csv has data)
+                    const data = processRowData(row, null); 
                     currentItem = { item_name: desc, row_index: globalRowIndex, ...data, tasks: [] };
                     currentGroup.items.push(currentItem);
                     currentWTask = null;
@@ -659,22 +684,22 @@ class ScheduleLiteService {
 
                     const hierarchyKey = `${currentGroup.group_name}|${currentItem.item_name}|${currentWTask.task_name}|${desc}`.toLowerCase();
                     let targetWbsId = taskLookup.get(hierarchyKey);
-
+                    
                     const existingDoc = targetWbsId ? taskDataMap.get(targetWbsId) : null;
 
                     if (!targetWbsId) targetWbsId = newIdsPool.shift();
-
+                    
                     activeWbsIds.add(targetWbsId);
                     currentWTask.task_wbs_ids.push({ wbs_id: targetWbsId, row_index: globalRowIndex });
 
-                    // Pass existingDoc so logic knows to preserve Qty/Unit
-                    const data = processRowData(row, existingDoc);
+                    // PASS EXISTING DOC to check dates
+                    const data = processRowData(row, existingDoc); 
 
                     const taskDoc = {
                         tender_id, wbs_id: targetWbsId, row_index: globalRowIndex,
                         work_group_id: currentGroup.group_name, work_item_id: currentItem.item_name, work_task_id: currentWTask.task_name,
-                        description: desc,
-                        balance_quantity: data.quantity,
+                        description: desc, 
+                        balance_quantity: data.quantity, 
                         ...data
                     };
 
@@ -684,7 +709,8 @@ class ScheduleLiteService {
                 }
             }
 
-            // 3. Save Structure
+            // ... (Save Logic same as before) ...
+            
             let scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
             if (scheduleDoc) {
                 scheduleDoc.structure = structure;
@@ -693,14 +719,13 @@ class ScheduleLiteService {
             }
             await scheduleDoc.save({ session });
 
-            // 4. Save Tasks & Cleanup
             if (leafTasksToSave.length > 0) await TaskModel.bulkWrite(leafTasksToSave, { session });
             const deleteResult = await TaskModel.deleteMany({ tender_id, wbs_id: { $nin: Array.from(activeWbsIds) } }).session(session);
 
             await session.commitTransaction();
             session.endSession();
 
-            return { success: true, message: `Synced Schedule (Dates Updated, Qty Protected).`, data: scheduleDoc };
+            return { success: true, message: `Synced Schedule.`, data: scheduleDoc };
 
         } catch (err) {
             await session.abortTransaction();
