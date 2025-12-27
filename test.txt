@@ -1,5 +1,13 @@
 Here is an task that , in schedule i want to control dates.
 
+Dates: Parent Start = Min(Children Starts), Parent End = Max(Children Ends).
+
+Quantity: Parent Quantity = Sum(Children Quantities).
+
+Daily Logs: Parent Daily = Merge(Children Daily Logs).
+
+Metrics: Calculate schedule_data for Parents based on the merged daily logs.
+
 codes from Level 0 to Level 4
 
 Level 0 is parent of Level 1 having serials A,B,C....

@@ -822,3 +822,123 @@ static async updateDrawingQuantity(tender_id, item_code, drawing_quantity) {
 
   return await boq.save();
 }
+
+
+
+      "items": [
+        {
+          "item_name": "Soil Cutting",
+          "row_index": 2,
+          "unit": "Cum",
+          "quantity": 10400,
+          "start_date": {
+            "$date": "2025-12-27T00:00:00.000Z"
+          },
+          "end_date": {
+            "$date": "2025-12-30T00:00:00.000Z"
+          },
+          "revised_start_date": {
+            "$date": "2025-12-27T00:00:00.000Z"
+          },
+          "revised_end_date": {
+            "$date": "2025-12-30T00:00:00.000Z"
+          },
+          "duration": 4,
+          "revised_duration": 4,
+          "lag": 0,
+          "status": "pending",
+          "daily": [
+            {
+              "date": {
+                "$date": "2025-12-27T00:00:00.000Z"
+              },
+              "quantity": 0,
+              "status": "working"
+            },
+            {
+              "date": {
+                "$date": "2025-12-28T00:00:00.000Z"
+              },
+              "quantity": 0,
+              "status": "working"
+            },
+            {
+              "date": {
+                "$date": "2025-12-29T00:00:00.000Z"
+              },
+              "quantity": 0,
+              "status": "working"
+            },
+            {
+              "date": {
+                "$date": "2025-12-30T00:00:00.000Z"
+              },
+              "quantity": 0,
+              "status": "working"
+            }
+          ],
+          "schedule_data": [
+            {
+              "month_name": "December",
+              "year": 2025,
+              "month_key": "12-2025",
+              "metrics": {
+                "achieved_quantity": 0,
+                "planned_quantity": 10400,
+                "lag_quantity": 10400,
+                "achieved_cost": 0,
+                "planned_cost": 0
+              },
+              "weeks": [
+                {
+                  "week_label": "Week 1",
+                  "week_number": 1,
+                  "metrics": {
+                    "achieved_quantity": 0,
+                    "planned_quantity": 0,
+                    "lag_quantity": 0,
+                    "achieved_cost": 0,
+                    "planned_cost": 0
+                  }
+                },
+                {
+                  "week_label": "Week 2",
+                  "week_number": 2,
+                  "metrics": {
+                    "achieved_quantity": 0,
+                    "planned_quantity": 0,
+                    "lag_quantity": 0,
+                    "achieved_cost": 0,
+                    "planned_cost": 0
+                  }
+                },
+                {
+                  "week_label": "Week 3",
+                  "week_number": 3,
+                  "metrics": {
+                    "achieved_quantity": 0,
+                    "planned_quantity": 0,
+                    "lag_quantity": 0,
+                    "achieved_cost": 0,
+                    "planned_cost": 0
+                  }
+                },
+                {
+                  "week_label": "Week 4",
+                  "week_number": 4,
+                  "metrics": {
+                    "achieved_quantity": 0,
+                    "planned_quantity": 10400,
+                    "lag_quantity": 10400,
+                    "achieved_cost": 0,
+                    "planned_cost": 0
+                  }
+                }
+              ]
+            }
+          ],
+          "tasks": [],
+          "_id": {
+            "$oid": "694fd169cbf21f9ff4b636b4"
+          }
+        },

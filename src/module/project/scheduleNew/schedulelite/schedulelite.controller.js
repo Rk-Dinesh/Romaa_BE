@@ -12,76 +12,6 @@ const XLSX = require("xlsx");
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export const uploadScheduleCSV1 = async (req, res, next) => {
-  try {
-    // 1. Basic Validation
-    if (!req.file) {
-      return res.status(400).json({ status: false, error: "No file uploaded" });
-    }
-
-    const { created_by_user, tender_id } = req.body;
-
-    if (!tender_id) {
-      return res.status(400).json({ status: false, error: "tender_id is required" });
-    }
-
-    // 2. Prepare File Path
-    const csvRows = [];
-    const filePath = path.join(__dirname, "../../../../../uploads", req.file.filename);
-
-    // 3. Stream & Parse CSV
-    fs.createReadStream(filePath)
-      .pipe(csvParser({
-        mapHeaders: ({ header }) => header.trim() // Auto-trim headers
-      }))
-      .on("data", (row) => {
-        // Clean row keys and values
-        const trimmedRow = {};
-        for (const [key, value] of Object.entries(row)) {
-          // Remove potential BOM markers and trim
-          const cleanKey = key.trim().replace(/^\uFEFF/, '');
-          trimmedRow[cleanKey] = typeof value === "string" ? value.trim() : value;
-        }
-        csvRows.push(trimmedRow);
-      })
-      .on("end", async () => {
-        try {
-          if (csvRows.length === 0) {
-            return res.status(400).json({ status: false, error: "CSV file is empty" });
-          }
-
-          // 4. Call Service 
-          // FIX: Passed arguments correctly matching the Service definition (rows, tender_id)
-          const result = await ScheduleLiteService.bulkInsert(csvRows, tender_id);
-
-          res.status(200).json({
-            status: true,
-            message: "Schedule created successfully",
-            data: result,
-          });
-
-        } catch (error) {
-          // Send readable error message to frontend
-          res.status(400).json({ status: false, error: error.message });
-        } finally {
-          // 5. Cleanup: Delete file after processing
-          if (fs.existsSync(filePath)) {
-            fs.unlinkSync(filePath);
-          }
-        }
-      })
-      .on("error", (error) => {
-        // Handle stream errors
-        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
-        next(error);
-      });
-
-  } catch (error) {
-    next(error);
-  }
-};
-
-
 const parseFileToJson = (filePath, originalName) => {
   return new Promise((resolve, reject) => {
     const ext = path.extname(originalName).toLowerCase();
@@ -166,6 +96,54 @@ export const uploadScheduleCSV = async (req, res, next) => {
     res.status(200).json({
       status: true,
       message: "Schedule created successfully",
+      data: result,
+    });
+
+  } catch (error) {
+    res.status(400).json({ status: false, error: error.message });
+  } finally {
+    // 5. Cleanup: Delete file after processing
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (cleanupErr) {
+        console.error("Error deleting file:", cleanupErr);
+      }
+    }
+  }
+};
+
+export const uploadScheduleDatesCSV = async (req, res, next) => {
+  let filePath = null;
+
+  try {
+    // 1. Basic Validation
+    if (!req.file) {
+      return res.status(400).json({ status: false, error: "No file uploaded" });
+    }
+
+    const { created_by_user, tender_id } = req.body;
+
+    if (!tender_id) {
+      return res.status(400).json({ status: false, error: "tender_id is required" });
+    }
+
+    // 2. Prepare File Path
+    filePath = path.join(__dirname, "../../../../../uploads", req.file.filename);
+
+    // 3. Parse File (Handles CSV/XLSX/XLS)
+    const dataRows = await parseFileToJson(filePath, req.file.originalname);
+
+    if (dataRows.length === 0) {
+      return res.status(400).json({ status: false, error: "File is empty" });
+    }
+
+    // 4. Call Service
+    const result = await ScheduleLiteService.bulkUpdateScheduleStrict(dataRows, tender_id);
+
+    res.status(200).json({
+      status: true,
+      message: "Schedule Updated successfully",
       data: result,
     });
 
