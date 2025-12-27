@@ -89,5 +89,52 @@ class IdcodeServices {
       console.log("Error in adding Id Code");
     }
   }
+
+  // Inside IdcodeServices class
+static async generateBulkCodes(idName, count) {
+        if (count <= 0) return [];
+        
+        try {
+            // 1. Atomically increment the DB sequence by 'count'
+            // We increment 'codes' (your counter field) by the total number needed
+            const result = await IdcodeModel.findOneAndUpdate(
+                { idname: idName },
+                { $inc: { codes: count } }, // Reserve 'count' spots at once
+                { new: true, upsert: true } // Return the NEW value after increment
+            );
+
+            // 2. Determine the range we just reserved
+            const prefix = result.idcode; // e.g., "WBS"
+            const endSeq = result.codes;  // e.g., 1050
+            const startSeq = endSeq - count + 1; // e.g., 1050 - 50 + 1 = 1001
+
+            const ids = [];
+            const CYCLE_LIMIT = 999;
+
+            // 3. Generate IDs in memory using your formatting logic
+            for (let i = startSeq; i <= endSeq; i++) {
+                
+                // A. Calculate Numeric Part (1 to 999)
+                // ((i - 1) % 999) + 1 handles the 999 wrap-around correctly
+                let numPart = ((i - 1) % CYCLE_LIMIT) + 1;
+                
+                // B. Calculate Alpha Cycle (0=None, 1=A, 2=B...)
+                let alphaCycle = Math.floor((i - 1) / CYCLE_LIMIT);
+                
+                // C. Format Strings
+                let alphaString = this.toAlphabeticSequence(alphaCycle);
+                let numString = numPart.toString().padStart(3, "0");
+
+                // D. Construct ID: Prefix + Alpha + 001
+                ids.push(`${prefix}${alphaString}${numString}`); 
+            }
+            
+            return ids;
+
+        } catch (error) {
+            console.error("Error generating bulk codes:", error);
+            throw error;
+        }
+    }
 }
 export default IdcodeServices;

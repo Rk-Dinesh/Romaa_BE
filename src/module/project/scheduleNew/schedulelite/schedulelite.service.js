@@ -16,192 +16,372 @@ static getLevelFromCode(code) {
         return 0;
     }
 
-static async bulkInsert(csvRows, tender_id) {
-        const session = await mongoose.startSession();
-        session.startTransaction();
+// static async bulkInsert(csvRows, tender_id) {
+//         const session = await mongoose.startSession();
+//         session.startTransaction();
 
-        try {
-            // 1. Prepare Lookup Map for Existing Tasks (To reuse IDs)
-            // Key: "Group|Item|Task|Description" -> Value: "WBS-123"
-            const existingTasks = await TaskModel.find({ tender_id }).select("wbs_id description work_group_id work_item_id work_task_id").session(session);
+//         try {
+//             // 1. Prepare Lookup Map for Existing Tasks (To reuse IDs)
+//             // Key: "Group|Item|Task|Description" -> Value: "WBS-123"
+//             const existingTasks = await TaskModel.find({ tender_id }).select("wbs_id description work_group_id work_item_id work_task_id").session(session);
             
-            const taskLookup = new Map();
-            existingTasks.forEach(t => {
-                const key = `${t.work_group_id?.trim()}|${t.work_item_id?.trim()}|${t.work_task_id?.trim()}|${t.description?.trim()}`.toLowerCase();
-                taskLookup.set(key, t.wbs_id);
-            });
+//             const taskLookup = new Map();
+//             existingTasks.forEach(t => {
+//                 const key = `${t.work_group_id?.trim()}|${t.work_item_id?.trim()}|${t.work_task_id?.trim()}|${t.description?.trim()}`.toLowerCase();
+//                 taskLookup.set(key, t.wbs_id);
+//             });
 
-            // 2. Start Fresh (Sync Strategy)
-            // We rebuild the structure array from the CSV. Any group/item NOT in CSV will naturally be dropped.
-            const structure = []; 
-            const leafTasksToSave = []; 
-            const activeWbsIds = new Set(); // Track IDs present in this upload
+//             // 2. Start Fresh (Sync Strategy)
+//             // We rebuild the structure array from the CSV. Any group/item NOT in CSV will naturally be dropped.
+//             const structure = []; 
+//             const leafTasksToSave = []; 
+//             const activeWbsIds = new Set(); // Track IDs present in this upload
 
-            // Context Trackers
-            let currentGroup = null; 
-            let currentItem = null;  
-            let currentWTask = null; 
+//             // Context Trackers
+//             let currentGroup = null; 
+//             let currentItem = null;  
+//             let currentWTask = null; 
 
-            // --- ADDED: Row Counter ---
-            let globalRowIndex = 0;
+//             // --- ADDED: Row Counter ---
+//             let globalRowIndex = 0;
 
-            const idNameWBS = "WBS";
-            await IdcodeServices.addIdCode(idNameWBS, "WBS");
+//             const idNameWBS = "WBS";
+//             await IdcodeServices.addIdCode(idNameWBS, "WBS");
 
-            for (const row of csvRows) {
-                const code = row.Code ? row.Code.toString().trim() : "";
-                if (!code) continue;
+//             for (const row of csvRows) {
+//                 const code = row.Code ? row.Code.toString().trim() : "";
+//                 if (!code) continue;
 
-                // --- ADDED: Increment Row Index ---
-                globalRowIndex++;
+//                 // --- ADDED: Increment Row Index ---
+//                 globalRowIndex++;
 
-                const level = this.getLevelFromCode(code);
-                const desc = (row.Description || "Untitled").trim();
+//                 const level = this.getLevelFromCode(code);
+//                 const desc = (row.Description || "Untitled").trim();
 
-                // --- LEVEL 1: Work Group ---
-                if (level === 1) {
-                    currentGroup = { 
-                        group_name: desc, 
-                        row_index: globalRowIndex, // <--- ADDED
-                        items: [] 
-                    };
-                    structure.push(currentGroup);
-                    currentItem = null; currentWTask = null;
-                }
+//                 // --- LEVEL 1: Work Group ---
+//                 if (level === 1) {
+//                     currentGroup = { 
+//                         group_name: desc, 
+//                         row_index: globalRowIndex, // <--- ADDED
+//                         items: [] 
+//                     };
+//                     structure.push(currentGroup);
+//                     currentItem = null; currentWTask = null;
+//                 }
 
-                // --- LEVEL 2: Work Item ---
-                else if (level === 2) {
-                    if (!currentGroup) throw new Error(`Row "${code}" (Level 2) missing Parent Group.`);
-                    currentItem = { 
-                        item_name: desc,
-                        row_index: globalRowIndex, // <--- ADDED
-                        unit: row.Unit || "", 
-                        quantity: Number(row.Quantity || 0), 
-                        tasks: [] 
-                    };
-                    currentGroup.items.push(currentItem);
-                    currentWTask = null;
-                }
+//                 // --- LEVEL 2: Work Item ---
+//                 else if (level === 2) {
+//                     if (!currentGroup) throw new Error(`Row "${code}" (Level 2) missing Parent Group.`);
+//                     currentItem = { 
+//                         item_name: desc,
+//                         row_index: globalRowIndex, // <--- ADDED
+//                         unit: row.Unit || "", 
+//                         quantity: Number(row.Quantity || 0), 
+//                         tasks: [] 
+//                     };
+//                     currentGroup.items.push(currentItem);
+//                     currentWTask = null;
+//                 }
 
-                // --- LEVEL 3: Task Container ---
-                else if (level === 3) {
-                    if (!currentItem) throw new Error(`Row "${code}" (Level 3) missing Parent Item.`);
-                   // currentWTask = { task_name: desc,unit: row.Unit || "", quantity: Number(row.Quantity || 0), task_wbs_ids: [] };
-                    currentWTask = { 
-                        task_name: desc, 
-                        row_index: globalRowIndex, // <--- ADDED
-                        unit: row.Unit || "", 
-                        quantity: 0, 
-                        task_wbs_ids: [] 
-                    };
-                    currentItem.tasks.push(currentWTask);
-                }
+//                 // --- LEVEL 3: Task Container ---
+//                 else if (level === 3) {
+//                     if (!currentItem) throw new Error(`Row "${code}" (Level 3) missing Parent Item.`);
+//                    // currentWTask = { task_name: desc,unit: row.Unit || "", quantity: Number(row.Quantity || 0), task_wbs_ids: [] };
+//                     currentWTask = { 
+//                         task_name: desc, 
+//                         row_index: globalRowIndex, // <--- ADDED
+//                         unit: row.Unit || "", 
+//                         quantity: Number(row.Quantity || 0), 
+//                         task_wbs_ids: [] 
+//                     };
+//                     currentItem.tasks.push(currentWTask);
+//                 }
 
-                // --- LEVEL 4: Leaf Task ---
-                else if (level === 4) {
-                    if (!currentWTask) throw new Error(`Row "${code}" (Level 4) missing Parent Task.`);
+//                 // --- LEVEL 4: Leaf Task ---
+//                 else if (level === 4) {
+//                     if (!currentWTask) throw new Error(`Row "${code}" (Level 4) missing Parent Task.`);
 
-                    // A. Determine WBS ID (Reuse or Create)
-                    const hierarchyKey = `${currentGroup.group_name}|${currentItem.item_name}|${currentWTask.task_name}|${desc}`.toLowerCase();
+//                     // A. Determine WBS ID (Reuse or Create)
+//                     const hierarchyKey = `${currentGroup.group_name}|${currentItem.item_name}|${currentWTask.task_name}|${desc}`.toLowerCase();
                     
-                    let targetWbsId = taskLookup.get(hierarchyKey);
+//                     let targetWbsId = taskLookup.get(hierarchyKey);
                     
-                    if (!targetWbsId) {
-                        // New Task found in CSV
-                        targetWbsId = await IdcodeServices.generateCode(idNameWBS);
-                    }
+//                     if (!targetWbsId) {
+//                         // New Task found in CSV
+//                         targetWbsId = await IdcodeServices.generateCode(idNameWBS);
+//                     }
                     
-                    // Mark ID as "Active" so we don't delete it later
-                    activeWbsIds.add(targetWbsId);
+//                     // Mark ID as "Active" so we don't delete it later
+//                     activeWbsIds.add(targetWbsId);
                     
-                    // --- CHANGED: Push Object instead of String ---
-                    currentWTask.task_wbs_ids.push({
-                        wbs_id: targetWbsId,
-                        row_index: globalRowIndex // <--- ADDED
-                    });
+//                     // --- CHANGED: Push Object instead of String ---
+//                     currentWTask.task_wbs_ids.push({
+//                         wbs_id: targetWbsId,
+//                         row_index: globalRowIndex // <--- ADDED
+//                     });
 
-                    // B. Prepare Data
-                    const qty = Number(row.Quantity || 0);
-                    const unit = row.Unit || "";
-                    if (currentWTask) {
-                        currentWTask.quantity += qty;
-                        currentWTask.unit = unit;
-                    }
-                    const duration = Number(row.Duration || 0);
-                    const startDateStr = row.Start_Date ? new Date(row.Start_Date) : null;
-                    let endDateStr = null;
-                    if (startDateStr && duration > 0) endDateStr = addDays(startDateStr, duration);
+//                     // B. Prepare Data
+//                     const qty = Number(row.Quantity || 0);
+//                     const unit = row.Unit || "";
+//                     if (currentWTask) {
+//                         currentWTask.quantity += qty;
+//                         currentWTask.unit = unit;
+//                     }
+//                     const duration = Number(row.Duration || 0);
+//                     const startDateStr = row.Start_Date ? new Date(row.Start_Date) : null;
+//                     let endDateStr = null;
+//                     if (startDateStr && duration > 0) endDateStr = addDays(startDateStr, duration);
 
-                    const taskDoc = {
-                        tender_id: tender_id,
-                        wbs_id: targetWbsId,
+//                     const taskDoc = {
+//                         tender_id: tender_id,
+//                         wbs_id: targetWbsId,
                         
-                        // Optional: Add row_index to TaskModel if needed
-                        row_index: globalRowIndex, // <--- ADDED
+//                         // Optional: Add row_index to TaskModel if needed
+//                         row_index: globalRowIndex, // <--- ADDED
 
-                        work_group_id: currentGroup.group_name, 
-                        work_item_id: currentItem.item_name,
-                        work_task_id: currentWTask.task_name,
+//                         work_group_id: currentGroup.group_name, 
+//                         work_item_id: currentItem.item_name,
+//                         work_task_id: currentWTask.task_name,
 
-                        description: desc,
-                        unit: row.Unit || "",
-                        quantity: qty,
-                        balance_quantity: qty, 
+//                         description: desc,
+//                         unit: row.Unit || "",
+//                         quantity: qty,
+//                         balance_quantity: qty, 
                         
-                        duration: duration,
-                        revised_duration: duration,
-                        start_date: startDateStr,
-                        end_date: endDateStr,
-                        status: "pending"
-                    };
+//                         duration: duration,
+//                         revised_duration: duration,
+//                         start_date: startDateStr,
+//                         end_date: endDateStr,
+//                         status: "pending"
+//                     };
 
-                    leafTasksToSave.push({
-                        updateOne: {
-                            filter: { tender_id: tender_id, wbs_id: targetWbsId },
-                            update: { $set: taskDoc },
-                            upsert: true
-                        }
-                    });
+//                     leafTasksToSave.push({
+//                         updateOne: {
+//                             filter: { tender_id: tender_id, wbs_id: targetWbsId },
+//                             update: { $set: taskDoc },
+//                             upsert: true
+//                         }
+//                     });
+//                 }
+//             }
+
+//             // 3. Save Structure (Completely Overwrite)
+//             // This effectively removes any Groups/Items that were deleted from the CSV
+//             let scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
+//             if (scheduleDoc) {
+//                 scheduleDoc.structure = structure;
+//             } else {
+//                 scheduleDoc = new ScheduleLiteModel({ tender_id, structure });
+//             }
+//             await scheduleDoc.save({ session });
+
+//             // 4. Update/Insert Valid Tasks
+//             if (leafTasksToSave.length > 0) {
+//                 await TaskModel.bulkWrite(leafTasksToSave, { session });
+//             }
+
+//             // 5. CLEANUP ORPHANS (The Delete Logic)
+//             // Any task in the DB for this tender that is NOT in 'activeWbsIds' set was removed from the CSV.
+//             const deleteResult = await TaskModel.deleteMany({ 
+//                 tender_id: tender_id, 
+//                 wbs_id: { $nin: Array.from(activeWbsIds) } 
+//             }).session(session);
+
+//             await session.commitTransaction();
+//             session.endSession();
+
+//             return { 
+//                 success: true, 
+//                 message: `Synced Schedule. Updated/Created: ${leafTasksToSave.length}, Deleted: ${deleteResult.deletedCount}`, 
+//                 data: scheduleDoc 
+//             };
+
+//         } catch (err) {
+//             await session.abortTransaction();
+//             session.endSession();
+//             throw err;
+//         }
+//     }
+
+static async bulkInsert(csvRows, tender_id) {
+    const session = await mongoose.startSession();
+    session.startTransaction();
+
+    try {
+        // 1. Prepare Lookup Map
+        const existingTasks = await TaskModel.find({ tender_id }).select("wbs_id description work_group_id work_item_id work_task_id").session(session);
+        const taskLookup = new Map();
+        existingTasks.forEach(t => {
+            const key = `${t.work_group_id?.trim()}|${t.work_item_id?.trim()}|${t.work_task_id?.trim()}|${t.description?.trim()}`.toLowerCase();
+            taskLookup.set(key, t.wbs_id);
+        });
+
+        // =========================================================
+        // OPTIMIZATION START: Count New IDs Needed
+        // =========================================================
+        
+        // We simulate the hierarchy build just to generate keys and check duplication
+        let neededIdCount = 0;
+        let tempGroup = null, tempItem = null, tempTask = null;
+
+        for (const row of csvRows) {
+            const code = row.Code ? row.Code.toString().trim() : "";
+            if (!code) continue;
+            const level = this.getLevelFromCode(code);
+            const desc = (row.Description || "Untitled").trim();
+
+            if (level === 1) tempGroup = desc;
+            else if (level === 2) tempItem = desc;
+            else if (level === 3) tempTask = desc;
+            else if (level === 4) {
+                // Construct the unique key
+                const hierarchyKey = `${tempGroup}|${tempItem}|${tempTask}|${desc}`.toLowerCase();
+                // If this key doesn't exist in DB, we need a NEW ID
+                if (!taskLookup.has(hierarchyKey)) {
+                    neededIdCount++;
                 }
             }
-
-            // 3. Save Structure (Completely Overwrite)
-            // This effectively removes any Groups/Items that were deleted from the CSV
-            let scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
-            if (scheduleDoc) {
-                scheduleDoc.structure = structure;
-            } else {
-                scheduleDoc = new ScheduleLiteModel({ tender_id, structure });
-            }
-            await scheduleDoc.save({ session });
-
-            // 4. Update/Insert Valid Tasks
-            if (leafTasksToSave.length > 0) {
-                await TaskModel.bulkWrite(leafTasksToSave, { session });
-            }
-
-            // 5. CLEANUP ORPHANS (The Delete Logic)
-            // Any task in the DB for this tender that is NOT in 'activeWbsIds' set was removed from the CSV.
-            const deleteResult = await TaskModel.deleteMany({ 
-                tender_id: tender_id, 
-                wbs_id: { $nin: Array.from(activeWbsIds) } 
-            }).session(session);
-
-            await session.commitTransaction();
-            session.endSession();
-
-            return { 
-                success: true, 
-                message: `Synced Schedule. Updated/Created: ${leafTasksToSave.length}, Deleted: ${deleteResult.deletedCount}`, 
-                data: scheduleDoc 
-            };
-
-        } catch (err) {
-            await session.abortTransaction();
-            session.endSession();
-            throw err;
         }
+
+        const idNameWBS = "WBS";
+        // FETCH ALL IDS IN ONE GO (1 DB Call instead of 467)
+        const newIdsPool = await IdcodeServices.generateBulkCodes(idNameWBS, neededIdCount);
+        // =========================================================
+        // OPTIMIZATION END
+        // =========================================================
+
+        // 2. Start Main Processing
+        const structure = []; 
+        const leafTasksToSave = []; 
+        const activeWbsIds = new Set(); 
+        let globalRowIndex = 0;
+
+        let currentGroup = null; 
+        let currentItem = null;  
+        let currentWTask = null; 
+
+        for (const row of csvRows) {
+            const code = row.Code ? row.Code.toString().trim() : "";
+            if (!code) continue;
+
+            globalRowIndex++;
+            const level = this.getLevelFromCode(code);
+            const desc = (row.Description || "Untitled").trim();
+
+            // --- LEVEL 1 ---
+            if (level === 1) {
+                currentGroup = { group_name: desc, row_index: globalRowIndex, items: [] };
+                structure.push(currentGroup);
+                currentItem = null; currentWTask = null;
+            }
+            // --- LEVEL 2 ---
+            else if (level === 2) {
+                if (!currentGroup) throw new Error(`Row "${code}" (Level 2) missing Parent Group.`);
+                currentItem = { item_name: desc, row_index: globalRowIndex, unit: row.Unit || "", quantity: Number(row.Quantity || 0), tasks: [] };
+                currentGroup.items.push(currentItem);
+                currentWTask = null;
+            }
+            // --- LEVEL 3 ---
+            else if (level === 3) {
+                if (!currentItem) throw new Error(`Row "${code}" (Level 3) missing Parent Item.`);
+                currentWTask = { task_name: desc, row_index: globalRowIndex, unit: row.Unit || "", quantity: Number(row.Quantity || 0), task_wbs_ids: [] };
+                currentItem.tasks.push(currentWTask);
+            }
+            // --- LEVEL 4 ---
+            else if (level === 4) {
+                if (!currentWTask) throw new Error(`Row "${code}" (Level 4) missing Parent Task.`);
+
+                const hierarchyKey = `${currentGroup.group_name}|${currentItem.item_name}|${currentWTask.task_name}|${desc}`.toLowerCase();
+                
+                let targetWbsId = taskLookup.get(hierarchyKey);
+                
+                if (!targetWbsId) {
+                    // FAST ASSIGNMENT: Pop one ID from our pre-fetched pool
+                    // No await here! Instant speed.
+                    targetWbsId = newIdsPool.shift(); 
+                }
+                
+                activeWbsIds.add(targetWbsId);
+                
+                currentWTask.task_wbs_ids.push({
+                    wbs_id: targetWbsId,
+                    row_index: globalRowIndex
+                });
+
+                const qty = Number(row.Quantity || 0);
+                const unit = row.Unit || "";
+                // if (currentWTask) {
+                //     currentWTask.quantity += qty;
+                //     currentWTask.unit = unit;
+                // }
+                const duration = Number(row.Duration || 0);
+                const startDateStr = row.Start_Date ? new Date(row.Start_Date) : null;
+                let endDateStr = null;
+                if (startDateStr && duration > 0) endDateStr = addDays(startDateStr, duration);
+
+                const taskDoc = {
+                    tender_id: tender_id,
+                    wbs_id: targetWbsId,
+                    row_index: globalRowIndex,
+                    work_group_id: currentGroup.group_name, 
+                    work_item_id: currentItem.item_name,
+                    work_task_id: currentWTask.task_name,
+                    description: desc,
+                    unit: row.Unit || "",
+                    quantity: qty,
+                    balance_quantity: qty, 
+                    duration: duration,
+                    revised_duration: duration,
+                    start_date: startDateStr,
+                    end_date: endDateStr,
+                    status: "pending"
+                };
+
+                leafTasksToSave.push({
+                    updateOne: {
+                        filter: { tender_id: tender_id, wbs_id: targetWbsId },
+                        update: { $set: taskDoc },
+                        upsert: true
+                    }
+                });
+            }
+        }
+
+        // 3. Save Structure
+        let scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
+        if (scheduleDoc) {
+            scheduleDoc.structure = structure;
+        } else {
+            scheduleDoc = new ScheduleLiteModel({ tender_id, structure });
+        }
+        await scheduleDoc.save({ session });
+
+        // 4. Update/Insert Valid Tasks
+        if (leafTasksToSave.length > 0) {
+            await TaskModel.bulkWrite(leafTasksToSave, { session });
+        }
+
+        // 5. Cleanup Orphans
+        const deleteResult = await TaskModel.deleteMany({ 
+            tender_id: tender_id, 
+            wbs_id: { $nin: Array.from(activeWbsIds) } 
+        }).session(session);
+
+        await session.commitTransaction();
+        session.endSession();
+
+        return { 
+            success: true, 
+            message: `Synced Schedule. Updated/Created: ${leafTasksToSave.length}, Deleted: ${deleteResult.deletedCount}`, 
+            data: scheduleDoc 
+        };
+
+    } catch (err) {
+        await session.abortTransaction();
+        session.endSession();
+        throw err;
     }
+}
 
 static async getPopulatedSchedule(tender_id) {
         // 1. Fetch the Structure
