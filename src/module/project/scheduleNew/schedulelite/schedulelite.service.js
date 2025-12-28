@@ -551,7 +551,7 @@ class ScheduleLiteService {
         try {
             // 1. Fetch Existing Data (Added 'predecessor' to the select list)
             const existingTasks = await TaskModel.find({ tender_id })
-                .select("wbs_id description work_group_id work_item_id work_task_id quantity unit start_date end_date revised_start_date revised_end_date duration revised_duration lag daily schedule_data predecessor")
+                .select("wbs_id description work_group_id work_item_id work_task_id quantity unit start_date end_date revised_start_date revised_end_date duration revised_duration lag daily schedule_data predecessor predecessor_actual")
                 .session(session);
 
             const taskLookup = new Map();
@@ -595,7 +595,7 @@ class ScheduleLiteService {
 
             // --- HELPER: Process Row Data ---
             const processRowData = (row, existingData = null) => {
-                let qty, unit, startDate, endDate, duration, revStart, revEnd, revDuration, lag, predecessor;
+                let qty, unit, startDate, endDate, duration, revStart, revEnd, revDuration, lag, predecessor, predecessor_actual;
                 let daily = [], schedule_data = [];
 
                 if (existingData) {
@@ -603,13 +603,11 @@ class ScheduleLiteService {
                     unit = existingData.unit;
                     // Freeze Predecessor if it exists in DB
                     predecessor = existingData.predecessor || row.Predecessor || "";
-                    predecessor_actual = existingData.predecessor || row.Predecessor || "";
                 } else {
                     qty = Number(row.Quantity || 0);
                     unit = row.Unit || "";
                     // New Task: Take Predecessor from CSV
                     predecessor = row.Predecessor || "";
-                    predecessor_actual = row.Predecessor || "";
                 }
 
                 // Check DB for Dates
@@ -635,6 +633,7 @@ class ScheduleLiteService {
                     // Start fresh from CSV
                     startDate = this.parseDate(row.StartDate);
                     endDate = this.parseDate(row.EndDate);
+                    predecessor_actual = row.Predecessor || "";
 
                     duration = 0;
                     if (startDate && endDate) {
@@ -646,6 +645,7 @@ class ScheduleLiteService {
                     revEnd = endDate;
                     revDuration = duration;
                     lag = 0;
+                    
 
                     if (revStart && revEnd) {
                         daily = this.generateDailyEntries(revStart, revEnd);
@@ -657,7 +657,7 @@ class ScheduleLiteService {
                 }
 
                 return {
-                    unit, quantity: qty, predecessor, // Added Predecessor to return object
+                    unit, quantity: qty, predecessor, predecessor_actual,
                     start_date: startDate, end_date: endDate, duration,
                     revised_start_date: revStart, revised_end_date: revEnd, revised_duration: revDuration,
                     lag, status: "pending",
@@ -709,7 +709,8 @@ class ScheduleLiteService {
                         currentWTask.daily = [];
                         currentWTask.schedule_data = [];
                         currentWTask.lag = 0;
-                        currentWTask.predecessor = ""; // Clear predecessor on parent if it becomes a summary
+                        currentWTask.predecessor = "";
+                        currentWTask.predecessor_actual = ""; // Clear predecessor on parent if it becomes a summary
                     }
 
                     const hierarchyKey = `${currentGroup.group_name}|${currentItem.item_name}|${currentWTask.task_name}|${desc}`.toLowerCase();
@@ -885,6 +886,7 @@ class ScheduleLiteService {
                     item.revised_duration = fullItem.revised_duration;
                     item.lag = fullItem.lag;
                     item.predecessor = fullItem.predecessor;
+                    item.predecessor_actual = fullItem.predecessor_actual;
                 }
 
                 // *** FIX: Explicitly remove Schema Defaults ***
@@ -918,7 +920,8 @@ class ScheduleLiteService {
                             duration: fullTask.duration,
                             revised_duration: fullTask.revised_duration,
                             lag: fullTask.lag,
-                            predecessor: fullTask.predecessor
+                            predecessor: fullTask.predecessor,
+                            predecessor_actual: fullTask.predecessor_actual
                         };
                     }).filter(t => t !== null);
 
