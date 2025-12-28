@@ -1,5 +1,3 @@
-
-
 {
   "status": true,
   "message": "Schedule dates and durations updated successfully",
@@ -137,17 +135,17 @@
           },
           "secondweek": {
             "achieved_quantity": 0,
-            "planned_quantity": 18.85,// total_planned_quantity = working_quantity_per_day * duration = 2.69 * 7 = 18.85
+            "planned_quantity": 18.85, // total_planned_quantity = working_quantity_per_day * duration = 2.69 * 7 = 18.85
             "lag_quantity": 18.85
           },
           "thirdweek": {
             "achieved_quantity": 0,
-            "planned_quantity": 18.85,// total_planned_quantity = working_quantity_per_day * duration = 2.69 * 7 = 18.85
+            "planned_quantity": 18.85, // total_planned_quantity = working_quantity_per_day * duration = 2.69 * 7 = 18.85
             "lag_quantity": 18.85
           },
           "fourthweek": {
             "achieved_quantity": 0,
-            "planned_quantity": 26.92,// total_planned_quantity = working_quantity_per_day * duration = 2.69 * 10 = 26.92
+            "planned_quantity": 26.92, // total_planned_quantity = working_quantity_per_day * duration = 2.69 * 10 = 26.92
             "lag_quantity": 26.92
           }
           //total_planned_quantity = firstweek + secondweek + thirdweek + fourthweek = 5.38 + 18.85 + 18.85 + 26.92 = 69.0
@@ -284,22 +282,22 @@
           //working_quantity_per_day =(quantity/revised_duration) = 210/6 = 35, total_planned_quantity = working_quantity_per_day * duration = 35 * 6 = 210                 
           "firstweek": {
             "achieved_quantity": 0,
-            "planned_quantity": 0,// total_planned_quantity = working_quantity_per_day * duration = 35 * 0 = 0
+            "planned_quantity": 0, // total_planned_quantity = working_quantity_per_day * duration = 35 * 0 = 0
             "lag_quantity": 0
           },
           "secondweek": {
             "achieved_quantity": 0,
-            "planned_quantity": 210,// total_planned_quantity = working_quantity_per_day * duration = 35 * 6 = 210
+            "planned_quantity": 210, // total_planned_quantity = working_quantity_per_day * duration = 35 * 6 = 210
             "lag_quantity": 210
           },
           "thirdweek": {
             "achieved_quantity": 0,
-            "planned_quantity": 0,// total_planned_quantity = working_quantity_per_day * duration = 35 * 0 = 0
+            "planned_quantity": 0, // total_planned_quantity = working_quantity_per_day * duration = 35 * 0 = 0
             "lag_quantity": 0
           },
           "fourthweek": {
             "achieved_quantity": 0,
-            "planned_quantity": 0,// total_planned_quantity = working_quantity_per_day * duration = 35 * 0 = 0
+            "planned_quantity": 0, // total_planned_quantity = working_quantity_per_day * duration = 35 * 0 = 0
             "lag_quantity": 0
           }
           //total_planned_quantity = firstweek + secondweek + thirdweek + fourthweek = 0 + 210 + 0 + 0 = 210
@@ -497,25 +495,25 @@
               "week_number": 1,
               "metrics": {
                 "achieved_quantity": 0,
-                "planned_quantity": 6.08,// total_planned_quantity = working_quantity_per_day * duration = 3.04 * 2 = 6.08
+                "planned_quantity": 6.08, // total_planned_quantity = working_quantity_per_day * duration = 3.04 * 2 = 6.08
                 "lag_quantity": 6.08
               }
             },
             {
-              "week_label": "secondweek",//7-14
+              "week_label": "secondweek", //7-14
               "week_number": 2,
               "metrics": {
                 "achieved_quantity": 0,
-                "planned_quantity": 21.3,// total_planned_quantity = working_quantity_per_day * duration = 3.04 * 7 = 21.28
+                "planned_quantity": 21.3, // total_planned_quantity = working_quantity_per_day * duration = 3.04 * 7 = 21.28
                 "lag_quantity": 21.3
               }
             },
             {
-              "week_label": "thirdweek",//15-21
+              "week_label": "thirdweek", //15-21
               "week_number": 3,
               "metrics": {
                 "achieved_quantity": 0,
-                "planned_quantity": 21.3,// total_planned_quantity = working_quantity_per_day * duration = 3.04 * 7 = 21.28
+                "planned_quantity": 21.3, // total_planned_quantity = working_quantity_per_day * duration = 3.04 * 7 = 21.28
                 "lag_quantity": 21.3
               }
             },
@@ -609,7 +607,6 @@
         }
       ],
       "schedule_data": [
-
         {
           "month_name": "December",
           "year": 2025,
@@ -621,13 +618,13 @@
           },
           "weeks": [
             //start_date = 2025-12-05T00:00:00.000Z , revised_end_date = 2025-12-13T00:00:00.000Z = 9 days 
-          //working_quantity_per_day =(quantity/revised_duration) = 140/9 = 15.56, total_planned_quantity = working_quantity_per_day * duration = 15.56 * 9 = 140 
+            //working_quantity_per_day =(quantity/revised_duration) = 140/9 = 15.56, total_planned_quantity = working_quantity_per_day * duration = 15.56 * 9 = 140 
             {
               "week_label": "firstweek",
               "week_number": 1,
               "metrics": {
                 "achieved_quantity": 0,
-                "planned_quantity": 46.67,// total_planned_quantity = working_quantity_per_day * duration = 15.56 * 3 = 46.67
+                "planned_quantity": 46.67, // total_planned_quantity = working_quantity_per_day * duration = 15.56 * 3 = 46.67
                 "lag_quantity": 46.67
               }
             },
@@ -636,7 +633,7 @@
               "week_number": 2,
               "metrics": {
                 "achieved_quantity": 0,
-                "planned_quantity": 93.33,// total_planned_quantity = working_quantity_per_day * duration = 15.56 * 6 = 93.33
+                "planned_quantity": 93.33, // total_planned_quantity = working_quantity_per_day * duration = 15.56 * 6 = 93.33
                 "lag_quantity": 93.33
               }
             },
@@ -781,36 +778,30 @@
   },
   "__v": 6
 }
-
-
 // let original start date OS 7/12/2025
 // let Original end date OE 13/12/2025
 // let revised start date RS 8/12/2025
 // let revised end date RE 14/12/2025
-
 // on double click on Original end date OE:
 //ask want to revise start date or revise end date 
 // if revise start date ,revise the date and update the revised end date RE
 // if revise end date ,revise the date and update the revised start date RS
-
 //In original end date OE , revised end date RE and revised start date RS can be there,
-
 //On double click between OS and OE, i can able to revise start date
 //RS can be from 7/12/2025 to 13/12/2025 (possible dates 7/12/2025, 8/12/2025, 9/12/2025, 10/12/2025, 11/12/2025, 12/12/2025, 13/12/2025) but not above 13/12/2025 and not below 7/12/2025
 //if RS delayed one day ask want to extend RE by one day if yes update RE by one day else update RS by one day 
 //if RS is backward one day just update RS by one day (if RS is in 11/12/2025 i can go upto 10/12/2025,9/12/2025,8/12/2025,7/12/2025)
-
 //on double click above OE i can able to revise end date
 // can be from 13/12/2025 to etc... (possible dates 13/12/2025, 14/12/2025, 15/12/2025, etc...)
 //but not below OE (not allowed dates 12/12/2025, 11/12/2025, 10/12/2025, 9/12/2025, 8/12/2025, 7/12/2025...)
-
 // first week 1-7
 // second week 8-14
 // third week 15-21
 // fourth week 22-28
 
 static async updateDrawingQuantity(tender_id, item_code, drawing_quantity) {
-  const boq = await BoqModel.findOne({ tender_id });
+  const boq = await BoqModel.findOne({ tender_id
+  });
   if (!boq) throw new Error("BOQ record not found");
 
   const item = boq.items.find(item => item.item_code === item_code);
@@ -826,119 +817,314 @@ static async updateDrawingQuantity(tender_id, item_code, drawing_quantity) {
 
 
       "items": [
+  {
+    "item_name": "Soil Cutting",
+    "row_index": 2,
+    "unit": "Cum",
+    "quantity": 10400,
+    "start_date": {
+      "$date": "2025-12-27T00:00:00.000Z"
+    },
+    "end_date": {
+      "$date": "2025-12-30T00:00:00.000Z"
+    },
+    "revised_start_date": {
+      "$date": "2025-12-27T00:00:00.000Z"
+    },
+    "revised_end_date": {
+      "$date": "2025-12-30T00:00:00.000Z"
+    },
+    "duration": 4,
+    "revised_duration": 4,
+    "lag": 0,
+    "status": "pending",
+    "daily": [
+      {
+        "date": {
+          "$date": "2025-12-27T00:00:00.000Z"
+        },
+        "quantity": 0,
+        "status": "working"
+      },
+      {
+        "date": {
+          "$date": "2025-12-28T00:00:00.000Z"
+        },
+        "quantity": 0,
+        "status": "working"
+      },
+      {
+        "date": {
+          "$date": "2025-12-29T00:00:00.000Z"
+        },
+        "quantity": 0,
+        "status": "working"
+      },
+      {
+        "date": {
+          "$date": "2025-12-30T00:00:00.000Z"
+        },
+        "quantity": 0,
+        "status": "working"
+      }
+    ],
+    "schedule_data": [
+      {
+        "month_name": "December",
+        "year": 2025,
+        "month_key": "12-2025",
+        "metrics": {
+          "achieved_quantity": 0,
+          "planned_quantity": 10400,
+          "lag_quantity": 10400,
+          "achieved_cost": 0,
+          "planned_cost": 0
+        },
+        "weeks": [
+          {
+            "week_label": "Week 1",
+            "week_number": 1,
+            "metrics": {
+              "achieved_quantity": 0,
+              "planned_quantity": 0,
+              "lag_quantity": 0,
+              "achieved_cost": 0,
+              "planned_cost": 0
+            }
+          },
+          {
+            "week_label": "Week 2",
+            "week_number": 2,
+            "metrics": {
+              "achieved_quantity": 0,
+              "planned_quantity": 0,
+              "lag_quantity": 0,
+              "achieved_cost": 0,
+              "planned_cost": 0
+            }
+          },
+          {
+            "week_label": "Week 3",
+            "week_number": 3,
+            "metrics": {
+              "achieved_quantity": 0,
+              "planned_quantity": 0,
+              "lag_quantity": 0,
+              "achieved_cost": 0,
+              "planned_cost": 0
+            }
+          },
+          {
+            "week_label": "Week 4",
+            "week_number": 4,
+            "metrics": {
+              "achieved_quantity": 0,
+              "planned_quantity": 10400,
+              "lag_quantity": 10400,
+              "achieved_cost": 0,
+              "planned_cost": 0
+            }
+          }
+        ]
+      }
+    ],
+    "tasks": [],
+    "_id": {
+      "$oid": "694fd169cbf21f9ff4b636b4"
+    }
+  },
+
+  
+  {
+    "status": true,
+    "data": {
+      "_id": "6950d47dc7beb51a76b343ee",
+      "tender_id": "TND020",
+      "structure": [
         {
-          "item_name": "Soil Cutting",
-          "row_index": 2,
-          "unit": "Cum",
-          "quantity": 10400,
-          "start_date": {
-            "$date": "2025-12-27T00:00:00.000Z"
-          },
-          "end_date": {
-            "$date": "2025-12-30T00:00:00.000Z"
-          },
-          "revised_start_date": {
-            "$date": "2025-12-27T00:00:00.000Z"
-          },
-          "revised_end_date": {
-            "$date": "2025-12-30T00:00:00.000Z"
-          },
-          "duration": 4,
-          "revised_duration": 4,
-          "lag": 0,
-          "status": "pending",
-          "daily": [
+          "group_name": "Priliminary and Common Works",
+          "row_index": 1,
+          "items": [
             {
-              "date": {
-                "$date": "2025-12-27T00:00:00.000Z"
-              },
-              "quantity": 0,
-              "status": "working"
+              "item_name": "Soil Cutting",
+              "row_index": 2,
+              "unit": "Cum",
+              "quantity": 10400,
+              "start_date": "2025-12-28T00:00:00.000Z",
+              "end_date": "2025-12-30T00:00:00.000Z",
+              "revised_start_date": "2025-12-28T00:00:00.000Z",
+              "revised_end_date": "2025-12-30T00:00:00.000Z",
+              "duration": 3,
+              "revised_duration": 3,
+              "lag": 0,
+              "status": "pending",
+              "predecessor": "",
+              "tasks": [],
+              "_id": "6950d495c7beb51a76b34549"
             },
             {
-              "date": {
-                "$date": "2025-12-28T00:00:00.000Z"
-              },
-              "quantity": 0,
-              "status": "working"
-            },
-            {
-              "date": {
-                "$date": "2025-12-29T00:00:00.000Z"
-              },
-              "quantity": 0,
-              "status": "working"
-            },
-            {
-              "date": {
-                "$date": "2025-12-30T00:00:00.000Z"
-              },
-              "quantity": 0,
-              "status": "working"
+              "item_name": "Initial Embaknment Formation from Cutting Soil",
+              "row_index": 3,
+              "unit": "Cum",
+              "quantity": 10400,
+              "start_date": "2026-01-01T00:00:00.000Z",
+              "end_date": "2026-01-04T00:00:00.000Z",
+              "revised_start_date": "2026-01-01T00:00:00.000Z",
+              "revised_end_date": "2026-01-04T00:00:00.000Z",
+              "duration": 4,
+              "revised_duration": 4,
+              "lag": 0,
+              "status": "pending",
+              "predecessor": "2FS+1",
+              "tasks": [],
+              "_id": "6950d495c7beb51a76b3454a"
             }
           ],
-          "schedule_data": [
+          "_id": "6950d495c7beb51a76b34548"
+        },
+        {
+          "group_name": "LHS Side - Hight Portion - Shed Side",
+          "row_index": 4,
+          "items": [
             {
-              "month_name": "December",
-              "year": 2025,
-              "month_key": "12-2025",
-              "metrics": {
-                "achieved_quantity": 0,
-                "planned_quantity": 10400,
-                "lag_quantity": 10400,
-                "achieved_cost": 0,
-                "planned_cost": 0
-              },
-              "weeks": [
+              "item_name": "D/S Cut off Wall",
+              "row_index": 5,
+              "unit": "",
+              "quantity": 0,
+              "start_date": null,
+              "end_date": null,
+              "revised_start_date": null,
+              "revised_end_date": null,
+              "duration": 0,
+              "revised_duration": 0,
+              "lag": 0,
+              "status": "pending",
+              "predecessor": "",
+              "tasks": [
                 {
-                  "week_label": "Week 1",
-                  "week_number": 1,
-                  "metrics": {
-                    "achieved_quantity": 0,
-                    "planned_quantity": 0,
-                    "lag_quantity": 0,
-                    "achieved_cost": 0,
-                    "planned_cost": 0
-                  }
-                },
-                {
-                  "week_label": "Week 2",
-                  "week_number": 2,
-                  "metrics": {
-                    "achieved_quantity": 0,
-                    "planned_quantity": 0,
-                    "lag_quantity": 0,
-                    "achieved_cost": 0,
-                    "planned_cost": 0
-                  }
-                },
-                {
-                  "week_label": "Week 3",
-                  "week_number": 3,
-                  "metrics": {
-                    "achieved_quantity": 0,
-                    "planned_quantity": 0,
-                    "lag_quantity": 0,
-                    "achieved_cost": 0,
-                    "planned_cost": 0
-                  }
-                },
-                {
-                  "week_label": "Week 4",
-                  "week_number": 4,
-                  "metrics": {
-                    "achieved_quantity": 0,
-                    "planned_quantity": 10400,
-                    "lag_quantity": 10400,
-                    "achieved_cost": 0,
-                    "planned_cost": 0
-                  }
+                  "task_name": "Earthwork +49.2",
+                  "row_index": 6,
+                  "unit": "Rmt",
+                  "quantity": 125,
+                  "start_date": null,
+                  "end_date": null,
+                  "revised_start_date": null,
+                  "revised_end_date": null,
+                  "duration": 0,
+                  "revised_duration": 0,
+                  "lag": 0,
+                  "status": "pending",
+                  "predecessor": "",
+                  "task_wbs_ids": [
+                    {
+                      "wbs_id": "WBSB943",
+                      "description": "Ch 0 - 7.2",
+                      "unit": "Rmt",
+                      "quantity": 7.2,
+                      "executed_quantity": 0,
+                      "balance_quantity": 7.2,
+                      "row_index": 7,
+                      "start_date": "2026-01-06T00:00:00.000Z",
+                      "end_date": "2026-01-11T00:00:00.000Z",
+                      "revised_start_date": "2026-01-06T00:00:00.000Z",
+                      "revised_end_date": "2026-01-11T00:00:00.000Z",
+                      "duration": 6,
+                      "revised_duration": 6,
+                      "lag": 0,
+                      "predecessor": "3FS+2"
+                    },
+                    {
+                      "wbs_id": "WBSB944",
+                      "description": "Ch 7.2 - 30",
+                      "unit": "Rmt",
+                      "quantity": 22.8,
+                      "executed_quantity": 0,
+                      "balance_quantity": 22.8,
+                      "row_index": 8,
+                      "start_date": "2026-01-06T00:00:00.000Z",
+                      "end_date": "2026-01-14T00:00:00.000Z",
+                      "revised_start_date": "2026-01-06T00:00:00.000Z",
+                      "revised_end_date": "2026-01-14T00:00:00.000Z",
+                      "duration": 9,
+                      "revised_duration": 9,
+                      "lag": 0,
+                      "predecessor": "7SS"
+                    },
+                    {
+                      "wbs_id": "WBSB945",
+                      "description": "Ch 30 - 55",
+                      "unit": "Rmt",
+                      "quantity": 25,
+                      "executed_quantity": 0,
+                      "balance_quantity": 25,
+                      "row_index": 9,
+                      "start_date": "2026-01-14T00:00:00.000Z",
+                      "end_date": "2026-01-26T00:00:00.000Z",
+                      "revised_start_date": "2026-01-14T00:00:00.000Z",
+                      "revised_end_date": "2026-01-26T00:00:00.000Z",
+                      "duration": 13,
+                      "revised_duration": 13,
+                      "lag": 0,
+                      "predecessor": ""
+                    },
+                    {
+                      "wbs_id": "WBSB946",
+                      "description": "Ch 55 - 80",
+                      "unit": "Rmt",
+                      "quantity": 25,
+                      "executed_quantity": 0,
+                      "balance_quantity": 25,
+                      "row_index": 10,
+                      "start_date": "2026-01-27T00:00:00.000Z",
+                      "end_date": "2026-01-30T00:00:00.000Z",
+                      "revised_start_date": "2026-01-27T00:00:00.000Z",
+                      "revised_end_date": "2026-01-30T00:00:00.000Z",
+                      "duration": 4,
+                      "revised_duration": 4,
+                      "lag": 0,
+                      "predecessor": "9FS"
+                    },
+                    {
+                      "wbs_id": "WBSB947",
+                      "description": "Ch 80 - 105",
+                      "unit": "Rmt",
+                      "quantity": 25,
+                      "executed_quantity": 0,
+                      "balance_quantity": 25,
+                      "row_index": 11,
+                      "start_date": "2026-01-25T00:00:00.000Z",
+                      "end_date": "2026-01-28T00:00:00.000Z",
+                      "revised_start_date": "2026-01-25T00:00:00.000Z",
+                      "revised_end_date": "2026-01-28T00:00:00.000Z",
+                      "duration": 4,
+                      "revised_duration": 4,
+                      "lag": 0,
+                      "predecessor": "10SS-2"
+                    },
+                    {
+                      "wbs_id": "WBSB948",
+                      "description": "Ch 105 - 125",
+                      "unit": "Rmt",
+                      "quantity": 20,
+                      "executed_quantity": 0,
+                      "balance_quantity": 20,
+                      "row_index": 12,
+                      "start_date": "2026-01-08T00:00:00.000Z",
+                      "end_date": "2026-01-13T00:00:00.000Z",
+                      "revised_start_date": "2026-01-08T00:00:00.000Z",
+                      "revised_end_date": "2026-01-13T00:00:00.000Z",
+                      "duration": 6,
+                      "revised_duration": 6,
+                      "lag": 0,
+                      "predecessor": "3FS+3"
+                    }
+                  ],
+                  "_id": "6950d495c7beb51a76b3454d"
                 }
               ]
             }
-          ],
-          "tasks": [],
-          "_id": {
-            "$oid": "694fd169cbf21f9ff4b636b4"
-          }
-        },
+          ]
+        }
+      ]
+    }
+  }

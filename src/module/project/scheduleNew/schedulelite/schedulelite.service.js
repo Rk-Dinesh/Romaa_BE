@@ -1,5 +1,16 @@
 import mongoose from "mongoose";
-import { addDays } from "date-fns";
+import {
+    addDays,
+    differenceInDays,
+    format,
+    eachDayOfInterval,
+    startOfWeek,
+    endOfWeek,
+    getISOWeek,
+    isSameMonth,
+    startOfMonth,
+    endOfMonth
+} from "date-fns";
 import IdcodeServices from "../../../idcode/idcode.service.js";
 import ScheduleLiteModel from "./schedulelite.model.js";
 import TaskModel from "../task/task.model.js";
@@ -57,7 +68,9 @@ class ScheduleLiteService {
                 }
             }
 
-            const idNameWBS = "WBS";
+            const idNameWBS = "WorkBreakdownStructure";
+            const idcode = "WBS";
+            await IdcodeServices.addIdCode(idNameWBS, idcode);
             // FETCH ALL IDS IN ONE GO (1 DB Call instead of 467)
             const newIdsPool = await IdcodeServices.generateBulkCodes(idNameWBS, neededIdCount);
             // =========================================================
@@ -215,6 +228,8 @@ class ScheduleLiteService {
 
         return new Date(Date.UTC(date_info.getUTCFullYear(), date_info.getUTCMonth(), date_info.getUTCDate(), 0, 0, 0));
     }
+
+
 
     // MAIN PARSER: Handles String ("27-12-2025") AND Number (46018)
     static parseDate(dateInput) {
@@ -587,12 +602,14 @@ class ScheduleLiteService {
                     qty = existingData.quantity;
                     unit = existingData.unit;
                     // Freeze Predecessor if it exists in DB
-                    predecessor = existingData.predecessor || null;
+                    predecessor = existingData.predecessor || row.Predecessor || "";
+                    predecessor_actual = existingData.predecessor || row.Predecessor || "";
                 } else {
                     qty = Number(row.Quantity || 0);
                     unit = row.Unit || "";
                     // New Task: Take Predecessor from CSV
-                    predecessor = row.Predecessor || null;
+                    predecessor = row.Predecessor || "";
+                    predecessor_actual = row.Predecessor || "";
                 }
 
                 // Check DB for Dates
@@ -809,6 +826,507 @@ class ScheduleLiteService {
 
         return scheduleDoc;
     }
+
+    static async getPopulatedScheduleAll(tender_id) {
+        // 1. Fetch the Structure
+        const scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).lean();
+
+        if (!scheduleDoc) {
+            throw new Error("Schedule not found");
+        }
+
+        // 2. Extract ALL IDs
+        const allIdsToFetch = [];
+
+        scheduleDoc.structure.forEach(group => {
+            group.items.forEach(item => {
+                if (item.work_group_id) allIdsToFetch.push(item.work_group_id);
+
+                item.tasks.forEach(taskContainer => {
+                    if (Array.isArray(taskContainer.task_wbs_ids)) {
+                        const ids = taskContainer.task_wbs_ids.map(ref => ref.wbs_id);
+                        allIdsToFetch.push(...ids);
+                    }
+                });
+            });
+        });
+
+        // 3. Fetch Data (Excluding heavy fields from DB to save memory)
+        const taskDocuments = await TaskModel.find({
+            tender_id: tender_id,
+            wbs_id: { $in: allIdsToFetch }
+        })
+            .select("-daily -schedule_data")
+            .lean();
+
+        // 4. Create Lookup Map
+        const taskMap = new Map();
+        taskDocuments.forEach(doc => {
+            taskMap.set(doc.wbs_id, doc);
+        });
+
+        // 5. Re-assemble & CLEANUP
+        scheduleDoc.structure.forEach(group => {
+            group.items.forEach(item => {
+
+                // --- POPULATE LEVEL 2 (ITEM) ---
+                const fullItem = taskMap.get(item.work_group_id);
+                if (fullItem) {
+                    item.item_name = fullItem.description || item.item_name;
+                    item.unit = fullItem.unit;
+                    item.quantity = fullItem.quantity;
+                    item.executed_quantity = fullItem.executed_quantity;
+                    item.balance_quantity = fullItem.balance_quantity;
+                    item.start_date = fullItem.start_date;
+                    item.end_date = fullItem.end_date;
+                    item.revised_start_date = fullItem.revised_start_date;
+                    item.revised_end_date = fullItem.revised_end_date;
+                    item.duration = fullItem.duration;
+                    item.revised_duration = fullItem.revised_duration;
+                    item.lag = fullItem.lag;
+                    item.predecessor = fullItem.predecessor;
+                }
+
+                // *** FIX: Explicitly remove Schema Defaults ***
+                delete item.daily;
+                delete item.schedule_data;
+
+                // --- POPULATE LEVEL 4 (TASKS) ---
+                item.tasks.forEach(taskContainer => {
+
+                    // *** FIX: Remove Schema Defaults from Level 3 Container ***
+                    delete taskContainer.daily;
+                    delete taskContainer.schedule_data;
+
+                    const populatedTasks = taskContainer.task_wbs_ids.map(ref => {
+                        const fullTask = taskMap.get(ref.wbs_id);
+                        if (!fullTask) return null;
+
+                        // Return clean object (No daily/schedule_data)
+                        return {
+                            wbs_id: fullTask.wbs_id,
+                            description: fullTask.description,
+                            unit: fullTask.unit,
+                            quantity: fullTask.quantity,
+                            executed_quantity: fullTask.executed_quantity,
+                            balance_quantity: fullTask.balance_quantity,
+                            row_index: ref.row_index,
+                            start_date: fullTask.start_date,
+                            end_date: fullTask.end_date,
+                            revised_start_date: fullTask.revised_start_date,
+                            revised_end_date: fullTask.revised_end_date,
+                            duration: fullTask.duration,
+                            revised_duration: fullTask.revised_duration,
+                            lag: fullTask.lag,
+                            predecessor: fullTask.predecessor
+                        };
+                    }).filter(t => t !== null);
+
+                    taskContainer.task_wbs_ids = populatedTasks;
+                });
+            });
+        });
+
+        return scheduleDoc;
+    }
+
+
+
+    // --- Helper: Calculate Start Date based on Parent & Rule ---
+
+    static calculateStartDate(parentTask, type, lag) {
+        if (!parentTask || !parentTask.revised_start_date || !parentTask.revised_end_date) return null;
+
+        let baseDate;
+        if (type === 'SS') {
+            baseDate = new Date(parentTask.revised_start_date);
+        } else {
+            // Default FS: Parent End Date + 1 Day (Standard Project Logic) + Lag
+            // Based on your example: 3FS+1 = End Date + 1. 
+            // So Base is EndDate.
+            baseDate = new Date(parentTask.revised_end_date);
+            // In standard FS, if End is Jan 4, Start is Jan 5. 
+            // Your example says: End Jan 4. 3FS+1 -> Jan 6. 
+            // This implies: (End Date) + (1 standard buffer) + (Lag)
+            // Or strictly: End Date + Lag. 
+            // Let's stick strictly to your math: 
+            // "3FS+1 = 3rd row end date (Jan 05) + 1 day = Jan 06"
+            // So Formula = ParentEnd + Lag.
+        }
+
+        // Apply Lag (and standard FS offset if implied, but using your strict example logic)
+        // If FS and Lag is 1: End + 1.
+        // If FS and Lag is 0: End + 0? Usually FS means "Start AFTER Finish". 
+        // I will assume logic: Date = Base + Lag.
+        // Note: For FS, usually Start = End + 1 + Lag. 
+        // Your Ex: End=Jan4. FS+1=Jan6. Diff=2 days. 
+        // This suggests: Start = End + 1 (next day) + Lag.
+
+        let calculatedDate = new Date(baseDate);
+
+        // Logic adjustment based on "End Date + Lag" description in prompt:
+        // "3FS+2 = 3rd row end date after date + 2 days"
+        // If End is Jan 6. Jan 6 + 2 days = Jan 8.
+
+        calculatedDate = addDays(calculatedDate, lag);
+
+        // If FS, commonly the "End Date" is the last working day. The next task starts the next day + lag.
+        // If your system stores End Date as Inclusive, we usually add 1 day for FS baseline.
+        // However, I will strictly follow: newStart = addDays(ReferenceDate, Lag).
+
+        return calculatedDate;
+    }
+
+    // --- Helper 1: Flatten Nested Structure ---
+    static flattenStructure(structure) {
+        const flatList = [];
+        const processNode = (node) => {
+            flatList.push(node);
+            if (node.items) node.items.forEach(processNode);
+            if (node.tasks) node.tasks.forEach(processNode);
+            // These are the "Light" references that need population
+            if (node.task_wbs_ids) node.task_wbs_ids.forEach(processNode);
+            if (node.active_tasks) node.active_tasks.forEach(processNode);
+        };
+        if (Array.isArray(structure)) structure.forEach(processNode);
+        return flatList.sort((a, b) => a.row_index - b.row_index);
+    }
+
+    // --- Helper 2: Parse Predecessor ---
+    static parsePredecessorString(predString) {
+        if (!predString || typeof predString !== 'string') return null;
+        const regex = /^(\d+)(FS|SS)?([+-]?\d+)?$/i;
+        const match = predString.toString().toUpperCase().trim().match(regex);
+        if (!match) return null;
+        return {
+            targetRowIndex: parseInt(match[1]),
+            type: match[2] || "FS",
+            lag: parseInt(match[3] || "0")
+        };
+    }
+
+    // --- Helper 3: Generate Metrics (Daily & Schedule Data) ---
+    // This logic distributes the Total Quantity over the Duration
+    static recalculateTaskMetrics(task) {
+        if (!task.revised_start_date || !task.revised_end_date || !task.revised_duration) return;
+
+        const start = new Date(task.revised_start_date);
+        const end = new Date(task.revised_end_date);
+        const totalQty = Number(task.quantity) || 0;
+        const duration = Number(task.revised_duration) || 1; // Avoid divide by zero
+
+        // 1. Calculate Daily Quantity (Linear Distribution)
+        // Note: Real world logic might differ (e.g. S-Curve), but linear is standard default.
+        const dailyQty = totalQty / duration;
+
+        // 2. Generate Daily Logs
+        const days = eachDayOfInterval({ start, end });
+        const newDailyLogs = days.map(day => ({
+            date: day,
+            quantity: parseFloat(dailyQty.toFixed(2)), // Round to 2 decimals
+            status: "working",
+            remarks: "Auto-generated schedule update"
+        }));
+
+        // Replace existing logs (or merge if you want to keep actual execution history)
+        // For PLANNING updates, we usually overwrite future logs.
+        task.daily = newDailyLogs;
+
+        // 3. Generate Schedule Data (Monthly/Weekly Buckets)
+        const scheduleMap = new Map(); // Key: "MM-YYYY"
+
+        newDailyLogs.forEach(log => {
+            const monthKey = format(log.date, "MM-yyyy");
+            const monthName = format(log.date, "MMMM");
+            const year = log.date.getFullYear();
+
+            // Weekly Info
+            const weekStart = startOfWeek(log.date, { weekStartsOn: 1 }); // Monday start
+            const weekEnd = endOfWeek(log.date, { weekStartsOn: 1 });
+            const weekNum = getISOWeek(log.date);
+            const weekLabel = `W${weekNum}`;
+
+            if (!scheduleMap.has(monthKey)) {
+                scheduleMap.set(monthKey, {
+                    month_name: monthName,
+                    year: year,
+                    month_key: monthKey,
+                    metrics: { achieved_quantity: 0, planned_quantity: 0, lag_quantity: 0 },
+                    weeksMap: new Map() // Helper map for weeks
+                });
+            }
+
+            const monthData = scheduleMap.get(monthKey);
+
+            // Add Daily Qty to Month Total
+            monthData.metrics.planned_quantity += log.quantity;
+
+            // Handle Weeks
+            if (!monthData.weeksMap.has(weekLabel)) {
+                monthData.weeksMap.set(weekLabel, {
+                    week_label: weekLabel,
+                    week_number: weekNum,
+                    start_date: weekStart,
+                    end_date: weekEnd,
+                    metrics: { achieved_quantity: 0, planned_quantity: 0, lag_quantity: 0 }
+                });
+            }
+            const weekData = monthData.weeksMap.get(weekLabel);
+            weekData.metrics.planned_quantity += log.quantity;
+        });
+
+        // Convert Maps back to Arrays for Schema
+        task.schedule_data = Array.from(scheduleMap.values()).map(m => ({
+            month_name: m.month_name,
+            year: m.year,
+            month_key: m.month_key,
+            metrics: {
+                ...m.metrics,
+                planned_quantity: parseFloat(m.metrics.planned_quantity.toFixed(2))
+            },
+            weeks: Array.from(m.weeksMap.values()).map(w => ({
+                ...w,
+                metrics: {
+                    ...w.metrics,
+                    planned_quantity: parseFloat(w.metrics.planned_quantity.toFixed(2))
+                }
+            }))
+        }));
+    }
+    static async updateRowSchedule(tender_id, payload) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            console.log("--- START HYBRID UPDATE ---");
+            console.log("Payload:", JSON.stringify(payload));
+
+            const { row_index, predecessor, revised_duration } = payload;
+            const targetRowIndex = Number(row_index);
+
+            // 1. FETCH STRUCTURE
+            const tenderDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
+            if (!tenderDoc) throw new Error("Tender not found.");
+
+            // 2. FLATTEN
+            const flatNodes = this.flattenStructure(tenderDoc.structure);
+            console.log(`ℹ️ Flattened Nodes: ${flatNodes.length}`);
+
+            // 3. POPULATE MISSING DATA
+            const wbsIdsToFetch = flatNodes
+                .filter(n => n.wbs_id && (!n.revised_start_date && !n.start_date))
+                .map(n => n.wbs_id);
+
+            if (wbsIdsToFetch.length > 0) {
+                console.log(`ℹ️ Fetching data for ${wbsIdsToFetch.length} lightweight nodes...`);
+                const taskDocs = await TaskModel.find({ tender_id, wbs_id: { $in: wbsIdsToFetch } }).session(session);
+                const dataMap = new Map();
+                taskDocs.forEach(doc => dataMap.set(doc.wbs_id, doc));
+
+                // Merge Data
+                flatNodes.forEach(node => {
+                    if (dataMap.has(node.wbs_id)) {
+                        const fullData = dataMap.get(node.wbs_id);
+                        node.predecessor = fullData.predecessor;
+                        node.duration = fullData.duration;
+                        node.revised_duration = fullData.revised_duration;
+                        node.start_date = fullData.start_date;
+                        node.end_date = fullData.end_date;
+                        node.revised_start_date = fullData.revised_start_date;
+                        node.revised_end_date = fullData.revised_end_date;
+                        node.description = fullData.description;
+                        node.quantity = fullData.quantity;
+                        node._taskDoc = fullData; // Mark for saving back to TaskModel
+                    }
+                });
+            }
+
+            // 4. MAP & INITIALIZE FALLBACKS
+            const fullTaskMap = new Map();
+            flatNodes.forEach(node => {
+                // Fallback: If revised missing, use original
+                if (!node.revised_start_date && node.start_date) {
+                    node.revised_start_date = new Date(node.start_date);
+                }
+                if (!node.revised_end_date && node.end_date) {
+                    node.revised_end_date = new Date(node.end_date);
+                }
+                fullTaskMap.set(node.row_index, node);
+            });
+
+            const targetNode = fullTaskMap.get(targetRowIndex);
+            if (!targetNode) {
+                console.error(`❌ Row ${targetRowIndex} not found in map.`);
+                throw new Error(`Row ${targetRowIndex} not found.`);
+            }
+
+            let isTargetUpdated = false;
+
+            // ====================================================
+            // PHASE 1: TARGET UPDATE
+            // ====================================================
+
+            // Condition 1: Predecessor
+            if (predecessor !== undefined) {
+                const predInfo = this.parsePredecessorString(predecessor);
+                if (predInfo) {
+                    const parentNode = fullTaskMap.get(predInfo.targetRowIndex);
+
+                    // Allow parent fallback dates
+                    const pStart = parentNode?.revised_start_date || parentNode?.start_date;
+                    const pEnd = parentNode?.revised_end_date || parentNode?.end_date;
+
+                    if (parentNode && pStart) {
+                        console.log(`ℹ️ Updating Predecessor to ${predecessor}`);
+                        targetNode.predecessor = predecessor;
+
+                        let refDate = predInfo.type === 'SS' ? new Date(pStart) : new Date(pEnd);
+                        let offset = predInfo.lag;
+                        if (predInfo.type === 'FS') offset += 1;
+
+                        const newStart = addDays(refDate, offset);
+                        targetNode.revised_start_date = newStart;
+
+                        // INCLUSIVE LOGIC: End = Start + Duration - 1
+                        const duration = targetNode.revised_duration || 1;
+                        targetNode.revised_end_date = addDays(newStart, Math.max(0, duration - 1));
+
+                        isTargetUpdated = true;
+                    } else {
+                        console.warn(`⚠️ Parent Row ${predInfo.targetRowIndex} has no dates.`);
+                    }
+                }
+            }
+            // Condition 2: Duration
+            else if (revised_duration !== undefined) {
+                const newDuration = Number(revised_duration);
+                console.log(`ℹ️ Updating Duration to ${newDuration}`);
+                targetNode.revised_duration = newDuration;
+
+                if (targetNode.revised_start_date) {
+                    // INCLUSIVE LOGIC: End = Start + Duration - 1
+                    targetNode.revised_end_date = addDays(new Date(targetNode.revised_start_date), Math.max(0, newDuration - 1));
+                    isTargetUpdated = true;
+                } else {
+                    console.warn("⚠️ Target has no Start Date. Cannot calc End Date.");
+                }
+            }
+
+            // ====================================================
+            // PHASE 2: CASCADE
+            // ====================================================
+
+            const bulkOps = [];
+
+            if (isTargetUpdated) {
+                console.log(`✅ Target Updated. New End: ${targetNode.revised_end_date}`);
+                this.recalculateTaskMetrics(targetNode);
+
+                // If Target came from TaskModel (leaf), save it
+                if (targetNode._taskDoc) {
+                    bulkOps.push(this.createBulkOp(targetNode));
+                }
+
+                let cascadeCount = 0;
+
+                // Loop Merged List
+                for (let i = 0; i < flatNodes.length; i++) {
+                    const currentNode = flatNodes[i];
+
+                    if (currentNode.row_index <= targetRowIndex) continue;
+                    if (!currentNode.predecessor) continue;
+
+                    const predInfo = this.parsePredecessorString(currentNode.predecessor);
+                    // Skip upstream dependency
+                    if (!predInfo || predInfo.targetRowIndex < targetRowIndex) continue;
+
+                    const parentNode = fullTaskMap.get(predInfo.targetRowIndex);
+                    const pStart = parentNode?.revised_start_date;
+                    const pEnd = parentNode?.revised_end_date;
+
+                    if (parentNode && pStart) {
+
+                        // Init current if missing
+                        if (!currentNode.revised_start_date && currentNode.start_date) {
+                            currentNode.revised_start_date = new Date(currentNode.start_date);
+                        }
+
+                        let refDate = predInfo.type === 'SS' ? new Date(pStart) : new Date(pEnd);
+                        let offset = predInfo.lag;
+                        if (predInfo.type === 'FS') offset += 1;
+
+                        const newStart = addDays(refDate, offset);
+
+                        // INCLUSIVE LOGIC
+                        const duration = currentNode.revised_duration || 1;
+                        const newEnd = addDays(newStart, Math.max(0, duration - 1));
+
+                        // Check Change
+                        const currentStartMs = currentNode.revised_start_date ? new Date(currentNode.revised_start_date).getTime() : 0;
+                        if (newStart.getTime() !== currentStartMs) {
+                            currentNode.revised_start_date = newStart;
+                            currentNode.revised_end_date = newEnd;
+
+                            this.recalculateTaskMetrics(currentNode);
+
+                            if (currentNode._taskDoc) {
+                                bulkOps.push(this.createBulkOp(currentNode));
+                            }
+                            cascadeCount++;
+                        }
+                    }
+                }
+
+                console.log(`✅ Cascaded update to ${cascadeCount} rows.`);
+
+                // 1. Save TaskModel Changes
+                if (bulkOps.length > 0) {
+                    console.log(`💾 Saving ${bulkOps.length} docs to TaskModel...`);
+                    await TaskModel.bulkWrite(bulkOps, { session });
+                }
+
+                // 2. Save ScheduleLite Structure
+                console.log("💾 Saving ScheduleLite Structure...");
+                tenderDoc.markModified('structure');
+                await tenderDoc.save({ session });
+            } else {
+                console.log("⚠️ No updates applied.");
+            }
+
+            await session.commitTransaction();
+            session.endSession();
+            console.log("--- END UPDATE ---");
+
+            return { success: true, message: "Schedule updated." };
+
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            console.error("❌ Error:", error);
+            throw error;
+        }
+    }
+
+    // --- Helper to build BulkOp ---
+    static createBulkOp(node) {
+        // We use node._taskDoc._id or node.wbs_id to identify
+        return {
+            updateOne: {
+                filter: { wbs_id: node.wbs_id },
+                update: {
+                    $set: {
+                        revised_start_date: node.revised_start_date,
+                        revised_end_date: node.revised_end_date,
+                        revised_duration: node.revised_duration,
+                        predecessor: node.predecessor,
+                        daily: node.daily,
+                        schedule_data: node.schedule_data
+                    }
+                }
+            }
+        };
+    }
+
 
 
 }

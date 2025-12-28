@@ -180,3 +180,45 @@ export const getSchedule = async (req, res) => {
         return res.status(500).json({ status: false, message: error.message });
     }
 };
+
+export const getAllSchedule = async (req, res) => {
+    try {
+        const { tender_id } = req.params;
+
+        if (!tender_id) {
+            return res.status(400).json({ status: false, message: "Tender ID is required" });
+        }
+
+        const data = await ScheduleLiteService.getPopulatedScheduleAll(tender_id);
+
+        return res.status(200).json({
+            status: true,
+            data: data
+        });
+
+    } catch (error) {
+        return res.status(500).json({ status: false, message: error.message });
+    }
+};
+
+export const updateRowSchedule = async (req, res) => {
+    try {
+        const { tender_id  } = req.params;
+        const payload = req.body;
+
+
+        if (!tender_id) {
+            return res.status(400).json({ status: false, message: "Tender ID is required" });
+        }
+
+        const data = await ScheduleLiteService.updateRowSchedule(tender_id, payload);
+
+        return res.status(200).json({
+            status: true,
+            data: data
+        }); 
+
+    } catch (error) {
+        return res.status(500).json({ status: false, message: error.message });
+    }
+};

@@ -37,9 +37,8 @@ B,LHS-Side-Hight Portion,,
 
 Three concepts to control dates.
 
-In excel or csv upload i will upload start date , end date for each code. The duration will be calculated automatically.
+In excel or csv upload i will upload start date , end date for each code. The revised_duration will be calculated automatically.
 
-Predecessor and Successor will be calculated automatically.
 
 Predecessor: 
 
@@ -48,13 +47,151 @@ FF = Finish to Finish
 SS = Start to Start
 SF = Start to Finish
 
-2FS+3 = 2nd row start date + 3 days 
-3SS = 3rd row start date
-3SS+2 = 3rd row start date + 2 days
-4SS+1 = 4th row start date + 1 day
-5SS-2 = 5th row start date - 2 days
-5FF-2 = 5th row end date - 2 days
+2FS+3 = 2nd row start date after date + 3 days 
+3SS = 3rd row start date after date
+3SS+2 = 3rd row start date after date + 2 days
+4SS+1 = 4th row start date after date + 1 day
+5SS-2 = 5th row start date after date - 2 days
+5FF-2 = 5th row end date after date - 2 days
 
-like this i want to control dates.
+Update API:
 
+Request Parameters
+tender_id : Unique project identifier. As Params.
+row_index : Index of the row to update. As Payload.
+predessor: New predecessor in format  As Payload.
+revised_duration: New duration in days. As Payload.
+I want api to pass the below Conditions i structure
+
+condition 1:
+
+In payload predecessor , row_index given.
+
+{
+  "row_index": 7,
+  "predecessor": "3FS+2",
+}
+
+
+Find the row at row_index in the schedule structure.
+Update its predecessor using the predecessor from the payload.
+Update its revised_start_date using the predecessor from the payload.
+Example:
+before 
+// details of predecessor 3FS+1
+row_index = 3
+revised_start_date = 2025-01-01
+revised_end_date = 2025-01-04 
+
+row_index = 7
+predecessor = "3FS+1"  for row_index = 7 
+revised_start_date = 2025-01-06 // means 3FS+1 = 3rd row end date after date + 1 day = 2025-01-05 + 1 day = 2025-01-06
+revised_end_date = 2025-01-11
+revised_duration = 5
+after
+row_index = 7
+predecessor = "3FS+2"
+revised_start_date = 2025-01-07 // means 3FS+2 = 3rd row end date after date + 2 days = 2025-01-06 + 2 days = 2025-01-07
+revised_end_date = 2025-01-12  // from revised_start_date + revised_duration = 2025-01-07 + 5 days = 2025-01-12
+
+For all rows above the given row_index (i.e., with higher index):
+If a row has a predecessor (FS/SS) starting from a row above the given row_index, update its dates using its own revised_duration from the structure.
+If a row has a predecessor starting from a row below the given row_index, do not update its dates and proceed to the next row.
+Repeat for all rows above the given row_index.
+
+example:
+before
+row_index = 8
+predecessor = "7FS"
+revised_start_date = 2025-01-12 // means 7FS = 7th row end date after date + 1 day = 2025-01-11 + 1 day = 2025-01-12
+revised_end_date = 2025-01-20 // from revised_start_date + revised_duration = 2025-01-12 + 8 days = 2025-01-20
+revised_duration = 8
+after
+row_index = 8
+predecessor = "7FS" , the predecessor 7FS has the 7th rowindex end date after date + 1 day = 2025-01-12 + 1 day = 2025-01-13 , the predecossor row is above the row_index = 7.
+// applicable for changeing the revised_start_date and revised_end_date based on the revised_duration
+revised_start_date = 2025-01-13 // means 7FS = 7th row updated end date after date + 1 day = 2025-01-12 + 1 day = 2025-01-13 
+revised_end_date = 2025-01-21 // from revised_start_date + revised_duration = 2025-01-13 + 8 days = 2025-01-21
+revised_duration = 8
+
+row_index = 9
+predecessor = "2FS" , the predecessor 2FS has the 2nd rowindex end date after date + 1 day = 2025-01-12 + 1 day = 2025-01-13 , the predecessor row is below the row_index = 7.
+//not applicable for changeing the revised_start_date and revised_end_date based on the revised_duration ,so omit this row.
+
+row_index = 10
+predecessor = "8FS+2" , the predecessor 8FS+2 has the 8th rowindex end date after date + 2 day = 2025-01-21  + 2 day = 2025-01-23 , the predecessor row is above the row_index = 7 .
+// applicable for changeing the revised_start_date and revised_end_date based on the revised_duration
+before
+revised_start_date = 2025-01-23 // means 8FS+2 = 8th row old end date 2025-01-20 after date + 2 day = 2025-01-21 + 2 day = 2025-01-23 
+revised_end_date = 2025-01-28 // from revised_start_date + revised_duration = 2025-01-23 + 5 days = 2025-01-28
+revised_duration = 5
+
+after
+revised_start_date = 2025-01-24 // means 8FS+2 = 8th row updated end date 2025-01-21 after date + 2 day = 2025-01-22 + 2 day = 2025-01-24 
+revised_end_date = 2025-01-29 // from revised_start_date + revised_duration = 2025-01-24 + 5 days = 2025-01-29
+revised_duration = 5
+
+like this so on,
+
+condition 2:
+
+In payload revised_duration , row_index given.
+
+{
+  "row_index": 7,
+  "revised_duration": 6
+}
+
+
+Find the row at row_index in the schedule structure.
+Update its revised_end_date using the provided revised_duration from the payload and calculate the lag (difference between revised_duration and the original duration from the structure).
+row_index = 7 , revised_duration = 6 from payload
+before
+revised_start_date = 2025-01-06 
+revised_end_date = 2025-01-11
+revised_duration = 5
+after
+row_index = 7 
+revised_start_date = 2025-01-06
+revised_end_date = 2025-01-12  // from revised_start_date + revised_duration = 2025-01-06 + 6 days = 2025-01-12
+revised_duration = 6
+For all rows above the given row_index (i.e., with higher index):
+If a row has a predecessor (FS/SS) starting from a row above the given row_index, update its dates using its own revised_duration from the structure.
+If a row has a predecessor starting from a row below the given row_index, do not update its dates and proceed to the next row.
+example:
+before
+row_index = 8
+predecessor = "7FS"
+revised_start_date = 2025-01-12 // means 7FS = 7th row end date after date + 1 day = 2025-01-11 + 1 day = 2025-01-12
+revised_end_date = 2025-01-20 // from revised_start_date + revised_duration = 2025-01-12 + 8 days = 2025-01-20
+revised_duration = 8
+after
+row_index = 8
+predecessor = "7FS" , the predecessor 7FS has the 7th rowindex end date after date + 1 day = 2025-01-12 + 1 day = 2025-01-13 , the predecossor row is above the row_index = 7.
+// applicable for changeing the revised_start_date and revised_end_date based on the revised_duration
+revised_start_date = 2025-01-13 // means 7FS = 7th row updated end date after date + 1 day = 2025-01-12 + 1 day = 2025-01-13 
+revised_end_date = 2025-01-21 // from revised_start_date + revised_duration = 2025-01-13 + 8 days = 2025-01-21
+revised_duration = 8
+
+row_index = 9
+predecessor = "2FS" , the predecessor 2FS has the 2nd rowindex end date after date + 1 day = 2025-01-12 + 1 day = 2025-01-13 , the predecessor row is below the row_index = 7.
+//not applicable for changeing the revised_start_date and revised_end_date based on the revised_duration ,so omit this row.
+
+row_index = 10
+predecessor = "8FS+2" , the predecessor 8FS+2 has the 8th rowindex end date after date + 2 day = 2025-01-21  + 2 day = 2025-01-23 , the predecessor row is above the row_index = 7 .
+// applicable for changeing the revised_start_date and revised_end_date based on the revised_duration
+before
+revised_start_date = 2025-01-23 // means 8FS+2 = 8th row old end date 2025-01-20 after date + 2 day = 2025-01-21 + 2 day = 2025-01-23 
+revised_end_date = 2025-01-28 // from revised_start_date + revised_duration = 2025-01-23 + 5 days = 2025-01-28
+revised_duration = 5
+
+after
+revised_start_date = 2025-01-24 // means 8FS+2 = 8th row updated end date 2025-01-21 after date + 2 day = 2025-01-22 + 2 day = 2025-01-24 
+revised_end_date = 2025-01-29 // from revised_start_date + revised_duration = 2025-01-24 + 5 days = 2025-01-29
+revised_duration = 5
+
+like this so on,
+
+simultaneously update the needed metrics on row and do the calculation metrics.
+Update the needed metrics to have better performance & data accuracy & fast api response.
 

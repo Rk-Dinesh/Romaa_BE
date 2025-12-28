@@ -91,6 +91,7 @@ const ScheduleLiteSchema = new Schema({
           lag: Number,
           status: String,
           predecessor: String,
+          predecessor_actual: String,
           successor: String,
 
           // A. Daily Logs: The raw history of every update.
@@ -118,6 +119,7 @@ const ScheduleLiteSchema = new Schema({
               lag: Number,
               status: String,
               predecessor: String,
+              predecessor_actual: String,
               successor: String,
 
               // A. Daily Logs: The raw history of every update.
