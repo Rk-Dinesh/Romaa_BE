@@ -1000,7 +1000,7 @@ class ScheduleLiteService {
         // Force parse as Dates
         const start = new Date(task.revised_start_date);
         const end = new Date(task.revised_end_date);
-        
+
         // Safety check
         if (start.getTime() > end.getTime()) return;
 
@@ -1027,14 +1027,14 @@ class ScheduleLiteService {
 
         const totalQty = Number(task.quantity) || 0;
         const totalDuration = Number(task.revised_duration) || 1;
-        
+
         // Linear distribution: Planned Quantity per day
         const dailyRate = totalQty / totalDuration;
 
         // 2. GENERATE NEW DAILY LOGS & CALCULATE EXECUTED QTY
         const newDailyLogs = [];
         let totalExecutedQty = 0; // Initialize Executed Counter
-        
+
         let currentDate = new Date(Date.UTC(
             start.getUTCFullYear(),
             start.getUTCMonth(),
@@ -1056,9 +1056,9 @@ class ScheduleLiteService {
             totalExecutedQty += actualQty;
 
             newDailyLogs.push({
-                date: new Date(currentDate), 
-                quantity: actualQty,         
-                status: actualQty > 0 ? "working" : "working" 
+                date: new Date(currentDate),
+                quantity: actualQty,
+                status: actualQty > 0 ? "working" : "working"
             });
 
             // Increment by 1 day in UTC
@@ -1070,7 +1070,7 @@ class ScheduleLiteService {
         // --- UPDATE TASK LEVEL TOTALS ---
         task.executed_quantity = parseFloat(totalExecutedQty.toFixed(2));
         // Balance can be negative if over-executed, that's normal in tracking
-        task.balance_quantity = parseFloat((totalQty - totalExecutedQty).toFixed(2)); 
+        task.balance_quantity = parseFloat((totalQty - totalExecutedQty).toFixed(2));
 
         // 3. HIERARCHY CALCULATION (Month -> Fixed 4 Weeks)
         const monthMap = new Map();
@@ -1078,12 +1078,12 @@ class ScheduleLiteService {
 
         newDailyLogs.forEach(dayLog => {
             const dateObj = dayLog.date;
-            
-            const year = dateObj.getUTCFullYear();
-            const monthIndex = dateObj.getUTCMonth(); 
-            const dayNum = dateObj.getUTCDate();      
 
-            const monthKey = `${String(monthIndex + 1).padStart(2, '0')}-${year}`; 
+            const year = dateObj.getUTCFullYear();
+            const monthIndex = dateObj.getUTCMonth();
+            const dayNum = dateObj.getUTCDate();
+
+            const monthKey = `${String(monthIndex + 1).padStart(2, '0')}-${year}`;
             const monthName = monthNames[monthIndex];
 
             // Initialize Month Bucket
@@ -1110,7 +1110,7 @@ class ScheduleLiteService {
             if (dayNum <= 7) weekKey = "firstweek";
             else if (dayNum <= 14) weekKey = "secondweek";
             else if (dayNum <= 21) weekKey = "thirdweek";
-            else weekKey = "fourthweek"; 
+            else weekKey = "fourthweek";
 
             // Add PLANNED rate
             mData.weeks[weekKey].planned += dailyRate;
@@ -1266,16 +1266,19 @@ class ScheduleLiteService {
             const { row_index, predecessor, revised_duration } = payload;
             const targetRowIndex = Number(row_index);
 
+            // 1. Fetch the Structure (This loads L1, L2, L3, and L4 stubs)
             const tenderDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
             if (!tenderDoc) throw new Error("Tender not found.");
 
             const flatNodes = this.flattenStructure(tenderDoc.structure);
 
-            // 3. POPULATE MISSING DATA (Hybrid)
+            // 2. Identify L4 Leaf Nodes that need external data
+            // (L2 and L3 nodes usually have their data embedded, so they are skipped here)
             const wbsIdsToFetch = flatNodes
                 .filter(n => n.wbs_id && (!n.revised_start_date && !n.start_date))
                 .map(n => n.wbs_id);
 
+            // 3. Populate L4 Data from TaskModel
             if (wbsIdsToFetch.length > 0) {
                 const taskDocs = await TaskModel.find({ tender_id, wbs_id: { $in: wbsIdsToFetch } }).session(session);
                 const dataMap = new Map();
@@ -1285,10 +1288,9 @@ class ScheduleLiteService {
                     if (dataMap.has(node.wbs_id)) {
                         const fullData = dataMap.get(node.wbs_id);
 
-                        // CRITICAL: Copy Daily Array & Metrics so they are preserved
+                        // Merge Data for Calculation
                         node.daily = fullData.daily;
                         node.schedule_data = fullData.schedule_data;
-
                         node.predecessor = fullData.predecessor;
                         node.duration = fullData.duration;
                         node.revised_duration = fullData.revised_duration;
@@ -1298,14 +1300,17 @@ class ScheduleLiteService {
                         node.revised_end_date = fullData.revised_end_date;
                         node.description = fullData.description;
                         node.quantity = fullData.quantity;
+
+                        // Store ref for Saving (Only for L4)
                         node._taskDoc = fullData;
                     }
                 });
             }
 
-            // 4. MAP & INITIALIZE FALLBACKS
+            // 4. Create Fast Lookup Map
             const fullTaskMap = new Map();
             flatNodes.forEach(node => {
+                // Initialize fallback dates for any node (L2, L3, or L4)
                 if (!node.revised_start_date && node.start_date) {
                     node.revised_start_date = new Date(node.start_date);
                 }
@@ -1321,7 +1326,7 @@ class ScheduleLiteService {
             let isTargetUpdated = false;
 
             // ====================================================
-            // PHASE 1: TARGET UPDATE
+            // PHASE 1: TARGET UPDATE (Works for L2, L3, L4)
             // ====================================================
 
             if (predecessor !== undefined) {
@@ -1336,20 +1341,22 @@ class ScheduleLiteService {
 
                         let refDate = predInfo.type === 'SS' ? new Date(pStart) : new Date(pEnd);
                         let offset = predInfo.lag;
-                        if (predInfo.type === 'FS') offset += 1;
+                        if (predInfo.type === 'FS') offset += 1; // FS adds 1 day gap by default
 
                         const newStart = addDays(refDate, offset);
                         targetNode.revised_start_date = newStart;
 
-                        // INCLUSIVE LOGIC: End = Start + Duration - 1
+                        // INCLUSIVE DURATION LOGIC (Start + Duration - 1)
                         const duration = targetNode.revised_duration || 1;
                         targetNode.revised_end_date = addDays(newStart, Math.max(0, duration - 1));
+
                         isTargetUpdated = true;
                     }
                 }
             } else if (revised_duration !== undefined) {
                 const newDuration = Number(revised_duration);
                 targetNode.revised_duration = newDuration;
+
                 if (targetNode.revised_start_date) {
                     targetNode.revised_end_date = addDays(new Date(targetNode.revised_start_date), Math.max(0, newDuration - 1));
                     isTargetUpdated = true;
@@ -1357,18 +1364,22 @@ class ScheduleLiteService {
             }
 
             // ====================================================
-            // PHASE 2: CASCADE
+            // PHASE 2: CASCADE & SAVE
             // ====================================================
 
             const bulkOps = [];
 
             if (isTargetUpdated) {
+                // 1. Recalculate Metrics for Target
+                // works for L3 because L3 objects in memory have 'daily' and 'quantity'
                 this.recalculateTaskMetrics(targetNode);
 
+                // Only add to BulkOps if it's an L4 Task linked to TaskModel
                 if (targetNode._taskDoc) {
                     bulkOps.push(this.createBulkOp(targetNode));
                 }
 
+                // 2. Cascade Changes Downstream
                 for (let i = 0; i < flatNodes.length; i++) {
                     const currentNode = flatNodes[i];
 
@@ -1395,15 +1406,15 @@ class ScheduleLiteService {
                         const duration = currentNode.revised_duration || 1;
                         const newEnd = addDays(newStart, Math.max(0, duration - 1));
 
+                        // Compare Dates (Tolerance > 1 sec)
                         const currentStartMs = currentNode.revised_start_date ? new Date(currentNode.revised_start_date).getTime() : 0;
-
-                        // Tolerance Check (> 1 sec diff)
                         if (Math.abs(newStart.getTime() - currentStartMs) > 1000) {
                             currentNode.revised_start_date = newStart;
                             currentNode.revised_end_date = newEnd;
 
                             this.recalculateTaskMetrics(currentNode);
 
+                            // Add to BulkOps ONLY if it's an L4 node
                             if (currentNode._taskDoc) {
                                 bulkOps.push(this.createBulkOp(currentNode));
                             }
@@ -1411,10 +1422,15 @@ class ScheduleLiteService {
                     }
                 }
 
+                // 3. Save L4 Nodes (TaskModel)
                 if (bulkOps.length > 0) {
                     await TaskModel.bulkWrite(bulkOps, { session });
                 }
 
+                // 4. Save L1/L2/L3 Nodes (ScheduleLiteModel)
+                // Since 'targetNode' (Row 3) is a reference to an object inside 'tenderDoc.structure',
+                // modifying it above automatically updated 'tenderDoc'.
+                // We just need to tell Mongoose the structure changed.
                 tenderDoc.markModified('structure');
                 await tenderDoc.save({ session });
             }
@@ -1431,7 +1447,7 @@ class ScheduleLiteService {
         }
     }
 
-    // --- API 3: Bulk Update Daily Quantities ---
+    // --- API 3: Bulk Update Daily Quantities (Supports L2, L3, L4) ---
     // Payload: { updates: [ { row_index: 7, date: "2026-01-06", quantity: 5 }, { row_index: 10, date: "2026-02-01", quantity: 10 }, ... ] }
     static async bulkUpdateDailyQuantities(tender_id, payload) {
         const session = await mongoose.startSession();
@@ -1439,7 +1455,7 @@ class ScheduleLiteService {
 
         try {
             console.log("--- START BULK DAILY UPDATE ---");
-            const { updates } = payload; // Expecting an array of updates
+            const { updates } = payload; 
 
             if (!Array.isArray(updates) || updates.length === 0) {
                 throw new Error("Invalid payload: 'updates' array is required.");
@@ -1450,38 +1466,45 @@ class ScheduleLiteService {
             if (!tenderDoc) throw new Error("Tender not found.");
 
             const flatNodes = this.flattenStructure(tenderDoc.structure);
-            
-            // Create a Map for fast lookup: row_index -> node
             const nodesMap = new Map();
             flatNodes.forEach(n => nodesMap.set(n.row_index, n));
 
-            // 2. Identify Unique Rows needed (to minimize DB calls)
+            // 2. Identify Unique Rows needed
             const uniqueRowIndices = [...new Set(updates.map(u => Number(u.row_index)))];
             const nodesToUpdate = [];
 
-            // 3. Populate Data for relevant rows
-            // Gather WBS IDs for fetching
+            // 3. Populate Data (Hybrid)
+            // Identify L4 nodes that need fetching from TaskModel (Skip L2/L3 as they have data)
             const wbsIdsToFetch = uniqueRowIndices
                 .map(idx => nodesMap.get(idx))
-                .filter(node => node && node.wbs_id) // Only valid nodes with IDs
+                .filter(node => node && node.wbs_id && !node.daily) // Only fetch if daily is missing (L4)
                 .map(node => node.wbs_id);
 
-            // Fetch actual data from TaskModel
-            const taskDocs = await TaskModel.find({ tender_id, wbs_id: { $in: wbsIdsToFetch } }).session(session);
-            const taskDocMap = new Map();
-            taskDocs.forEach(doc => taskDocMap.set(doc.wbs_id, doc));
+            // Fetch L4 data
+            let taskDocMap = new Map();
+            if (wbsIdsToFetch.length > 0) {
+                const taskDocs = await TaskModel.find({ tender_id, wbs_id: { $in: wbsIdsToFetch } }).session(session);
+                taskDocs.forEach(doc => taskDocMap.set(doc.wbs_id, doc));
+            }
 
-            // Merge data into our memory nodes
+            // Prepare nodes for update (Merge if L4, Init if L3)
             uniqueRowIndices.forEach(rowIndex => {
                 const node = nodesMap.get(rowIndex);
-                if (node && taskDocMap.has(node.wbs_id)) {
-                    const fullData = taskDocMap.get(node.wbs_id);
-                    node.daily = fullData.daily || [];
-                    node.quantity = fullData.quantity;
-                    node.revised_duration = fullData.revised_duration;
-                    node.revised_start_date = fullData.revised_start_date;
-                    node.revised_end_date = fullData.revised_end_date;
-                    node._taskDoc = fullData; // Mark for saving
+                if (node) {
+                    if (node.wbs_id && taskDocMap.has(node.wbs_id)) {
+                        // CASE 1: L4 Task (Merge External Data)
+                        const fullData = taskDocMap.get(node.wbs_id);
+                        node.daily = fullData.daily || [];
+                        node.schedule_data = fullData.schedule_data;
+                        node.quantity = fullData.quantity;
+                        node.revised_duration = fullData.revised_duration;
+                        node.revised_start_date = fullData.revised_start_date;
+                        node.revised_end_date = fullData.revised_end_date;
+                        node._taskDoc = fullData; 
+                    } else {
+                        // CASE 2: L2/L3 Node (Ensure array exists)
+                        if (!node.daily) node.daily = [];
+                    }
                     nodesToUpdate.push(node);
                 }
             });
@@ -1491,16 +1514,21 @@ class ScheduleLiteService {
                 const { row_index, date, quantity } = update;
                 const node = nodesMap.get(Number(row_index));
 
-                if (node && node.daily) {
-                    const updateDate = new Date(date);
-                    // Use UTC Key for matching
-                    const updateKey = updateDate.toISOString().split('T')[0];
+                if (node) {
+                    // --- DATE FIX: Force Input to UTC Midnight ---
+                    // Handles "2026-01-2" or "2026-01-02" correctly
+                    const d = new Date(date);
+                    const utcDate = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+                    const updateKey = utcDate.toISOString().split('T')[0]; // Safe UTC Key
+                    
                     const newQuantity = Number(quantity);
 
                     let entryFound = false;
                     node.daily.forEach(log => {
+                        // Compare against existing logs (convert them to UTC key)
                         const logDate = new Date(log.date);
                         const logKey = logDate.toISOString().split('T')[0];
+                        
                         if (logKey === updateKey) {
                             log.quantity = newQuantity;
                             log.status = newQuantity > 0 ? "working" : log.status;
@@ -1510,7 +1538,7 @@ class ScheduleLiteService {
 
                     if (!entryFound) {
                         node.daily.push({
-                            date: updateDate,
+                            date: utcDate, // Save strictly as UTC
                             quantity: newQuantity,
                             status: "working",
                             remarks: "Bulk Upload"
@@ -1523,9 +1551,9 @@ class ScheduleLiteService {
             const bulkOps = [];
             
             nodesToUpdate.forEach(node => {
-                // This recalculates the hierarchy based on the modified 'daily' array
-                this.recalculateTaskMetrics(node);
+                this.recalculateTaskMetrics(node); // Updates executed/balance/schedule_data
 
+                // If L4, add to BulkOps
                 if (node._taskDoc) {
                     bulkOps.push(this.createBulkOp(node));
                 }
@@ -1533,11 +1561,12 @@ class ScheduleLiteService {
 
             // 6. Execute DB Updates
             if (bulkOps.length > 0) {
-                console.log(`💾 Saving ${bulkOps.length} updated tasks...`);
+                console.log(`💾 Saving ${bulkOps.length} L4 tasks...`);
                 await TaskModel.bulkWrite(bulkOps, { session });
             }
 
-            console.log("💾 Saving Structure...");
+            // ALWAYS Save Structure (Handles L2/L3 updates + L4 references)
+            console.log("💾 Saving ScheduleLite Structure...");
             tenderDoc.markModified('structure');
             await tenderDoc.save({ session });
 
@@ -1546,7 +1575,7 @@ class ScheduleLiteService {
 
             return { 
                 success: true, 
-                message: `Successfully updated ${updates.length} entries across ${nodesToUpdate.length} rows.` 
+                message: `Updated ${updates.length} quantities.` 
             };
 
         } catch (error) {
