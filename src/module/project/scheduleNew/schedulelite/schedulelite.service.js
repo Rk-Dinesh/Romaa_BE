@@ -919,6 +919,106 @@ class ScheduleLiteService {
         return scheduleDoc;
     }
 
+        static async getPopulatedScheduleDaily(tender_id) {
+        // 1. Fetch the Structure
+        const scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).lean();
+
+        if (!scheduleDoc) {
+            throw new Error("Schedule not found");
+        }
+
+        // 2. Extract ALL IDs
+        const allIdsToFetch = [];
+
+        scheduleDoc.structure.forEach(group => {
+            group.items.forEach(item => {
+                if (item.work_group_id) allIdsToFetch.push(item.work_group_id);
+
+                item.tasks.forEach(taskContainer => {
+                    if (Array.isArray(taskContainer.task_wbs_ids)) {
+                        const ids = taskContainer.task_wbs_ids.map(ref => ref.wbs_id);
+                        allIdsToFetch.push(...ids);
+                    }
+                });
+            });
+        });
+
+        // 3. Fetch Data (Excluding heavy fields from DB to save memory)
+        const taskDocuments = await TaskModel.find({
+            tender_id: tender_id,
+            wbs_id: { $in: allIdsToFetch }
+        })
+            .lean();
+
+        // 4. Create Lookup Map
+        const taskMap = new Map();
+        taskDocuments.forEach(doc => {
+            taskMap.set(doc.wbs_id, doc);
+        });
+
+        // 5. Re-assemble & CLEANUP
+        scheduleDoc.structure.forEach(group => {
+            group.items.forEach(item => {
+
+                // --- POPULATE LEVEL 2 (ITEM) ---
+                const fullItem = taskMap.get(item.work_group_id);
+                if (fullItem) {
+                    item.item_name = fullItem.description || item.item_name;
+                    item.unit = fullItem.unit;
+                    item.quantity = fullItem.quantity;
+                    item.executed_quantity = fullItem.executed_quantity;
+                    item.balance_quantity = fullItem.balance_quantity;
+                    item.start_date = fullItem.start_date;
+                    item.end_date = fullItem.end_date;
+                    item.revised_start_date = fullItem.revised_start_date;
+                    item.revised_end_date = fullItem.revised_end_date;
+                    item.duration = fullItem.duration;
+                    item.revised_duration = fullItem.revised_duration;
+                    item.lag = fullItem.lag;
+                    item.predecessor = fullItem.predecessor;
+                    item.predecessor_actual = fullItem.predecessor_actual;
+                    
+                }
+
+                // --- POPULATE LEVEL 4 (TASKS) ---
+                item.tasks.forEach(taskContainer => {
+
+
+                    const populatedTasks = taskContainer.task_wbs_ids.map(ref => {
+                        const fullTask = taskMap.get(ref.wbs_id);
+                        if (!fullTask) return null;
+
+                        // Return clean object (No daily/schedule_data)
+                        return {
+                            wbs_id: fullTask.wbs_id,
+                            description: fullTask.description,
+                            unit: fullTask.unit,
+                            quantity: fullTask.quantity,
+                            executed_quantity: fullTask.executed_quantity,
+                            balance_quantity: fullTask.balance_quantity,
+                            row_index: ref.row_index,
+                            start_date: fullTask.start_date,
+                            end_date: fullTask.end_date,
+                            revised_start_date: fullTask.revised_start_date,
+                            revised_end_date: fullTask.revised_end_date,
+                            duration: fullTask.duration,
+                            revised_duration: fullTask.revised_duration,
+                            lag: fullTask.lag,
+                            predecessor: fullTask.predecessor,
+                            predecessor_actual: fullTask.predecessor_actual,
+                            daily: fullTask.daily,
+                            schedule_data: fullTask.schedule_data
+                        };
+                    }).filter(t => t !== null);
+
+                    taskContainer.task_wbs_ids = populatedTasks;
+                });
+            });
+        });
+
+        return scheduleDoc;
+    }
+
 
 
     // --- Helper: Calculate Start Date based on Parent & Rule ---

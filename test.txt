@@ -195,3 +195,24 @@ like this so on,
 simultaneously update the needed metrics on row and do the calculation metrics.
 Update the needed metrics to have better performance & data accuracy & fast api response.
 
+
+In Project Schedule , it has rows as row_index.
+I want an Action Button (edit) only on the row_index that the start_date,end_date and duration ,predecessor are not null.
+Onclick the button it should open a modal with the row_index data.row_index, item_name,unit,quantity,start_date,end_date as readonly.duration, predecessor as editable.
+ There user has an either to edit duration or predecessor.
+
+ on submit the payload should be like this:
+
+ if duration is edited
+{
+  "row_index": 7,
+  "revised_duration": 6
+}
+
+or
+if predecessor is edited
+{
+  "row_index": 7,
+  "predecessor": "8FS+2"
+}
+
