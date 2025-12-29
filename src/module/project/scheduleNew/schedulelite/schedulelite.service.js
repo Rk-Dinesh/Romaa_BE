@@ -1,16 +1,5 @@
 import mongoose from "mongoose";
-import {
-    addDays,
-    differenceInDays,
-    format,
-    eachDayOfInterval,
-    startOfWeek,
-    endOfWeek,
-    getISOWeek,
-    isSameMonth,
-    startOfMonth,
-    endOfMonth
-} from "date-fns";
+import { addDays } from "date-fns";
 import IdcodeServices from "../../../idcode/idcode.service.js";
 import ScheduleLiteModel from "./schedulelite.model.js";
 import TaskModel from "../task/task.model.js";
@@ -645,7 +634,7 @@ class ScheduleLiteService {
                     revEnd = endDate;
                     revDuration = duration;
                     lag = 0;
-                    
+
 
                     if (revStart && revEnd) {
                         daily = this.generateDailyEntries(revStart, revEnd);
@@ -1008,94 +997,125 @@ class ScheduleLiteService {
         };
     }
 
-    // --- Helper 3: Generate Metrics (Daily & Schedule Data) ---
-    // This logic distributes the Total Quantity over the Duration
+    // --- Helper 3: New Metrics Logic (Strict UTC) ---
     static recalculateTaskMetrics(task) {
         if (!task.revised_start_date || !task.revised_end_date || !task.revised_duration) return;
 
+        // Force parse as Dates
         const start = new Date(task.revised_start_date);
         const end = new Date(task.revised_end_date);
+
+        // Safety check
+        if (start.getTime() > end.getTime()) return;
+
         const totalQty = Number(task.quantity) || 0;
-        const duration = Number(task.revised_duration) || 1; // Avoid divide by zero
+        const totalDuration = Number(task.revised_duration) || 1;
 
-        // 1. Calculate Daily Quantity (Linear Distribution)
-        // Note: Real world logic might differ (e.g. S-Curve), but linear is standard default.
-        const dailyQty = totalQty / duration;
+        // Linear distribution: Quantity per day
+        const dailyRate = totalQty / totalDuration;
 
-        // 2. Generate Daily Logs
-        const days = eachDayOfInterval({ start, end });
-        const newDailyLogs = days.map(day => ({
-            date: day,
-            quantity: parseFloat(dailyQty.toFixed(2)), // Round to 2 decimals
-            status: "working",
-            remarks: "Auto-generated schedule update"
-        }));
+        // 1. Generate Daily Logs (Strict UTC Loop)
+        const newDailyLogs = [];
 
-        // Replace existing logs (or merge if you want to keep actual execution history)
-        // For PLANNING updates, we usually overwrite future logs.
+        // Create a runner date starting at UTC midnight of the start date
+        let currentDate = new Date(Date.UTC(
+            start.getUTCFullYear(),
+            start.getUTCMonth(),
+            start.getUTCDate()
+        ));
+
+        // Create stop condition at UTC midnight of end date
+        const endDateUTC = new Date(Date.UTC(
+            end.getUTCFullYear(),
+            end.getUTCMonth(),
+            end.getUTCDate()
+        ));
+
+        while (currentDate <= endDateUTC) {
+            newDailyLogs.push({
+                date: new Date(currentDate), // Clone the date
+                quantity: Number(dailyRate.toFixed(2)),
+                status: "working"
+            });
+            // Increment by 1 day in UTC
+            currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        }
+
         task.daily = newDailyLogs;
 
-        // 3. Generate Schedule Data (Monthly/Weekly Buckets)
-        const scheduleMap = new Map(); // Key: "MM-YYYY"
+        // 2. Hierarchy Calculation (Month -> Fixed 4 Weeks)
+        const monthMap = new Map();
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
-        newDailyLogs.forEach(log => {
-            const monthKey = format(log.date, "MM-yyyy");
-            const monthName = format(log.date, "MMMM");
-            const year = log.date.getFullYear();
+        newDailyLogs.forEach(dayLog => {
+            const dateObj = dayLog.date;
 
-            // Weekly Info
-            const weekStart = startOfWeek(log.date, { weekStartsOn: 1 }); // Monday start
-            const weekEnd = endOfWeek(log.date, { weekStartsOn: 1 });
-            const weekNum = getISOWeek(log.date);
-            const weekLabel = `W${weekNum}`;
+            // Extract UTC components explicitly
+            const year = dateObj.getUTCFullYear();
+            const monthIndex = dateObj.getUTCMonth(); // 0-11
+            const dayNum = dateObj.getUTCDate();      // 1-31
 
-            if (!scheduleMap.has(monthKey)) {
-                scheduleMap.set(monthKey, {
+            // Build Keys
+            const monthKey = `${String(monthIndex + 1).padStart(2, '0')}-${year}`; // "01-2026"
+            const monthName = monthNames[monthIndex];
+
+            // Initialize Month Bucket if new
+            if (!monthMap.has(monthKey)) {
+                monthMap.set(monthKey, {
                     month_name: monthName,
                     year: year,
                     month_key: monthKey,
-                    metrics: { achieved_quantity: 0, planned_quantity: 0, lag_quantity: 0 },
-                    weeksMap: new Map() // Helper map for weeks
+                    achieved: 0,
+                    planned: 0,
+                    weeks: {
+                        firstweek: { label: "Week 1", number: 1, achieved: 0, planned: 0 },
+                        secondweek: { label: "Week 2", number: 2, achieved: 0, planned: 0 },
+                        thirdweek: { label: "Week 3", number: 3, achieved: 0, planned: 0 },
+                        fourthweek: { label: "Week 4", number: 4, achieved: 0, planned: 0 }
+                    }
                 });
             }
 
-            const monthData = scheduleMap.get(monthKey);
+            const mData = monthMap.get(monthKey);
 
-            // Add Daily Qty to Month Total
-            monthData.metrics.planned_quantity += log.quantity;
+            // Identify Week Bucket (1-7, 8-14, 15-21, >21) based on UTC Day
+            let weekKey = "";
+            if (dayNum <= 7) weekKey = "firstweek";
+            else if (dayNum <= 14) weekKey = "secondweek";
+            else if (dayNum <= 21) weekKey = "thirdweek";
+            else weekKey = "fourthweek"; // All days > 21 go to 4th bucket
 
-            // Handle Weeks
-            if (!monthData.weeksMap.has(weekLabel)) {
-                monthData.weeksMap.set(weekLabel, {
-                    week_label: weekLabel,
-                    week_number: weekNum,
-                    start_date: weekStart,
-                    end_date: weekEnd,
-                    metrics: { achieved_quantity: 0, planned_quantity: 0, lag_quantity: 0 }
-                });
-            }
-            const weekData = monthData.weeksMap.get(weekLabel);
-            weekData.metrics.planned_quantity += log.quantity;
+            // Add daily rate to buckets
+            mData.weeks[weekKey].planned += dailyRate;
+            mData.planned += dailyRate;
         });
 
-        // Convert Maps back to Arrays for Schema
-        task.schedule_data = Array.from(scheduleMap.values()).map(m => ({
-            month_name: m.month_name,
-            year: m.year,
-            month_key: m.month_key,
-            metrics: {
-                ...m.metrics,
-                planned_quantity: parseFloat(m.metrics.planned_quantity.toFixed(2))
-            },
-            weeks: Array.from(m.weeksMap.values()).map(w => ({
-                ...w,
+        // Convert Map to Schema-compliant Array
+        task.schedule_data = Array.from(monthMap.values()).map(val => {
+            const weeksArray = Object.values(val.weeks).map(w => ({
+                week_label: w.label,
+                week_number: w.number,
                 metrics: {
-                    ...w.metrics,
-                    planned_quantity: parseFloat(w.metrics.planned_quantity.toFixed(2))
+                    achieved_quantity: Number(w.achieved.toFixed(2)),
+                    planned_quantity: Number(w.planned.toFixed(2)),
+                    lag_quantity: Number((w.planned - w.achieved).toFixed(2))
                 }
-            }))
-        }));
+            }));
+
+            return {
+                month_name: val.month_name,
+                year: val.year,
+                month_key: val.month_key,
+                metrics: {
+                    achieved_quantity: Number(val.achieved.toFixed(2)),
+                    planned_quantity: Number(val.planned.toFixed(2)),
+                    lag_quantity: Number((val.planned - val.achieved).toFixed(2))
+                },
+                weeks: weeksArray
+            };
+        });
     }
+
     static async updateRowSchedule(tender_id, payload) {
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -1147,7 +1167,6 @@ class ScheduleLiteService {
             // 4. MAP & INITIALIZE FALLBACKS
             const fullTaskMap = new Map();
             flatNodes.forEach(node => {
-                // Fallback: If revised missing, use original
                 if (!node.revised_start_date && node.start_date) {
                     node.revised_start_date = new Date(node.start_date);
                 }
@@ -1175,7 +1194,6 @@ class ScheduleLiteService {
                 if (predInfo) {
                     const parentNode = fullTaskMap.get(predInfo.targetRowIndex);
 
-                    // Allow parent fallback dates
                     const pStart = parentNode?.revised_start_date || parentNode?.start_date;
                     const pEnd = parentNode?.revised_end_date || parentNode?.end_date;
 
@@ -1225,14 +1243,12 @@ class ScheduleLiteService {
                 console.log(`✅ Target Updated. New End: ${targetNode.revised_end_date}`);
                 this.recalculateTaskMetrics(targetNode);
 
-                // If Target came from TaskModel (leaf), save it
                 if (targetNode._taskDoc) {
                     bulkOps.push(this.createBulkOp(targetNode));
                 }
 
                 let cascadeCount = 0;
 
-                // Loop Merged List
                 for (let i = 0; i < flatNodes.length; i++) {
                     const currentNode = flatNodes[i];
 
@@ -1240,7 +1256,6 @@ class ScheduleLiteService {
                     if (!currentNode.predecessor) continue;
 
                     const predInfo = this.parsePredecessorString(currentNode.predecessor);
-                    // Skip upstream dependency
                     if (!predInfo || predInfo.targetRowIndex < targetRowIndex) continue;
 
                     const parentNode = fullTaskMap.get(predInfo.targetRowIndex);
@@ -1248,8 +1263,6 @@ class ScheduleLiteService {
                     const pEnd = parentNode?.revised_end_date;
 
                     if (parentNode && pStart) {
-
-                        // Init current if missing
                         if (!currentNode.revised_start_date && currentNode.start_date) {
                             currentNode.revised_start_date = new Date(currentNode.start_date);
                         }
@@ -1264,7 +1277,6 @@ class ScheduleLiteService {
                         const duration = currentNode.revised_duration || 1;
                         const newEnd = addDays(newStart, Math.max(0, duration - 1));
 
-                        // Check Change
                         const currentStartMs = currentNode.revised_start_date ? new Date(currentNode.revised_start_date).getTime() : 0;
                         if (newStart.getTime() !== currentStartMs) {
                             currentNode.revised_start_date = newStart;
