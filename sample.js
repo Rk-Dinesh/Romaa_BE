@@ -151,7 +151,22 @@ import {
 import ScheduleLiteModel from "../models/ScheduleLiteModel.js"; 
 import TaskModel from "../models/TaskModel.js";
 
+import mongoose from "mongoose";
+import { 
+    addDays, 
+    format, 
+    eachDayOfInterval, 
+    getDate, 
+    getYear 
+} from "date-fns";
+import ScheduleLiteModel from "../models/ScheduleLiteModel.js"; 
+import TaskModel from "../models/TaskModel.js";
+
 class ScheduleService {
+
+    // ============================================================
+    // HELPERS
+    // ============================================================
 
     // --- Helper 1: Flatten Structure ---
     static flattenStructure(structure) {
@@ -180,48 +195,91 @@ class ScheduleService {
         };
     }
 
-    // --- Helper 3: New Metrics Logic (Adapted from your input) ---
+    // --- Helper 3: Metrics Logic (Strict UTC + Preserve Actuals) ---
     static recalculateTaskMetrics(task) {
         if (!task.revised_start_date || !task.revised_end_date || !task.revised_duration) return;
 
+        // Force parse as Dates
         const start = new Date(task.revised_start_date);
         const end = new Date(task.revised_end_date);
         
         // Safety check
-        if (start > end) return;
+        if (start.getTime() > end.getTime()) return;
+
+        // --- KEY HELPER: Generate consistent YYYY-MM-DD from any Date object ---
+        const getUTCKey = (dateInput) => {
+            const d = new Date(dateInput);
+            if (isNaN(d.getTime())) return null;
+            const year = d.getUTCFullYear();
+            const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+            const day = String(d.getUTCDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
+        // 1. MAP EXISTING DATA (Preserve Actuals)
+        const existingMap = new Map();
+        if (task.daily && Array.isArray(task.daily)) {
+            task.daily.forEach(d => {
+                const key = getUTCKey(d.date);
+                if (key) {
+                    existingMap.set(key, Number(d.quantity) || 0);
+                }
+            });
+        }
 
         const totalQty = Number(task.quantity) || 0;
         const totalDuration = Number(task.revised_duration) || 1;
         
-        // Linear distribution: Quantity per day
+        // Linear distribution: Planned Quantity per day
         const dailyRate = totalQty / totalDuration;
 
-        // 1. Generate Daily Logs
-        // Equivalent to your generateDailyEntries, but populating qty immediately
-        const days = eachDayOfInterval({ start, end });
+        // 2. GENERATE NEW DAILY LOGS
+        const newDailyLogs = [];
         
-        const newDailyLogs = days.map(day => ({
-            date: day,
-            // Store the daily rate so charts work, but rounded to 2 decimals
-            quantity: Number(dailyRate.toFixed(2)), 
-            status: "working"
-        }));
+        let currentDate = new Date(Date.UTC(
+            start.getUTCFullYear(),
+            start.getUTCMonth(),
+            start.getUTCDate()
+        ));
+
+        const endDateUTC = new Date(Date.UTC(
+            end.getUTCFullYear(),
+            end.getUTCMonth(),
+            end.getUTCDate()
+        ));
+
+        while (currentDate <= endDateUTC) {
+            const key = getUTCKey(currentDate);
+            // Use existing quantity if found (Actual), else 0 (Default)
+            const actualQty = existingMap.has(key) ? existingMap.get(key) : 0;
+
+            newDailyLogs.push({
+                date: new Date(currentDate), 
+                quantity: actualQty,         
+                status: actualQty > 0 ? "working" : "working" 
+            });
+
+            // Increment by 1 day in UTC
+            currentDate.setUTCDate(currentDate.getUTCDate() + 1);
+        }
 
         task.daily = newDailyLogs;
 
-        // 2. Hierarchy Calculation (Month -> Fixed 4 Weeks)
+        // 3. HIERARCHY CALCULATION (Month -> Fixed 4 Weeks)
         const monthMap = new Map();
+        const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
         newDailyLogs.forEach(dayLog => {
             const dateObj = dayLog.date;
             
-            // Format: MM-YYYY
-            const monthKey = format(dateObj, "MM-yyyy");
-            const monthName = format(dateObj, "MMMM");
-            const year = getYear(dateObj);
-            const dayNum = getDate(dateObj); // 1-31
+            const year = dateObj.getUTCFullYear();
+            const monthIndex = dateObj.getUTCMonth(); 
+            const dayNum = dateObj.getUTCDate();      
 
-            // Initialize Month Bucket if new
+            const monthKey = `${String(monthIndex + 1).padStart(2, '0')}-${year}`; 
+            const monthName = monthNames[monthIndex];
+
+            // Initialize Month Bucket
             if (!monthMap.has(monthKey)) {
                 monthMap.set(monthKey, {
                     month_name: monthName,
@@ -240,16 +298,20 @@ class ScheduleService {
 
             const mData = monthMap.get(monthKey);
 
-            // Identify Week Bucket (Your 1-7, 8-14 logic)
+            // Identify Week Bucket (UTC Day-based)
             let weekKey = "";
             if (dayNum <= 7) weekKey = "firstweek";
             else if (dayNum <= 14) weekKey = "secondweek";
             else if (dayNum <= 21) weekKey = "thirdweek";
-            else weekKey = "fourthweek"; // All days > 21 go to 4th bucket
+            else weekKey = "fourthweek"; 
 
-            // Add daily rate to buckets
+            // Add PLANNED rate
             mData.weeks[weekKey].planned += dailyRate;
             mData.planned += dailyRate;
+
+            // Add ACHIEVED quantity
+            mData.weeks[weekKey].achieved += dayLog.quantity;
+            mData.achieved += dayLog.quantity;
         });
 
         // Convert Map to Schema-compliant Array
@@ -297,26 +359,110 @@ class ScheduleService {
         };
     }
 
-    // --- MAIN API FUNCTION ---
+    // ============================================================
+    // API METHODS
+    // ============================================================
+
+    // --- API 1: Update Daily Quantity (Actuals) ---
+    static async updateDailyQuantity(tender_id, payload) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            console.log("--- START DAILY QUANTITY UPDATE ---");
+            const { row_index, date, quantity } = payload;
+            const updateDateStr = date; 
+            const newQuantity = Number(quantity);
+            const targetRowIndex = Number(row_index);
+
+            if (!updateDateStr) throw new Error("Date is required.");
+            if (isNaN(newQuantity)) throw new Error("Valid quantity is required.");
+
+            // Parse Date to UTC midnight
+            const updateDate = new Date(updateDateStr);
+            const updateKey = updateDate.toISOString().split('T')[0]; 
+
+            const tenderDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
+            if (!tenderDoc) throw new Error("Tender not found.");
+
+            const flatNodes = this.flattenStructure(tenderDoc.structure);
+            const targetNode = flatNodes.find(n => n.row_index === targetRowIndex);
+
+            if (!targetNode) throw new Error(`Row ${targetRowIndex} not found.`);
+
+            // Hybrid Populate
+            if (targetNode.wbs_id) {
+                const taskDoc = await TaskModel.findOne({ tender_id, wbs_id: targetNode.wbs_id }).session(session);
+                if (taskDoc) {
+                    targetNode.daily = taskDoc.daily;
+                    targetNode.quantity = taskDoc.quantity;
+                    targetNode.revised_duration = taskDoc.revised_duration;
+                    targetNode.revised_start_date = taskDoc.revised_start_date;
+                    targetNode.revised_end_date = taskDoc.revised_end_date;
+                    targetNode._taskDoc = taskDoc;
+                }
+            }
+
+            // Update Entry
+            let entryFound = false;
+            if (!targetNode.daily) targetNode.daily = [];
+
+            targetNode.daily.forEach(log => {
+                const logDate = new Date(log.date);
+                const logKey = logDate.toISOString().split('T')[0];
+                if (logKey === updateKey) {
+                    log.quantity = newQuantity;
+                    log.status = newQuantity > 0 ? "working" : log.status;
+                    entryFound = true;
+                }
+            });
+
+            if (!entryFound) {
+                targetNode.daily.push({
+                    date: updateDate,
+                    quantity: newQuantity,
+                    status: "working",
+                    remarks: "Manual Update"
+                });
+            }
+
+            // Recalculate Aggregates
+            this.recalculateTaskMetrics(targetNode);
+
+            // Save
+            if (targetNode._taskDoc) {
+                await TaskModel.bulkWrite([this.createBulkOp(targetNode)], { session });
+            }
+            tenderDoc.markModified('structure');
+            await tenderDoc.save({ session });
+
+            await session.commitTransaction();
+            session.endSession();
+            return { success: true, message: "Daily quantity updated." };
+
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            throw error;
+        }
+    }
+
+    // --- API 2: Update Row Schedule (Predecessors/Duration) ---
     static async updateRowSchedule(tender_id, payload) {
         const session = await mongoose.startSession();
         session.startTransaction();
 
         try {
-            console.log("--- START HYBRID UPDATE ---");
-            console.log("Payload:", JSON.stringify(payload));
-
+            console.log("--- START SCHEDULE UPDATE ---");
             const { row_index, predecessor, revised_duration } = payload;
             const targetRowIndex = Number(row_index);
 
-            // 1. FETCH STRUCTURE
             const tenderDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
             if (!tenderDoc) throw new Error("Tender not found.");
 
-            // 2. FLATTEN
             const flatNodes = this.flattenStructure(tenderDoc.structure);
 
-            // 3. POPULATE MISSING DATA
+            // 3. POPULATE MISSING DATA (Hybrid)
             const wbsIdsToFetch = flatNodes
                 .filter(n => n.wbs_id && (!n.revised_start_date && !n.start_date)) 
                 .map(n => n.wbs_id);
@@ -326,10 +472,14 @@ class ScheduleService {
                 const dataMap = new Map();
                 taskDocs.forEach(doc => dataMap.set(doc.wbs_id, doc));
 
-                // Merge Data
                 flatNodes.forEach(node => {
                     if (dataMap.has(node.wbs_id)) {
                         const fullData = dataMap.get(node.wbs_id);
+                        
+                        // CRITICAL: Copy Daily Array & Metrics so they are preserved
+                        node.daily = fullData.daily;
+                        node.schedule_data = fullData.schedule_data;
+
                         node.predecessor = fullData.predecessor;
                         node.duration = fullData.duration;
                         node.revised_duration = fullData.revised_duration;
@@ -339,7 +489,7 @@ class ScheduleService {
                         node.revised_end_date = fullData.revised_end_date;
                         node.description = fullData.description;
                         node.quantity = fullData.quantity;
-                        node._taskDoc = fullData; // Mark for saving back to TaskModel
+                        node._taskDoc = fullData; 
                     }
                 });
             }
@@ -357,9 +507,7 @@ class ScheduleService {
             });
 
             const targetNode = fullTaskMap.get(targetRowIndex);
-            if (!targetNode) {
-                throw new Error(`Row ${targetRowIndex} not found.`);
-            }
+            if (!targetNode) throw new Error(`Row ${targetRowIndex} not found.`);
 
             let isTargetUpdated = false;
 
@@ -367,12 +515,10 @@ class ScheduleService {
             // PHASE 1: TARGET UPDATE
             // ====================================================
 
-            // Condition 1: Predecessor
             if (predecessor !== undefined) {
                 const predInfo = this.parsePredecessorString(predecessor);
                 if (predInfo) {
                     const parentNode = fullTaskMap.get(predInfo.targetRowIndex);
-                    
                     const pStart = parentNode?.revised_start_date || parentNode?.start_date;
                     const pEnd = parentNode?.revised_end_date || parentNode?.end_date;
 
@@ -389,18 +535,13 @@ class ScheduleService {
                         // INCLUSIVE LOGIC: End = Start + Duration - 1
                         const duration = targetNode.revised_duration || 1;
                         targetNode.revised_end_date = addDays(newStart, Math.max(0, duration - 1));
-                        
                         isTargetUpdated = true;
                     }
                 }
-            } 
-            // Condition 2: Duration
-            else if (revised_duration !== undefined) {
+            } else if (revised_duration !== undefined) {
                 const newDuration = Number(revised_duration);
                 targetNode.revised_duration = newDuration;
-                
                 if (targetNode.revised_start_date) {
-                    // INCLUSIVE LOGIC: End = Start + Duration - 1
                     targetNode.revised_end_date = addDays(new Date(targetNode.revised_start_date), Math.max(0, newDuration - 1));
                     isTargetUpdated = true;
                 }
@@ -413,14 +554,11 @@ class ScheduleService {
             const bulkOps = [];
 
             if (isTargetUpdated) {
-                console.log(`✅ Target Updated. New End: ${targetNode.revised_end_date}`);
                 this.recalculateTaskMetrics(targetNode);
 
                 if (targetNode._taskDoc) {
                     bulkOps.push(this.createBulkOp(targetNode));
                 }
-
-                let cascadeCount = 0;
 
                 for (let i = 0; i < flatNodes.length; i++) {
                     const currentNode = flatNodes[i];
@@ -445,13 +583,13 @@ class ScheduleService {
                         if(predInfo.type === 'FS') offset += 1;
 
                         const newStart = addDays(refDate, offset);
-                        
-                        // INCLUSIVE LOGIC
                         const duration = currentNode.revised_duration || 1;
                         const newEnd = addDays(newStart, Math.max(0, duration - 1));
 
                         const currentStartMs = currentNode.revised_start_date ? new Date(currentNode.revised_start_date).getTime() : 0;
-                        if (newStart.getTime() !== currentStartMs) {
+                        
+                        // Tolerance Check (> 1 sec diff)
+                        if (Math.abs(newStart.getTime() - currentStartMs) > 1000) {
                             currentNode.revised_start_date = newStart;
                             currentNode.revised_end_date = newEnd;
                             
@@ -460,26 +598,20 @@ class ScheduleService {
                             if (currentNode._taskDoc) {
                                 bulkOps.push(this.createBulkOp(currentNode));
                             }
-                            cascadeCount++;
                         }
                     }
                 }
 
-                console.log(`✅ Cascaded update to ${cascadeCount} rows.`);
-
-                // 1. Save TaskModel Changes
                 if (bulkOps.length > 0) {
                     await TaskModel.bulkWrite(bulkOps, { session });
                 }
 
-                // 2. Save ScheduleLite Structure
                 tenderDoc.markModified('structure');
                 await tenderDoc.save({ session });
             }
 
             await session.commitTransaction();
             session.endSession();
-            
             return { success: true, message: "Schedule updated." };
 
         } catch (error) {

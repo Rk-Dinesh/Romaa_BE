@@ -934,7 +934,7 @@ static async updateDrawingQuantity(tender_id, item_code, drawing_quantity) {
     }
   },
 
-  
+
   {
     "status": true,
     "data": {
@@ -1128,3 +1128,11 @@ static async updateDrawingQuantity(tender_id, item_code, drawing_quantity) {
       ]
     }
   }
+
+  {
+  "row_index": 7,
+  //"revised_duration": 5,
+  "predecessor":"3FS+4"
+
+}
+

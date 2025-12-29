@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { getSchedule, getAllSchedule, uploadScheduleCSV, uploadScheduleDatesCSV, updateRowSchedule } from "./schedulelite.controller.js";
+import { getSchedule, getAllSchedule, uploadScheduleCSV, uploadScheduleDatesCSV, updateRowSchedule, updateDailyQuantity } from "./schedulelite.controller.js";
 
 const scheduleLiteRouter = Router();
 const upload = multer({ dest: "uploads/" });
@@ -10,5 +10,6 @@ scheduleLiteRouter.post("/upload-csv-dates", upload.single("file"), uploadSchedu
 scheduleLiteRouter.get("/get-schedule/:tender_id", getSchedule);
 scheduleLiteRouter.get("/get-all-schedule/:tender_id", getAllSchedule);
 scheduleLiteRouter.post("/update-schedule/:tender_id", updateRowSchedule);
+scheduleLiteRouter.post("/update-daily-quantity/:tender_id", updateDailyQuantity);
 
 export default scheduleLiteRouter;
