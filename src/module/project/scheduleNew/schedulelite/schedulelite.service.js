@@ -1000,7 +1000,7 @@ class ScheduleLiteService {
         // Force parse as Dates
         const start = new Date(task.revised_start_date);
         const end = new Date(task.revised_end_date);
-
+        
         // Safety check
         if (start.getTime() > end.getTime()) return;
 
@@ -1027,13 +1027,14 @@ class ScheduleLiteService {
 
         const totalQty = Number(task.quantity) || 0;
         const totalDuration = Number(task.revised_duration) || 1;
-
+        
         // Linear distribution: Planned Quantity per day
         const dailyRate = totalQty / totalDuration;
 
-        // 2. GENERATE NEW DAILY LOGS
+        // 2. GENERATE NEW DAILY LOGS & CALCULATE EXECUTED QTY
         const newDailyLogs = [];
-
+        let totalExecutedQty = 0; // Initialize Executed Counter
+        
         let currentDate = new Date(Date.UTC(
             start.getUTCFullYear(),
             start.getUTCMonth(),
@@ -1051,10 +1052,13 @@ class ScheduleLiteService {
             // Use existing quantity if found (Actual), else 0 (Default)
             const actualQty = existingMap.has(key) ? existingMap.get(key) : 0;
 
+            // Add to total executed
+            totalExecutedQty += actualQty;
+
             newDailyLogs.push({
-                date: new Date(currentDate),
-                quantity: actualQty,
-                status: actualQty > 0 ? "working" : "working"
+                date: new Date(currentDate), 
+                quantity: actualQty,         
+                status: actualQty > 0 ? "working" : "working" 
             });
 
             // Increment by 1 day in UTC
@@ -1063,18 +1067,23 @@ class ScheduleLiteService {
 
         task.daily = newDailyLogs;
 
+        // --- UPDATE TASK LEVEL TOTALS ---
+        task.executed_quantity = parseFloat(totalExecutedQty.toFixed(2));
+        // Balance can be negative if over-executed, that's normal in tracking
+        task.balance_quantity = parseFloat((totalQty - totalExecutedQty).toFixed(2)); 
+
         // 3. HIERARCHY CALCULATION (Month -> Fixed 4 Weeks)
         const monthMap = new Map();
         const monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
         newDailyLogs.forEach(dayLog => {
             const dateObj = dayLog.date;
-
+            
             const year = dateObj.getUTCFullYear();
-            const monthIndex = dateObj.getUTCMonth();
-            const dayNum = dateObj.getUTCDate();
+            const monthIndex = dateObj.getUTCMonth(); 
+            const dayNum = dateObj.getUTCDate();      
 
-            const monthKey = `${String(monthIndex + 1).padStart(2, '0')}-${year}`;
+            const monthKey = `${String(monthIndex + 1).padStart(2, '0')}-${year}`; 
             const monthName = monthNames[monthIndex];
 
             // Initialize Month Bucket
@@ -1101,7 +1110,7 @@ class ScheduleLiteService {
             if (dayNum <= 7) weekKey = "firstweek";
             else if (dayNum <= 14) weekKey = "secondweek";
             else if (dayNum <= 21) weekKey = "thirdweek";
-            else weekKey = "fourthweek";
+            else weekKey = "fourthweek"; 
 
             // Add PLANNED rate
             mData.weeks[weekKey].planned += dailyRate;
@@ -1150,7 +1159,9 @@ class ScheduleLiteService {
                         revised_duration: node.revised_duration,
                         predecessor: node.predecessor,
                         daily: node.daily,
-                        schedule_data: node.schedule_data
+                        schedule_data: node.schedule_data,
+                        executed_quantity: node.executed_quantity,
+                        balance_quantity: node.balance_quantity
                     }
                 }
             }
