@@ -965,7 +965,7 @@ class ScheduleLiteService {
 
         return calculatedDate;
     }
-    
+
     // --- Helper 1: Flatten Structure ---
     static flattenStructure(structure) {
         const flatList = [];
@@ -1416,6 +1416,132 @@ class ScheduleLiteService {
             await session.abortTransaction();
             session.endSession();
             console.error("❌ Error:", error);
+            throw error;
+        }
+    }
+
+    // --- API 3: Bulk Update Daily Quantities ---
+    // Payload: { updates: [ { row_index: 7, date: "2026-01-06", quantity: 5 }, { row_index: 10, date: "2026-02-01", quantity: 10 }, ... ] }
+    static async bulkUpdateDailyQuantities(tender_id, payload) {
+        const session = await mongoose.startSession();
+        session.startTransaction();
+
+        try {
+            console.log("--- START BULK DAILY UPDATE ---");
+            const { updates } = payload; // Expecting an array of updates
+
+            if (!Array.isArray(updates) || updates.length === 0) {
+                throw new Error("Invalid payload: 'updates' array is required.");
+            }
+
+            // 1. Fetch & Flatten Structure
+            const tenderDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
+            if (!tenderDoc) throw new Error("Tender not found.");
+
+            const flatNodes = this.flattenStructure(tenderDoc.structure);
+            
+            // Create a Map for fast lookup: row_index -> node
+            const nodesMap = new Map();
+            flatNodes.forEach(n => nodesMap.set(n.row_index, n));
+
+            // 2. Identify Unique Rows needed (to minimize DB calls)
+            const uniqueRowIndices = [...new Set(updates.map(u => Number(u.row_index)))];
+            const nodesToUpdate = [];
+
+            // 3. Populate Data for relevant rows
+            // Gather WBS IDs for fetching
+            const wbsIdsToFetch = uniqueRowIndices
+                .map(idx => nodesMap.get(idx))
+                .filter(node => node && node.wbs_id) // Only valid nodes with IDs
+                .map(node => node.wbs_id);
+
+            // Fetch actual data from TaskModel
+            const taskDocs = await TaskModel.find({ tender_id, wbs_id: { $in: wbsIdsToFetch } }).session(session);
+            const taskDocMap = new Map();
+            taskDocs.forEach(doc => taskDocMap.set(doc.wbs_id, doc));
+
+            // Merge data into our memory nodes
+            uniqueRowIndices.forEach(rowIndex => {
+                const node = nodesMap.get(rowIndex);
+                if (node && taskDocMap.has(node.wbs_id)) {
+                    const fullData = taskDocMap.get(node.wbs_id);
+                    node.daily = fullData.daily || [];
+                    node.quantity = fullData.quantity;
+                    node.revised_duration = fullData.revised_duration;
+                    node.revised_start_date = fullData.revised_start_date;
+                    node.revised_end_date = fullData.revised_end_date;
+                    node._taskDoc = fullData; // Mark for saving
+                    nodesToUpdate.push(node);
+                }
+            });
+
+            // 4. Apply Updates in Memory
+            updates.forEach(update => {
+                const { row_index, date, quantity } = update;
+                const node = nodesMap.get(Number(row_index));
+
+                if (node && node.daily) {
+                    const updateDate = new Date(date);
+                    // Use UTC Key for matching
+                    const updateKey = updateDate.toISOString().split('T')[0];
+                    const newQuantity = Number(quantity);
+
+                    let entryFound = false;
+                    node.daily.forEach(log => {
+                        const logDate = new Date(log.date);
+                        const logKey = logDate.toISOString().split('T')[0];
+                        if (logKey === updateKey) {
+                            log.quantity = newQuantity;
+                            log.status = newQuantity > 0 ? "working" : log.status;
+                            entryFound = true;
+                        }
+                    });
+
+                    if (!entryFound) {
+                        node.daily.push({
+                            date: updateDate,
+                            quantity: newQuantity,
+                            status: "working",
+                            remarks: "Bulk Upload"
+                        });
+                    }
+                }
+            });
+
+            // 5. Recalculate Metrics & Prepare Saves
+            const bulkOps = [];
+            
+            nodesToUpdate.forEach(node => {
+                // This recalculates the hierarchy based on the modified 'daily' array
+                this.recalculateTaskMetrics(node);
+
+                if (node._taskDoc) {
+                    bulkOps.push(this.createBulkOp(node));
+                }
+            });
+
+            // 6. Execute DB Updates
+            if (bulkOps.length > 0) {
+                console.log(`💾 Saving ${bulkOps.length} updated tasks...`);
+                await TaskModel.bulkWrite(bulkOps, { session });
+            }
+
+            console.log("💾 Saving Structure...");
+            tenderDoc.markModified('structure');
+            await tenderDoc.save({ session });
+
+            await session.commitTransaction();
+            session.endSession();
+
+            return { 
+                success: true, 
+                message: `Successfully updated ${updates.length} entries across ${nodesToUpdate.length} rows.` 
+            };
+
+        } catch (error) {
+            await session.abortTransaction();
+            session.endSession();
+            console.error("❌ Bulk Update Error:", error);
             throw error;
         }
     }
