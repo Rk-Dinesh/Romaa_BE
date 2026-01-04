@@ -2013,3 +2013,73 @@ static async updateDrawingQuantity(tender_id, item_code, drawing_quantity) {
       ]
     }
   }
+
+  {
+    "data": {
+        "_id": "695a4537ab4b7382b9dbba9e",
+        "requestId": "POR012",
+        "projectId": "TND021",
+        "title": "water",
+        "description": "123",
+        "siteDetails": {
+            "siteName": "rk",
+            "location": "chennai",
+            "siteIncharge": "A"
+        },
+        "requiredByDate": "2026-01-31T00:00:00.000Z",
+        "materialsRequired": [
+            {
+                "materialName": "Water",
+                "quantity": 123,
+                "unit": "Lit",
+                "_id": "695a4537ab4b7382b9dbba9f"
+            }
+        ],
+        "purchaseOrder": {
+            "issueDate": "2026-01-04T13:46:01.238Z",
+            "approvedAmount": 246,
+            "progressStatus": "In Progress"
+        },
+        "status": "Vendor Approved",
+        "requestDate": "2026-01-04T10:47:19.913Z",
+        "permittedVendor": [
+            {
+                "vendorId": "VEN001",
+                "vendorName": "Tata ",
+                "_id": "695a6e2756685bbec932e205"
+            },
+            {
+                "vendorId": "VEN002",
+                "vendorName": "HAckwit",
+                "_id": "695a6e2756685bbec932e206"
+            }
+        ],
+        "createdAt": "2026-01-04T10:47:19.921Z",
+        "updatedAt": "2026-01-04T13:46:01.243Z",
+        "__v": 0,
+        "selectedVendor": {
+
+                "vendorId": "VEN002",
+                "vendorName": "Ravikumar",
+                "contact": "9629683500",
+                "address": "Chennai, Chennai, Tamil Nadu, India - 60019",
+                "quoteItems": [
+                    {
+                        "materialName": "Water",
+                        "unit": "Lit",
+                        "quotedUnitRate": 2,
+                        "quantity": 123,
+                        "totalAmount": 246,
+                        "_id": "695a6e7356685bbec932e284"
+                    }
+                ],
+                "totalQuotedValue": 246,
+                "deliveryPeriod": "2026-01-06",
+                "approvalStatus": "Approved",
+                "_id": "695a6e7356685bbec932e283",
+                "quotationId": "QT-2PGX0",
+                "quotationDate": "2026-01-04T13:43:15.827Z"
+            
+        }
+    }
+}

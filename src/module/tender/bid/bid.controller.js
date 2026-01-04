@@ -3,6 +3,9 @@ import path from "path";
 import csvParser from "csv-parser";
 import BidService from "./bid.service.js";
 import { fileURLToPath } from 'url';
+import { createRequire } from "module";
+const require = createRequire(import.meta.url);
+const XLSX = require("xlsx");
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -71,6 +74,60 @@ export const removeItemFromBid = async (req, res) => {
   }
 };
 
+
+const parseFileToJson = (filePath, originalName) => {
+  return new Promise((resolve, reject) => {
+    const ext = path.extname(originalName).toLowerCase();
+    const rows = [];
+
+    // CASE 1: Excel Files (.xlsx, .xls)
+    if (ext === ".xlsx" || ext === ".xls") {
+      try {
+        const workbook = XLSX.readFile(filePath);
+        const sheetName = workbook.SheetNames[0]; // Read first sheet
+        const sheet = workbook.Sheets[sheetName];
+
+        // Convert to JSON
+        const rawData = XLSX.utils.sheet_to_json(sheet);
+
+        // Normalize Keys (Trim spaces)
+        const cleanedData = rawData.map(row => {
+          const newRow = {};
+          for (const [key, value] of Object.entries(row)) {
+            newRow[key.trim()] = value;
+          }
+          return newRow;
+        });
+
+        resolve(cleanedData);
+      } catch (err) {
+        reject(err);
+      }
+    }
+    // CASE 2: CSV Files
+    else if (ext === ".csv") {
+      fs.createReadStream(filePath)
+        .pipe(csvParser({
+          mapHeaders: ({ header }) => header.trim()
+        }))
+        .on("data", (row) => {
+          const trimmedRow = {};
+          for (const [key, value] of Object.entries(row)) {
+            const cleanKey = key.trim().replace(/^\uFEFF/, ''); // Remove BOM
+            trimmedRow[cleanKey] = typeof value === "string" ? value.trim() : value;
+          }
+          rows.push(trimmedRow);
+        })
+        .on("end", () => resolve(rows))
+        .on("error", (error) => reject(error));
+    }
+    // CASE 3: Unsupported
+    else {
+      reject(new Error("Unsupported file type. Please upload .csv, .xlsx, or .xls"));
+    }
+  });
+};
+
 export const uploadBidCSV = async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
@@ -82,33 +139,27 @@ export const uploadBidCSV = async (req, res, next) => {
     if (isNaN(parsedRevision)) {
       return res.status(400).json({ error: "revision must be a valid number" });
     }
-
-    const csvRows = [];
     const filePath = path.join(__dirname, "../../../../uploads", req.file.filename);
 
-    fs.createReadStream(filePath)
-      .pipe(csvParser())
-      .on("data", (row) => csvRows.push(row))
-      .on("end", async () => {
-        try {
-          const result = await BidService.bulkInsert(
-            csvRows,
-            created_by_user,
-            tender_id,
-            phase,
-            parsedRevision,
-            prepared_by,
-            approved_by
-          );
-          res.status(200).json({ status: true, message: "CSV data uploaded successfully", data: result });
-        } catch (error) {
-          next(error);
-        } finally {
-          fs.unlinkSync(filePath); // Delete the uploaded file
-        }
-      });
+    const dataRows = await parseFileToJson(filePath, req.file.originalname);
+
+    if (dataRows.length === 0) {
+      return res.status(400).json({ status: false, error: "File is empty" });
+    }
+
+    const result = await BidService.bulkInsert(dataRows, created_by_user, tender_id, phase, parsedRevision, prepared_by, approved_by);
+    res.status(200).json({ status: true, message: "CSV data uploaded successfully", data: result });
   } catch (error) {
-    next(error);
+    res.status(400).json({ status: false, error: error.message });
+  } finally {
+    // 5. Cleanup: Delete file after processing
+    if (filePath && fs.existsSync(filePath)) {
+      try {
+        fs.unlinkSync(filePath);
+      } catch (cleanupErr) {
+        console.error("Error deleting file:", cleanupErr);
+      }
+    }
   }
 };
 

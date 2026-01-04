@@ -6,6 +6,7 @@ import RAQuantityModel from "../rateanalyisquantites/rateanalysisquantities.mode
 import BidModel from "../bid/bid.model.js";
 import SiteOverheads from "../siteoverheads/siteoverhead.model.js";
 import TenderModel from "../tender/tender.model.js";
+import MaterialModel from "../materials/material.model.js";
 
 function groupLinesByCategory(lines) {
   // Group lines by 'category'
@@ -456,14 +457,14 @@ class WorkItemService {
     for (const rawRow of csvRows) {
       if (!rawRow) continue;
 
-      const itemNo = rawRow.itemNo != null ? String(rawRow.itemNo).trim() : "";
+      const itemNo = rawRow.ITEM_ID != null ? String(rawRow.ITEM_ID).trim() : "";
       if (!itemNo) continue;
 
       if (!boqById.has(itemNo)) {
         throw new Error(`ItemNo "${itemNo}" not found in BOQ. Please check your CSV upload.`);
       }
 
-      const category = rawRow.category != null ? String(rawRow.category).trim() : "";
+      const category = rawRow.CATEGORY != null ? String(rawRow.CATEGORY).trim() : "";
 
       let entry = grouped.get(itemNo);
       if (!entry) {
@@ -502,6 +503,8 @@ class WorkItemService {
       nmr: new Map()
     };
 
+    const materialBucket = new Map();
+
     // helper to map category to RA bucket name
     const categoryToBucket = (category) => {
       switch (category) {
@@ -518,14 +521,14 @@ class WorkItemService {
     for (const [itemNo, { mainRow, detailRows }] of grouped.entries()) {
       if (!mainRow) continue;
 
-      const working_quantity = Number(mainRow.working_quantity || 0);
-      const unit = mainRow.unit || null;
+      const working_quantity = Number(mainRow.WORKING_QUANTITY || 0);
+      const unit = mainRow.UNIT || null;
 
       // workItem text from BOQ; fallback to MAIN_ITEM description or generic label
       const boqItem = boqById.get(itemNo);
       const workItem =
         (boqItem?.description || "").trim() ||
-        (mainRow.description || "").trim() ||
+        (mainRow.DESCRIPTION || "").trim() ||
         `Item ${itemNo}`;
 
       const lines = [];
@@ -540,14 +543,14 @@ class WorkItemService {
 
       for (const rawRow of detailRows) {
         const category =
-          rawRow.category != null ? String(rawRow.category).trim() : "";
+          rawRow.CATEGORY != null ? String(rawRow.CATEGORY).trim() : "";
 
         const lineQuantity = Number(
-          rawRow.working_quantity != null
-            ? rawRow.working_quantity
-            : rawRow.quantity || 0
+          rawRow.WORKING_QUANTITY != null
+            ? rawRow.WORKING_QUANTITY
+            : rawRow.QUANTITY || 0
         );
-        const rate = Number(rawRow.rate || 0);
+        const rate = Number(rawRow.RATE || 0);
         const amount = lineQuantity * rate;
         const total_rate =
           working_quantity > 0
@@ -556,8 +559,8 @@ class WorkItemService {
 
         const line = {
           category,
-          description: rawRow.description || "",
-          unit: rawRow.unit || "",
+          description: rawRow.DESCRIPTION || "",
+          unit: rawRow.UNIT || "",
           quantity: lineQuantity,
           rate,
           amount,
@@ -572,11 +575,12 @@ class WorkItemService {
 
         // --- RAQuantity accumulation per line ---
         const bucketName = categoryToBucket(category);
+        const boqQty = Number(boqItem.quantity || 0);
+        // RA quantity for this item & line
+        const raQtyRaw = (lineQuantity / working_quantity) * boqQty;
+        const raQty = Number(raQtyRaw.toFixed(4));
         if (bucketName && boqItem && working_quantity > 0) {
-          const boqQty = Number(boqItem.quantity || 0);
-          // RA quantity for this item & line
-          const raQtyRaw = (lineQuantity / working_quantity) * boqQty;
-          const raQty = Number(raQtyRaw.toFixed(4));
+
 
           // composite key per description + unit + category
           const key = `${category}||${line.description}||${line.unit}`;
@@ -604,6 +608,43 @@ class WorkItemService {
           itemAgg.quantity.push(raQty);
           itemAgg.total_item_quantity += raQty;
         }
+
+        if (category === "MT-CM" || category === "MT-BL") {
+            const matKey = `${category}||${line.description}||${line.unit}`;
+
+            
+            let matAgg = materialBucket.get(matKey);
+            if (!matAgg) {
+              matAgg = {
+                item_description: line.description,
+                category: category, // Will be MT-CM or MT-BL
+                unit: line.unit,
+                quantity: [], // Array of numbers
+                total_item_quantity: 0,
+                unit_rate: rate,
+                total_amount: 0,
+                
+                // Initialize default fields required by schema
+                opening_stock: 0,
+                inward_history: [],
+                outward_history: [],
+                total_received_qty: 0,
+                total_issued_qty: 0,
+                current_stock_on_hand: 0,
+                pending_procurement_qty: 0
+              };
+              materialBucket.set(matKey, matAgg);
+            }
+            
+            matAgg.quantity.push(raQty);
+            matAgg.total_item_quantity += raQty;
+            // Recalculate total amount based on accumulated quantity
+            matAgg.total_amount = Number((matAgg.total_item_quantity * matAgg.unit_rate).toFixed(2));
+            
+            // Initial Pending Procurement = Total Budgeted (since nothing received yet)
+            matAgg.pending_procurement_qty = matAgg.total_item_quantity;
+          }
+        
       }
 
       // Round category rates to 2 decimals
@@ -845,7 +886,32 @@ class WorkItemService {
     }
     await raDoc.save();
 
-    // 8. Calculate summary values and update WorkItems summary
+    // 8. --- NEW: Save Materials ---
+    // Convert map values to array for MaterialModel
+    const materialItems = Array.from(materialBucket.values()).map(it => ({
+        ...it,
+        quantity: it.quantity.map(q => Number(q.toFixed(4))),
+        total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+        total_amount: Number(it.total_amount.toFixed(2)),
+        pending_procurement_qty: Number(it.total_item_quantity.toFixed(2))
+    }));
+
+    if (materialItems.length > 0) {
+        let matDoc = await MaterialModel.findOne({ tender_id });
+        if (matDoc) {
+            // Overwrite items or merge? Typically bulk import overwrites list for fresh calculation
+            matDoc.items = materialItems;
+        } else {
+            matDoc = new MaterialModel({
+                tender_id,
+                items: materialItems,
+                created_by_user: "ADMIN"
+            });
+        }
+        await matDoc.save();
+    }
+
+    // 9. Calculate summary values and update WorkItems summary
     if (boq) {
       // 1) zero_cost_total_amount & boq_total_amount from BOQ
       const zero_cost_total_amount = Number(boq.zero_cost_total_amount || 0);
@@ -1178,7 +1244,7 @@ class WorkItemService {
 
   //   return doc;
   // }
-  static async updateRateAnalysis(payload, tender_id) {
+static async updateRateAnalysis(payload, tender_id) {
 
     if (!tender_id) throw new Error("Tender ID is required");
 
@@ -1214,7 +1280,7 @@ class WorkItemService {
       }
     }
 
-    // 3. Build updated work_items + update BOQ, and in parallel accumulate RA quantities
+    // 3. Build updated work_items + update BOQ, and in parallel accumulate RA & Material quantities
     const work_items = [];
     let boq_total_amount = 0;
     let zero_cost_total_amount = 0;
@@ -1234,6 +1300,9 @@ class WorkItemService {
       contractor: new Map(),
       nmr: new Map()
     };
+
+    // --- NEW: Material Accumulator ---
+    const materialBucket = new Map();
 
     const categoryToBucket = (category) => {
       switch (category) {
@@ -1297,37 +1366,76 @@ class WorkItemService {
           categoryTotals[category] += total_rate;
         }
 
-        // --- RAQuantity accumulation per line ---
-        const bucketName = categoryToBucket(category);
-        if (bucketName && boqItem && working_quantity > 0) {
-          const boqQty = Number(boqItem.quantity || 0);
-          const raQtyRaw = (lineQuantity / working_quantity) * boqQty;
-          const raQty = Number(raQtyRaw.toFixed(4));
+        // --- Common Quantity Logic (RA + Materials) ---
+        if (boqItem && working_quantity > 0) {
+            const boqQty = Number(boqItem.quantity || 0);
+            const totalReqQtyRaw = (lineQuantity / working_quantity) * boqQty;
+            const totalReqQty = Number(totalReqQtyRaw.toFixed(4));
+            
+            // 1. RA Bucket Logic
+            const bucketName = categoryToBucket(category);
+            if (bucketName) {
+                const key = `${category}||${line.description}||${line.unit}`;
+                const bucket = raBuckets[bucketName];
 
-          const key = `${category}||${line.description}||${line.unit}`;
-          const bucket = raBuckets[bucketName];
+                let itemAgg = bucket.get(key);
+                if (!itemAgg) {
+                    itemAgg = {
+                        item_description: line.description,
+                        category,
+                        unit: line.unit,
+                        quantity: [],
+                        total_item_quantity: 0,
+                        unit_rate: rate,
+                        tax_percent: 0,
+                        escalation_percent: 0,
+                        tax_amount: 0,
+                        total_amount: 0,
+                        escalation_amount: 0,
+                        percentage_value_of_material: 0
+                    };
+                    bucket.set(key, itemAgg);
+                }
 
-          let itemAgg = bucket.get(key);
-          if (!itemAgg) {
-            itemAgg = {
-              item_description: line.description,
-              category,
-              unit: line.unit,
-              quantity: [],
-              total_item_quantity: 0,
-              unit_rate: rate,
-              tax_percent: 0,
-              escalation_percent: 0,
-              tax_amount: 0,
-              total_amount: 0,
-              escalation_amount: 0,
-              percentage_value_of_material: 0
-            };
-            bucket.set(key, itemAgg);
-          }
+                itemAgg.quantity.push(totalReqQty);
+                itemAgg.total_item_quantity += totalReqQty;
+            }
 
-          itemAgg.quantity.push(raQty);
-          itemAgg.total_item_quantity += raQty;
+            // 2. --- NEW: Material Model Logic (Only MT-CM & MT-BL) ---
+            if (category === "MT-CM" || category === "MT-BL") {
+                const matKey = `${category}||${line.description}||${line.unit}`;
+                
+                let matAgg = materialBucket.get(matKey);
+                if (!matAgg) {
+                  matAgg = {
+                    item_description: line.description,
+                    category: category,
+                    unit: line.unit,
+                    quantity: [], 
+                    total_item_quantity: 0,
+                    unit_rate: rate,
+                    total_amount: 0,
+                    
+                    // Initialize default fields required by schema
+                    opening_stock: 0,
+                    inward_history: [],
+                    outward_history: [],
+                    total_received_qty: 0,
+                    total_issued_qty: 0,
+                    current_stock_on_hand: 0,
+                    pending_procurement_qty: 0
+                  };
+                  materialBucket.set(matKey, matAgg);
+                }
+                
+                matAgg.quantity.push(totalReqQty);
+                matAgg.total_item_quantity += totalReqQty;
+                // Recalculate total amount based on accumulated quantity
+                matAgg.total_amount = Number((matAgg.total_item_quantity * matAgg.unit_rate).toFixed(2));
+                
+                // Initial Pending Procurement = Total Budgeted
+                matAgg.pending_procurement_qty = matAgg.total_item_quantity;
+            }
         }
       }
 
@@ -1564,6 +1672,35 @@ class WorkItemService {
       console.error("Error saving RAQuantity:", err);
     }
 
+    // --- 7.5 NEW: Save MaterialModel ---
+    // Convert map values to array for MaterialModel
+    const materialItems = Array.from(materialBucket.values()).map(it => ({
+        ...it,
+        quantity: it.quantity.map(q => Number(q.toFixed(4))),
+        total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+        total_amount: Number(it.total_amount.toFixed(2)),
+        pending_procurement_qty: Number(it.total_item_quantity.toFixed(2)) // Default pending = total
+    }));
+
+    if (materialItems.length > 0) {
+        let matDoc = await MaterialModel.findOne({ tender_id: tender_id });
+        if (matDoc) {
+            matDoc.items = materialItems;
+        } else {
+            matDoc = new MaterialModel({
+                tender_id: tender_id,
+                items: materialItems,
+                created_by_user: "ADMIN"
+            });
+        }
+        try {
+            await matDoc.save();
+        } catch (err) {
+            console.error("Error saving MaterialModel:", err);
+        }
+    }
+
+
     // 8. Calculate summary values and update WorkItems summary
     if (boq) {
       // 1) zero_cost_total_amount & boq_total_amount from BOQ
@@ -1594,7 +1731,6 @@ class WorkItemService {
       // 8) risk_contingency & ho_overheads
       // Either keep as constants, args, or pick from another model (e.g., Bid)
       const risk_contingency = 0;
-
       const ho_overheads = 0;
 
       // 9) PBT

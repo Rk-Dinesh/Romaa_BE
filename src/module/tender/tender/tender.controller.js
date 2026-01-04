@@ -24,6 +24,15 @@ export const getAllTenders = async (req, res) => {
   }
 };
 
+export const getAllTendersId = async (req, res) => {
+  try {
+    const tenders = await TenderService.getAllTendersId();
+    res.status(200).json({ status: true, data: tenders });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 export const getTenderById = async (req, res) => {
   try {
     const tender = await TenderService.getTenderById(req.params.tender_id);

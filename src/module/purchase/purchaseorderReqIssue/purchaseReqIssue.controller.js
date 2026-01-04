@@ -35,6 +35,33 @@ export const getAllPurchaseByProjectId = async (req, res) => {
   }
 };
 
+export const getAllByNewRequest = async (req, res) => {
+  try {
+    const purchase = await PurchaseRequestService.getAllByNewRequest();
+    res.status(200).json({ data: purchase });
+  } catch (error) {
+    res.status(400).json({ message: 'Error fetching PurchaseRequests', error: error.message });
+  }
+};
+
+export const getAllByQuotationRequested = async (req, res) => {
+  try {
+    const purchase = await PurchaseRequestService.getAllByQuotationRequested();
+    res.status(200).json({ data: purchase });
+  } catch (error) {
+    res.status(400).json({ message: 'Error fetching PurchaseRequests', error: error.message });
+  }
+};
+
+export const getAllByQuotationApproved = async (req, res) => {
+  try {
+    const purchase = await PurchaseRequestService.getAllByQuotationApproved();
+    res.status(200).json({ data: purchase });
+  } catch (error) {
+    res.status(400).json({ message: 'Error fetching PurchaseRequests', error: error.message });
+  }
+};
+
 export const getAllPurchaseBySelectedVendor = async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -89,22 +116,46 @@ export const getVendorQuotationByQuotationId = async (req, res) => {
 export const approveVendorQuotation = async (req, res) => {
   try {
     const { purchaseRequestId } = req.params;
-    const { quotationId,status } = req.body;
+    const { quotationId } = req.body;
 
     if (!quotationId) return res.status(400).json({ message: 'quotationId is required' });
 
     const updatedPurchaseRequest = await PurchaseRequestService.approveVendorQuotation({
       purchaseRequestId,
       quotationId,
-      status
     });
 
     res.status(200).json({
       message: 'Vendor quotation approved and selectedVendor updated.',
       data: updatedPurchaseRequest,
+      success: true,
     });
   } catch (error) {
     res.status(400).json({ message: error.message });
+  }
+};
+
+export const rejectVendor = async (req, res) => {
+  try {
+    const { purchaseRequestId } = req.params; 
+    const { quotationId } = req.body;
+
+    if (!purchaseRequestId || !quotationId) {
+      return res.status(400).json({ success: false, message: "IDs required" });
+    }
+
+    const result = await PurchaseRequestService.rejectVendorQuotation({
+      purchaseRequestId,
+      quotationId,
+    });
+
+    res.status(200).json({
+      success: true,
+      message: "Vendor quotation rejected successfully.",
+      data: result,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
@@ -119,27 +170,49 @@ export const getAllByProjectIdSelectedVendorWithQuotation = async (req, res) => 
 };
 
 export const updateStatus = async (req, res) => {
-  const { requestId } = req.params;
-  const { status } = req.body;
-
   try {
-    const updated = await PurchaseRequestService.updateStatus(
-      requestId,
-      status
-    );
-    if (!updated) return res.status(404).json({ message: "Request not found" });
+    const { requestId } = req.params;
+    // Extract status and permittedVendor from body
+    const { status, permittedVendor } = req.body; 
 
-    res.json({ message: "Status updated successfully", data: updated });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    const result = await PurchaseRequestService.updateStatus(
+      requestId, 
+      status, 
+      permittedVendor
+    );
+
+    res.status(200).json({
+      success: true,
+      message: "Status and Vendors updated successfully",
+      data: result,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const updateStatusRequest = async (req, res) => {
+  try {
+    const { requestId } = req.params;
+    const { status } = req.body;
+
+    const result = await PurchaseRequestService.updateStatusRequest(requestId, status);
+
+    res.status(200).json({
+      success: true,
+      message: "Status updated successfully",
+      data: result,
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 // GET /getQuotationRequested
 export const getQuotationRequested = async (req, res) => {
   try {
-    const requests = await PurchaseRequestService.getQuotationRequested();
+    const { projectId, requestId } = req.params;
+    const requests = await PurchaseRequestService.getQuotationRequested(projectId, requestId);
     res.json({ data: requests });
   } catch (err) {
     console.error(err);
@@ -149,7 +222,8 @@ export const getQuotationRequested = async (req, res) => {
 
 export const getQuotationApproved = async (req, res) => {
   try {
-    const requests = await PurchaseRequestService.getQuotationApproved();
+    const { requestId } = req.params;
+    const requests = await PurchaseRequestService.getRequestWithApprovedQuotation(requestId);
     res.json({ data: requests });
   } catch (err) {
     console.error(err);

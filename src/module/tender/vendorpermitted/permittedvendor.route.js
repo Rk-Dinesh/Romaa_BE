@@ -13,7 +13,7 @@ const permittedrouter = Router();
 permittedrouter.post("/add", addPermittedVendors);
 
 // Get permitted vendors for a tender
-permittedrouter.get("/gettender/:tender_id", getPermittedVendors);
+permittedrouter.get("/getvendor/:tender_id", getPermittedVendors);
 
 // Update permitted vendor
 permittedrouter.put("/update/:tender_id/:vendor_id", updatePermittedVendor);

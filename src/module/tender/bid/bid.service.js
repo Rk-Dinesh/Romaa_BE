@@ -121,20 +121,20 @@ class BidService {
     try {
       // ---------- Prepare BID items (no item_code) ----------
       const items = csvRows.map((row) => {
-        const quantity = Number(row.quantity || 0);
-        const base_rate = Number(row.base_rate || 0);
-        const q_rate = Number(row.q_rate || 0);
-        const n_rate = Number(row.n_rate || 0);
+        const quantity = Number(row.QUANTITY || 0);
+        const base_rate = Number(row.BASE_RATE || 0);
+        const q_rate = Number(row.Q_RATE || 0);
+        const n_rate = Number(row.N_RATE || 0);
 
         const base_amount = Number((quantity * base_rate).toFixed(2));
         const q_amount = Number((quantity * q_rate).toFixed(2));
         const n_amount = Number((quantity * n_rate).toFixed(2));
 
         return {
-          item_id: row.item_id,
-          item_name: row.item_name,
-          description: row.description,
-          unit: row.unit,
+          item_id: row.ITEM_ID,
+          item_name: row.ITEM_NAME,
+          description: row.DESCRIPTION,
+          unit: row.UNIT,
           quantity,
           base_rate: Number(base_rate.toFixed(2)),
           q_rate: Number(q_rate.toFixed(2)),
@@ -148,11 +148,11 @@ class BidService {
 
       // ---------- DetailedEstimate update ----------
       const detailItems = csvRows.map((row) => {
-        const n_rate = Number(row.n_rate || 0);
+        const n_rate = Number(row.N_RATE || 0);
         return {
-        item_id: row.item_id,
-        item_name: row.item_name,
-        unit: row.unit,
+        item_id: row.ITEM_ID,
+        item_name: row.ITEM_NAME,
+        unit: row.UNIT,
         n_rate:Number(n_rate.toFixed(2)),  
       }
       });
@@ -175,20 +175,20 @@ class BidService {
 
       // ---------- BOQ creation / update ----------
       const boqItems = csvRows.map((row) => {
-        const quantity = Number(row.quantity || 0);
-        const n_rate = Number(row.n_rate || 0);
+        const quantity = Number(row.QUANTITY || 0);
+        const n_rate = Number(row.N_RATE || 0);
         const n_amount = Number((quantity * n_rate).toFixed(2));
 
         return {
-          item_id: row.item_id,
-          item_name: row.item_name,
-          description: row.description,
-          specifications: row.specifications,
-          unit: row.unit,
+          item_id: row.ITEM_ID,
+          item_name: row.ITEM_NAME,
+          description: row.DESCRIPTION,
+          specifications: row.SPECIFICATIONS,
+          unit: row.UNIT,
           quantity,
           n_rate: Number(n_rate.toFixed(2)),
           n_amount,
-          remarks: row.remarks,
+          remarks: row.REMARKS,
         };
       });
 

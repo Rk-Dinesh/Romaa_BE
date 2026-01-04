@@ -24,6 +24,15 @@ const PurchaseRequestSchema = new mongoose.Schema(
       },
     ],
 
+    permittedVendor: [
+      {
+        vendorId: String,
+        vendorName: String,
+        vendorContact: String,
+        vendorAddress: String,
+      },
+    ],
+
     // Vendor quotations section with custom quotation ID // vendorId default , delivery period,
     vendorQuotations: [
       new mongoose.Schema(
@@ -103,7 +112,7 @@ const PurchaseRequestSchema = new mongoose.Schema(
         "Quotation Requested",
         "Quotation Received",
         "Vendor Approved",
-        "Work Order Issued",
+        "Purchase Order Issued",
         "Completed",
       ],
       default: "Request Raised",

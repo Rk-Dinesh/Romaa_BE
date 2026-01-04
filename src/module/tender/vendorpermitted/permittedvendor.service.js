@@ -35,7 +35,7 @@ class VendorPermittedService {
    * Get permitted vendors for a tender (with vendor details populated)
    */
   static async getPermittedVendorsByTender(tender_id) {
-    const record = await VendorPermittedModel.findOne({ tender_id });
+    const record = await VendorPermittedModel.findOne({ tender_id }).select("listOfPermittedVendors.vendor_id listOfPermittedVendors.vendor_name ");
     if (!record) return null;
 
     const populatedList = await Promise.all(
@@ -43,12 +43,15 @@ class VendorPermittedService {
         const vendorDetails = await VendorModel.findOne({ vendor_id: pv.vendor_id }).lean();
         return {
           ...pv.toObject(),
-          vendor_details: vendorDetails || null
+         contact_phone: vendorDetails.contact_phone,
+         contact_email: vendorDetails.email,
+         contact_person: vendorDetails.contact_person,
+         
         };
       })
     );
 
-    return { tender_id: record.tender_id, permitted_vendors: populatedList };
+    return { permitted_vendors: populatedList };
   }
 
   /**

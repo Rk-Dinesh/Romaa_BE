@@ -32,7 +32,8 @@ import {
   getGenerlSetup,
   updateTenderAgreementController,
   getEmdTracking,
-  getSecurityDepositTracking
+  getSecurityDepositTracking,
+  getAllTendersId
 } from "./tender.controller.js";
 
 const upload = multer({ storage: multer.memoryStorage() });
@@ -42,6 +43,7 @@ const tenderrouter = Router();
 // CRUD
 tenderrouter.post("/addtender", createTender);
 tenderrouter.get("/all", getAllTenders);
+tenderrouter.get("/gettendersid", getAllTendersId);
 tenderrouter.get("/gettender/:tender_id", getTenderById);
 tenderrouter.get("/gettenderforApprove/:tender_id", getTenderByIdforApprove);
 tenderrouter.get("/gettenderemd/:tender_id", getTenderByIdemd);

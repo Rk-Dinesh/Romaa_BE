@@ -62,6 +62,10 @@ class TenderService {
     return await TenderModel.find();
   }
 
+    static async getAllTendersId() {
+    return await TenderModel.find().select("tender_id");
+  }
+
   // Get tender by ID
   static async getTenderById(tender_id) {
     return await TenderModel.findOne({ tender_id });

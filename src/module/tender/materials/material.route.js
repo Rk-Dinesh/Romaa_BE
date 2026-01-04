@@ -1,20 +1,18 @@
 import { Router } from "express";
-import multer from "multer";
-import { addMaterialissued, addMaterialreceived, createMaterial, getMaterialsByTender, getRecievedMaterialByTender, updateRequestedQuantity, uploadMaterialCSV } from "./material.controller.js";
+import { 
+  addMaterialReceived, 
+  addMaterialIssued, 
+  getStockStatus, 
+  getItemLedger, 
+  getMaterialList
+} from "./material.controller.js";
 
+const materialRouter = Router();
 
-const materialrouter = Router();
-const upload = multer({ dest: "uploads/" });
+materialRouter.post("/received/add", addMaterialReceived);
+materialRouter.post("/issued/add", addMaterialIssued);
+materialRouter.get("/stock-status/:tender_id", getStockStatus); // Supports ?category=Cement
+materialRouter.get("/ledger/:tender_id/:item_id", getItemLedger);
+materialRouter.get("/list/:tender_id", getMaterialList);
 
-
-materialrouter.post("/create", createMaterial);
-materialrouter.post("/addreceived", addMaterialreceived);
-materialrouter.post("/addissued", addMaterialissued);
-materialrouter.get("/getall/:tender_id", getMaterialsByTender);
-materialrouter.post("/uploadcsv", upload.single("file"), uploadMaterialCSV);
-materialrouter.get('/received/:tender_id/:item_description', getRecievedMaterialByTender);
-materialrouter.put('/updaterequestquantity/:tender_id/:item_description', updateRequestedQuantity);
-
-
-
-export default materialrouter;
+export default materialRouter;
