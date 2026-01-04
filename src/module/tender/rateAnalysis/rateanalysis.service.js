@@ -1578,8 +1578,6 @@ class WorkItemService {
 
       // 3) total_cost
       const total_cost = zero_cost_total_amount + siteoverhead_total_amount;
-
-      // 4) margin
       const margin = total_cost - boq_total_amount;
 
       // 5) escalation_benefits_percentage
