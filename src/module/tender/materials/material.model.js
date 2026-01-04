@@ -8,8 +8,11 @@ const InwardTransactionSchema = new mongoose.Schema({
   
   // Traceability
   purchase_request_ref: { type: String, default: "" }, // Links to PurchaseRequestModel.requestId
-  supplier_name: { type: String, default: "" },
+  site_name: { type: String, default: "" },
+  vendor_name: { type: String, default: "" },
+  vendor_id: { type: String, default: "" },
   invoice_challan_no: { type: String, default: "" }, // For physical proof
+  item_description: { type: String, default: "" },
   
   received_by: { type: String, default: "" },
   remarks: { type: String, default: "" }
@@ -20,6 +23,7 @@ const InwardTransactionSchema = new mongoose.Schema({
 const OutwardTransactionSchema = new mongoose.Schema({
   date: { type: Date, default: Date.now },
   quantity: { type: Number, required: true, default: 0 },
+  item_description: { type: String, default: "" },
   
   // utilization details
   issued_to: { type: String, default: "" }, // Contractor or Foreman name

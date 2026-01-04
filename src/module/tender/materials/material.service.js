@@ -8,48 +8,57 @@ class MaterialService {
    * Handles receiving materials against a Purchase Request or Direct Purchase.
    * Can accept a single item or an array of items.
    */
-  static async addMaterialReceived(payload) {
+static async addMaterialReceived(payload) {
     const {
       tender_id,
-      received_items, // Array: [{ item_id, received_quantity, supplier_name, invoice_no }]
-      purchase_request_id,
-      received_by
+      requestId, // The PO Number (e.g., POR011)
+      received_items, // Array: [{ item_description, received_quantity, ... }]
+      received_by,
+      invoice_no, // Common invoice for the batch
+      site_name
     } = payload;
 
-    // 1. Fetch the Material Document
+    // 1. Fetch the Material Inventory Document
     const materialDoc = await MaterialModel.findOne({ tender_id });
-    if (!materialDoc) throw new Error(`Tender ${tender_id} not found`);
+    if (!materialDoc) throw new Error(`Tender ${tender_id} not found in Inventory`);
 
-    // 2. Validate Purchase Request (Optional but recommended)
-    let prRef = "";
-    if (purchase_request_id) {
-      const prDoc = await PurchaseRequestModel.findOne({ requestId: purchase_request_id });
-      if (!prDoc) throw new Error(`Purchase Request ${purchase_request_id} not found`);
-      prRef = prDoc.requestId;
-    }
-
-    // 3. Process Each Received Item
+    // 2. Validate Purchase Request
+    
+      const prDoc = await PurchaseRequestModel.findOne({ requestId: requestId });
+      if (!prDoc) throw new Error(`Purchase Request ${requestId} not found`);
+      const vendorName = prDoc.selectedVendor.vendorName;
+      const vendorId = prDoc.selectedVendor.vendorId;
+    
     const processedItems = [];
 
+    // 3. Loop through incoming items
     for (const entry of received_items) {
-      // Find item by ID (preferred) or Description (fallback)
+      const qty = Number(entry.received_quantity);
+
+      // Skip if quantity is 0
+      if (qty <= 0) continue;
+
+      // Find the item in the Inventory (MaterialModel) matching the description
       const itemSubDoc = materialDoc.items.find(
-        (i) => i._id.toString() === entry.item_id || i.item_description === entry.item_description
+        (i) => i.item_description === entry.item_description
       );
 
       if (!itemSubDoc) {
-        throw new Error(`Item '${entry.item_description || entry.item_id}' not found in Material List`);
+        throw new Error(`Item '${entry.item_description}' not found in Material Inventory. Please add it to the budget first.`);
       }
 
       // Create Inward Record
       const inwardRecord = {
-        date: new Date(),
-        quantity: Number(entry.received_quantity),
-        purchase_request_ref: prRef,
-        supplier_name: entry.supplier_name || "",
-        invoice_challan_no: entry.invoice_no || "",
+        date: new Date(entry.ordered_date || Date.now()),
+        quantity: qty,
+        item_description: entry.item_description,
+        purchase_request_ref: requestId, // CRITICAL: Links this receipt to the PO
+        site_name: site_name || "",
+        vendor_name: vendorName || "",
+        vendor_id: vendorId || "",
+        invoice_challan_no: invoice_no || "",
         received_by: received_by || "Admin",
-        remarks: entry.remarks || "Received via GRN"
+        remarks: `Received against ${requestId}`
       };
 
       // Push to History
@@ -57,13 +66,12 @@ class MaterialService {
       processedItems.push(itemSubDoc.item_description);
     }
 
-    // 4. Save (Middleware automatically updates total_received_qty & current_stock_on_hand)
+    // 4. Save (Middleware will auto-calculate total_received and current_stock)
     await materialDoc.save();
 
     return {
       success: true,
       message: `Stock updated for: ${processedItems.join(", ")}`,
-      tender_id
     };
   }
 
@@ -210,7 +218,7 @@ class MaterialService {
   static async getMaterialList(tender_id) {
     // Fetch only specific fields to optimize performance
     const materialDoc = await MaterialModel.findOne({ tender_id })
-      .select("items.item_description items.unit items.unit_rate items.quantity items.total_item_quantity items.category items.total_received_qty items._id")
+      .select("items.item_description items.unit items.unit_rate items.quantity items.total_item_quantity items.category items.total_received_qty items.total_issued_qty items._id")
       .lean();
 
     if (!materialDoc) return { items: [] };
@@ -224,12 +232,90 @@ class MaterialService {
       unit_rate: item.unit_rate,
       total_budgeted_qty: item.total_item_quantity,
       total_received_qty: item.total_received_qty,
+      total_issued_qty: item.total_issued_qty,
+      current_stock_on_hand: item.current_stock_on_hand,
     }));
 
     return {
       tender_id,
       count: simplifiedList.length,
       materials: simplifiedList
+    };
+  }
+
+  // Fetch received history specific to a Purchase Order (Request ID)
+  static async getPOReceivedHistory(tender_id, requestId) {
+    // 1. Fetch the material inventory for the project
+    const materialDoc = await MaterialModel.findOne({ tender_id })
+      .select("items.item_description items.unit items.inward_history")
+      .lean();
+
+    if (!materialDoc) return { materials: [] };
+
+    // 2. Process each material to calculate sums for this specific PO
+    const simplifiedList = materialDoc.items.map((item) => {
+      
+      // Filter transactions related ONLY to this Request ID
+      const poTransactions = item.inward_history.filter(
+        (log) => log.purchase_request_ref === requestId
+      );
+
+      // Sum the quantity
+      const totalReceivedForPO = poTransactions.reduce(
+        (sum, log) => sum + (log.quantity || 0),
+        0
+      );
+
+      return {
+        item_id: item._id,
+        item_description: item.item_description,
+        unit: item.unit,
+        // The magic number needed for your "Balance" calculation
+        total_received_for_po: totalReceivedForPO, 
+        // Optional: Return logs if you want to show a history table tooltip
+        history_logs: poTransactions.map(t => ({
+            date: t.date,
+            qty: t.quantity,
+            invoice: t.invoice_challan_no
+        }))
+      };
+    });
+
+    return {
+      tender_id,
+      requestId,
+      materials: simplifiedList,
+    };
+  }
+
+  // GET /api/material/history/:tender_id/:item_id
+static async getMaterialInwardHistory(tender_id, item_id) {
+    // 1. Find the main document
+    const materialDoc = await MaterialModel.findOne({ tender_id });
+    if (!materialDoc) {
+      throw new Error("Project (Tender) not found");
+    }
+
+    // 2. Find the specific material item sub-document
+    // Note: Mongoose subdocuments can be accessed via .id()
+    const item = materialDoc.items.id(item_id); 
+    if (!item) {
+      throw new Error("Material Item not found");
+    }
+
+    // 3. Sort history by date (newest first)
+    // We use optional chaining (?.) just in case inward_history is undefined
+    const history = (item.inward_history || []).sort((a, b) => 
+      new Date(b.date) - new Date(a.date)
+    );
+
+    // 4. Return the formatted object
+    return {
+      item_name: item.item_description,
+      unit: item.unit,
+      total_received: item.total_received_qty,
+      current_stock: item.current_stock_on_hand,
+      history: history
     };
   }
 }

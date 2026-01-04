@@ -96,3 +96,45 @@ export const getMaterialList = async (req, res) => {
     res.status(500).json({ success: false, message: error.message });
   }
 };
+
+export const getPOReceivedHistory = async (req, res) => {
+  try {
+    const { tender_id, requestId } = req.params;
+    
+    const result = await materialService.getPOReceivedHistory(tender_id, requestId);
+
+    res.status(200).json({
+      success: true,
+      data: result.materials,
+      count: result.materials.length
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getMaterialInwardHistory = async (req, res) => {
+    try { 
+      const { tender_id, item_id } = req.params;
+
+      // Call the service
+      const historyData = await materialService.getMaterialInwardHistory(tender_id, item_id);
+
+      // Send success response
+      return res.status(200).json({
+        success: true,
+        data: historyData,
+      });
+
+    } catch (error) {
+      console.error("Error fetching inward history:", error);
+
+      // Determine status code based on error message (optional refinement)
+      const statusCode = error.message.includes("not found") ? 404 : 500;
+
+      return res.status(statusCode).json({
+        success: false,
+        error: error.message || "Internal Server Error",
+      });
+    }
+}

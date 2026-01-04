@@ -32,6 +32,12 @@ class PurchaseRequestService {
     ); // field selection
   }
 
+  static async getAllByProjectIdForMaterialReceived(projectId) {
+    return await PurchaseRequestModel.find({ projectId , status: "Purchase Order Issued"}).select(
+      "requestId projectId title description  materialsRequired "
+    ); 
+  }
+
   static async getAllByNewRequest() {
     return await PurchaseRequestModel.find({ status: "Request Raised" }).select(
       "requestId projectId title  status requestDate requiredByDate  siteDetails"

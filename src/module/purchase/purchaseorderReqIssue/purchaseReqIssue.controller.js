@@ -35,6 +35,16 @@ export const getAllPurchaseByProjectId = async (req, res) => {
   }
 };
 
+export const getAllByMaterialReceived = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const purchase = await PurchaseRequestService.getAllByProjectIdForMaterialReceived(projectId);
+    res.status(200).json({ data: purchase });
+  } catch (error) {
+    res.status(400).json({ message: 'Error fetching PurchaseRequests', error: error.message });
+  }
+};
+
 export const getAllByNewRequest = async (req, res) => {
   try {
     const purchase = await PurchaseRequestService.getAllByNewRequest();
