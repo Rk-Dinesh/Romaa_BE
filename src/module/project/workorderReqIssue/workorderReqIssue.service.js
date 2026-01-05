@@ -12,175 +12,220 @@ class WorkOrderRequestService {
 
     const workOrderRequest = new WorkOrderRequestModel({
       requestId,
+
       ...workOrderData,
+
     });
 
     return await workOrderRequest.save(); // Returns the created document
   }
 
-  static async getByProjectAndRequestId(projectId, requestId) {
-    // Use findOne for a specific match
-    return await WorkOrderRequestModel.findOne({ projectId, requestId });
+  static async getAllByNewRequest(projectId) {
+    return await WorkOrderRequestModel.find({ projectId, status: { $in: ["Request Raised", "Quotation Received"] } }).select(
+      "requestId projectId tender_name tender_project_name title  status requestDate requiredByDate  siteDetails "
+    ).sort({ requestId: -1 }); // field selection
   }
 
-  static async getAllByProjectIdWithFields(projectId) {
-    // Only selected fields: title, description, vendorQuotations
-    return await WorkOrderRequestModel.find({ projectId }).select(
-      "title description vendorQuotations requestId"
-    ); // field selection
-  }
+    static async getQuotationRequested(projectId, requestId) {
+      const requests = await WorkOrderRequestModel.find({
+        projectId,
+        requestId,
+        status: { $in: ["Request Raised", "Quotation Received"] }
+      });
+      return requests;
+    }
 
-    static async getAllByProjectIdWithFieldsApproved(projectId) {
-    // Only selected fields: title, description, vendorQuotations
-    return await WorkOrderRequestModel.find({ projectId, status:"Approved" }).select(
-      "title description vendorQuotations requestId"
-    ); // field selection
-  }
-
-  static async getAllByProjectIdSelectedVendor(projectId) {
-    // Only selected fields: title, description, vendorQuotations
-    return await WorkOrderRequestModel.find({ projectId }).select(
-      "title description selectedVendor"
-    ); // field selection
-  }
-
-  // You can add more service methods like:
-  static async findById(id) {
-    return await WorkOrderRequestModel.findById(id);
-  }
-
-  static async updateById(id, updateData) {
-    return await WorkOrderRequestModel.findByIdAndUpdate(id, updateData, {
-      new: true,
-    });
-  }
-
-  static async deleteById(id) {
-    return await WorkOrderRequestModel.findByIdAndDelete(id);
-  }
-
-  static async addVendorQuotationWithTenderCheck({
-    workOrderRequestId,
-    vendorId,
-    quoteData,
-    tenderId,
-  }) {
-    // 1. Check vendor is permitted for tender
-    const permittedRecord = await VendorPermittedModel.findOne({
-      tender_id: tenderId,
-    });
-    if (!permittedRecord) throw new Error("TenderId not found");
-
-    // Vendor is permitted if found in permittedRecord.listOfPermittedVendors with a matching vendor_id
-    const isPermitted = permittedRecord.listOfPermittedVendors.some(
-      (v) => v.vendor_id === vendorId
-    );
-    if (!isPermitted) throw new Error("Not a permitted vendor");
-
-    // 2. Check vendor is registered in Vendor collection (for auto-fill details)
-    const vendor = await VendorModel.findOne({ vendor_id: vendorId });
-    if (!vendor) throw new Error("Vendor not registered");
-
-    // 3. Compute totalQuotedValue from quoteItems
-    const totalQuotedValue = Array.isArray(quoteData.quoteItems)
-      ? quoteData.quoteItems.reduce(
-          (sum, item) => sum + (item.totalAmount || 0),
-          0
-        )
-      : 0;
-
-    // 4. Build vendorQuotation object
-    const vendorQuotation = {
-      ...quoteData,
-      vendorId,
-      vendorName: vendor.contact_person,
-      contact: vendor.contact_phone, // ensure your VendorModel has 'contact'
-      address: `${vendor.address.street}, ${vendor.address.city}, ${vendor.address.state}, ${vendor.address.country} - ${vendor.address.pincode}`,
-      totalQuotedValue,
-    };
-
-    // 5. Push quotation to WorkOrderRequest
-    const result = await WorkOrderRequestModel.findByIdAndUpdate(
-      workOrderRequestId,
-      { $push: { vendorQuotations: vendorQuotation } },
-      { new: true }
-    );
-    if (!result) throw new Error("WorkOrderRequest not found");
-    return result;
-  }
-
-  static async getVendorQuotationByQuotationId(quotationId) {
-    return await WorkOrderRequestModel.findOne(
-      { "vendorQuotations.quotationId": quotationId },
-      { "vendorQuotations.$": 1 } // Only include the first matching array element
-    );
-  }
-
-  static async approveVendorQuotation({ workOrderRequestId, quotationId }) {
-    // 1. Find the WorkOrderRequest containing the quotation
-    const workOrder = await WorkOrderRequestModel.findOne({
-      _id: workOrderRequestId,
-    });
-    if (!workOrder) throw new Error("WorkOrderRequest not found");
-
-    // 2. Find the vendorQuotation to approve by quotationId
-    const vendorQuotation = workOrder.vendorQuotations.find(
-      (q) => q.quotationId === quotationId
-    );
-    if (!vendorQuotation) throw new Error("Vendor quotation not found");
-
-    // 3. Update approvalStatus = "Approved" for this quotation
-    vendorQuotation.approvalStatus = "Approved";
-    // You may want to set all other quotations to "Rejected" (optional business logic)
-    workOrder.vendorQuotations.forEach((q) => {
-      if (q.quotationId !== quotationId) q.approvalStatus = "Rejected";
-    });
-
-    // 4. Set selectedVendor details
-    workOrder.selectedVendor = {
-      vendorId: vendorQuotation.vendorId,
-      vendorName: vendorQuotation.vendorName,
-      approvedQuotationId: vendorQuotation._id, // Mongoose embedded doc _id
-    };
-
-     workOrder.status = "Approved"
-
-    // 5. Save changes
-    await workOrder.save();
-
-    return workOrder;
-  }
-
-  static async getAllByProjectIdSelectedVendorWithQuotation(projectId) {
-    // Step 1: Get docs with selected fields
-    const docs = await WorkOrderRequestModel.find({ projectId })
-      .select("title description selectedVendor vendorQuotations")
-      .lean();
-
-    // Step 2: For each doc, find the approvedQuotationId in vendorQuotations
-    return docs.map((doc) => {
-      let approvedQuotation = null;
-      if (
-        doc.selectedVendor &&
-        doc.selectedVendor.approvedQuotationId &&
-        doc.vendorQuotations
-      ) {
-        approvedQuotation = doc.vendorQuotations.find(
-          (vq) =>
-            vq._id.toString() ===
-            doc.selectedVendor.approvedQuotationId.toString()
-        );
+        static async getAllByQuotationApproved(projectId) {
+        return await WorkOrderRequestModel.find({
+          projectId,
+          status: { $in: ["Vendor Approved","Work Order Issued","Completed"] }
+        })
+          .select("requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails")
+          .sort({ requestId: -1 }); // 1. Status Ascending (Received first), 2. Newest dates first
       }
-      return {
-        title: doc.title,
-        description: doc.description,
-        selectedVendor: {
-          ...doc.selectedVendor,
-          approvedQuotation: approvedQuotation || null,
-        },
-      };
-    });
-  }
+
+      static async approveVendorQuotation({ workOrderId, quotationId }) {
+        // 1. Find the PurchaseRequest by the custom 'requestId' (e.g., POR011)
+        // Changed from { _id: purchaseRequestId } to { requestId: purchaseRequestId }
+        const workOrderRequest = await WorkOrderRequestModel.findOne({ requestId: workOrderId });
+    
+        if (!workOrderRequest) {
+          throw new Error(`Purchase Request with ID '${workOrderId}' not found`);
+        }
+    
+        // 2. Find the specific quotation to approve
+        const vendorQuotation = workOrderRequest.vendorQuotations.find(
+          (q) => q.quotationId === quotationId
+        );
+    
+        if (!vendorQuotation) {
+          throw new Error(`Quotation ID '${quotationId}' not found in this request`);
+        }
+    
+        // 3. Update approval statuses
+        workOrderRequest.vendorQuotations.forEach((q) => {
+          if (q.quotationId === quotationId) {
+            q.approvalStatus = "Approved";
+          } else {
+            q.approvalStatus = "Rejected";
+          }
+        });
+    
+        // 4. Set selectedVendor details
+        workOrderRequest.selectedVendor = {
+          vendorId: vendorQuotation.vendorId,
+          vendorName: vendorQuotation.vendorName,
+          approvedQuotationId: vendorQuotation._id,
+        };
+    
+        // 5. Initialize Purchase Order Details
+        workOrderRequest.workOrder = {
+          issueDate: new Date(),
+          approvedAmount: vendorQuotation.totalQuotedValue,
+          progressStatus: "In Progress",
+        };
+    
+        // 6. Update overall workflow status
+        workOrderRequest.status = "Work Order Issued";
+    
+    
+    
+        // 7. Save changes
+        await workOrderRequest.save();
+    
+        return workOrderRequest;
+      }
+    
+      static async rejectVendorQuotation({ workOrderId, quotationId }) {
+        // 1. Find the PurchaseRequest by custom requestId (e.g., "POR013")
+        const workOrderRequest = await WorkOrderRequestModel.findOne({ requestId: workOrderId });
+        
+        if (!workOrderRequest) {
+          throw new Error(`Purchase Request with ID '${workOrderId}' not found`);
+        }
+    
+        // 2. Find the specific quotation
+        const vendorQuotation = workOrderRequest.vendorQuotations.find(
+          (q) => q.quotationId === quotationId
+        );
+    
+        if (!vendorQuotation) {
+          throw new Error(`Quotation ID '${quotationId}' not found`);
+        }
+    
+        // 3. Update only this quotation's status to "Rejected"
+        vendorQuotation.approvalStatus = "Rejected";
+    
+        // 4. Save changes
+        await workOrderRequest.save();
+    
+        return workOrderRequest;
+      }
+
+      static async addVendorQuotationWithTenderCheck({ workOrderId, vendorId, quoteData, tenderId }) {
+          // 1. Check vendor is permitted for tender
+          const permittedRecord = await VendorPermittedModel.findOne({ tender_id: tenderId });
+          if (!permittedRecord) throw new Error('TenderId not found');
+      
+          // Vendor is permitted if found in permittedRecord.listOfPermittedVendors with a matching vendor_id
+          const isPermitted = permittedRecord.listOfPermittedVendors.some(
+            v => v.vendor_id === vendorId
+          );
+          if (!isPermitted) throw new Error('Not a permitted vendor');
+      
+      
+          // 2. Check vendor is registered in Vendor collection (for auto-fill details)
+          const vendor = await VendorModel.findOne({ vendor_id: vendorId });
+          if (!vendor) throw new Error("Vendor not registered");
+      
+          const purchasePermittedVendor = await WorkOrderRequestModel.findById({ _id: workOrderId });
+          if (!purchasePermittedVendor) throw new Error('PurchaseRequest not found');
+          if (purchasePermittedVendor.status === "Vendor Approved" || purchasePermittedVendor.status === "Purchase Order Issued" || purchasePermittedVendor.status === "Completed" ) throw new Error('Already Approved , No more quotations allowed');
+          const isPermittedVendor = purchasePermittedVendor.permittedVendor.some(
+            v => v.vendorId === vendorId
+          );
+          if (!isPermittedVendor) throw new Error('Not a permitted vendor');
+      
+          // 3. Compute totalQuotedValue from quoteItems
+          const totalQuotedValue = Array.isArray(quoteData.quoteItems)
+            ? quoteData.quoteItems.reduce((sum, item) => sum + (item.totalAmount || 0), 0)
+            : 0;
+      
+          // 4. Build vendorQuotation object
+          const vendorQuotation = {
+            ...quoteData,
+            vendorId,
+            vendorName: vendor.contact_person,
+            contact: vendor.contact_phone, // ensure your VendorModel has 'contact'
+            address: `${vendor.address.street}, ${vendor.address.city}, ${vendor.address.state}, ${vendor.address.country} - ${vendor.address.pincode}`,
+            totalQuotedValue,
+          };
+      
+          // 5. Push quotation to WorkOrderRequest
+          const result = await WorkOrderRequestModel.findByIdAndUpdate(
+            workOrderId,
+            { $push: { vendorQuotations: vendorQuotation } },
+            { $set: { status: "Quotation Received" } },
+            { new: true }
+          );
+      
+          result.status = "Quotation Received";
+          await result.save();
+          if (!result) throw new Error('WorkOrderRequest not found');
+          return result;
+        }
+
+        static async getByProjectAndRequestId(projectId, requestId) {
+            // Use findOne for a specific match
+            return await WorkOrderRequestModel.findOne({ projectId, requestId });
+          }
+
+          static async getRequestWithApprovedQuotation(requestId) {
+            const result = await WorkOrderRequestModel.aggregate([
+              // 1. Match the specific document by custom requestId
+              { $match: { requestId: requestId } },
+          
+              // 2. Extract the approved quotation details into a temporary field
+              {
+                $addFields: {
+                  tempApprovedQuote: {
+                    $arrayElemAt: [
+                      {
+                        $filter: {
+                          input: "$vendorQuotations", 
+                          as: "quote",
+                          cond: { 
+                            $eq: ["$$quote._id", "$selectedVendor.approvedQuotationId"] 
+                          }
+                        }
+                      },
+                      0 
+                    ]
+                  }
+                }
+              },
+          
+              // 3. Merge the existing 'selectedVendor' object with the extracted quote details
+              {
+                $addFields: {
+                  selectedVendor: {
+                    $mergeObjects: ["$selectedVendor", "$tempApprovedQuote"]
+                  }
+                }
+              },
+          
+              // 4. Cleanup: Exclude the big list and the temp field
+              { 
+                $project: { 
+                  vendorQuotations: 0,
+                  tempApprovedQuote: 0 
+                } 
+              }
+            ]);
+          
+            return result[0];
+          }
+
 }
 
 export default WorkOrderRequestService;

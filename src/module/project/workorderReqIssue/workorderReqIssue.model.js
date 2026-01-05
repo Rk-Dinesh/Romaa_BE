@@ -24,6 +24,15 @@ const WorkOrderRequestSchema = new mongoose.Schema(
       },
     ],
 
+     permittedVendor: [
+      {
+        vendorId: String,
+        vendorName: String,
+        vendorContact: String,
+        vendorAddress: String,
+      },
+    ],
+
     // Vendor quotations section with custom quotation ID // vendorId default , delivery period,
     vendorQuotations: [
       new mongoose.Schema(

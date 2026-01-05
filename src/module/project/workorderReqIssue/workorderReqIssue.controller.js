@@ -11,54 +11,87 @@ export const createWorkOrderRequest = async (req, res) => {
   }
 };
 
-export const getWorkOrderByProjectAndRequestId = async (req, res) => {
+export const getAllByNewRequest = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const workorder = await WorkOrderRequestService.getAllByNewRequest(projectId);
+    res.status(200).json({ data: workorder });
+  } catch (error) {
+    res.status(400).json({ message: 'Error fetching WorkOrderRequests', error: error.message });
+  }
+};
+
+export const getQuotationRequested = async (req, res) => {
   try {
     const { projectId, requestId } = req.params;
-    const workOrder = await WorkOrderRequestService.getByProjectAndRequestId(projectId, requestId);
+    const requests = await WorkOrderRequestService.getQuotationRequested(projectId, requestId);
+    res.json({ data: requests });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
 
-    if (!workOrder) {
-      return res.status(404).json({ message: 'WorkOrderRequest not found' });
+export const getAllByQuotationApproved = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const workorder = await WorkOrderRequestService.getAllByQuotationApproved(projectId);
+    res.status(200).json({ data: workorder });
+  } catch (error) {
+    res.status(400).json({ message: 'Error fetching WorkOrderRequests', error: error.message });
+  }
+};
+
+
+export const approveVendorQuotation = async (req, res) => {
+  try {
+    const { workOrderId } = req.params;
+    const { quotationId } = req.body;
+
+    if (!quotationId) return res.status(400).json({ message: 'quotationId is required' });
+
+    const updatedWorkOrderRequest = await WorkOrderRequestService.approveVendorQuotation({
+      workOrderId,
+      quotationId,
+    });
+
+    res.status(200).json({
+      message: 'Vendor quotation approved and selectedVendor updated.',
+      data: updatedWorkOrderRequest,
+      success: true,
+    });
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+};
+
+export const rejectVendor = async (req, res) => {
+  try {
+    const { workOrderId } = req.params; 
+    const { quotationId } = req.body;
+
+    if (!workOrderId || !quotationId) {
+      return res.status(400).json({ success: false, message: "IDs required" });
     }
-    res.status(200).json({ data: workOrder });
-  } catch (error) {
-    res.status(400).json({ message: 'Error fetching WorkOrderRequest', error: error.message });
-  }
-};
 
-export const getAllWorkOrdersByProjectId = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const workOrders = await WorkOrderRequestService.getAllByProjectIdWithFields(projectId);
-    res.status(200).json({ data: workOrders });
-  } catch (error) {
-    res.status(400).json({ message: 'Error fetching WorkOrderRequests', error: error.message });
-  }
-};
+    const result = await WorkOrderRequestService.rejectVendorQuotation({
+      workOrderId,
+      quotationId,
+    });
 
-export const getAllWorkOrdersByProjectIdApproved = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const workOrders = await WorkOrderRequestService.getAllByProjectIdWithFieldsApproved(projectId);
-    res.status(200).json({ data: workOrders });
+    res.status(200).json({
+      success: true,
+      message: "Vendor quotation rejected successfully.",
+      data: result,
+    });
   } catch (error) {
-    res.status(400).json({ message: 'Error fetching WorkOrderRequests', error: error.message });
-  }
-};
-
-
-export const getAllWorkOrdersBySelectedVendor = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const workOrders = await WorkOrderRequestService.getAllByProjectIdSelectedVendor(projectId);
-    res.status(200).json({ data: workOrders });
-  } catch (error) {
-    res.status(400).json({ message: 'Error fetching WorkOrderRequests', error: error.message });
+    res.status(500).json({ success: false, message: error.message });
   }
 };
 
 export const postVendorQuotationWithTenderCheck = async (req, res) => {
   try {
-    const { workOrderRequestId } = req.params;
+    const { workOrderId } = req.params;
     const { vendorId, tenderId, quoteItems, ...rest } = req.body;
 
     if (!vendorId) return res.status(400).json({ message: 'vendorId is required' });
@@ -67,7 +100,7 @@ export const postVendorQuotationWithTenderCheck = async (req, res) => {
       return res.status(400).json({ message: 'quoteItems are required' });
 
     const updatedWorkOrderRequest = await WorkOrderRequestService.addVendorQuotationWithTenderCheck({
-      workOrderRequestId,
+      workOrderId,
       vendorId,
       quoteData: { quoteItems, ...rest },
       tenderId
@@ -82,49 +115,27 @@ export const postVendorQuotationWithTenderCheck = async (req, res) => {
   }
 };
 
-export const getVendorQuotationByQuotationId = async (req, res) => {
+export const getWorkOrderByProjectAndRequestId = async (req, res) => {
   try {
-    const { quotationId } = req.params;
-    const doc = await WorkOrderRequestService.getVendorQuotationByQuotationId(quotationId);
+    const { projectId, requestId } = req.params;
+    const workorder = await WorkOrderRequestService.getByProjectAndRequestId(projectId, requestId);
 
-    if (!doc || !doc.vendorQuotations || doc.vendorQuotations.length === 0) {
-      return res.status(404).json({ message: 'Quotation not found' });
+    if (!workorder) {
+      return res.status(404).json({ message: 'WorkOrderRequests not found' });
     }
-    // Return only the matched vendor quotation details
-    res.status(200).json({ data: doc.vendorQuotations[0] });
+    res.status(200).json({ data: workorder });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ message: 'Error fetching WorkOrderRequests', error: error.message });
   }
 };
 
-export const approveVendorQuotation = async (req, res) => {
+export const getQuotationApproved = async (req, res) => {
   try {
-    const { workOrderRequestId } = req.params;
-    const { quotationId,status } = req.body;
-
-    if (!quotationId) return res.status(400).json({ message: 'quotationId is required' });
-
-    const updatedWorkOrderRequest = await WorkOrderRequestService.approveVendorQuotation({
-      workOrderRequestId,
-      quotationId,
-      status
-    });
-
-    res.status(200).json({
-      message: 'Vendor quotation approved and selectedVendor updated.',
-      data: updatedWorkOrderRequest,
-    });
-  } catch (error) {
-    res.status(400).json({ message: error.message });
-  }
-};
-
-export const getAllByProjectIdSelectedVendorWithQuotation = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const data = await WorkOrderRequestService.getAllByProjectIdSelectedVendorWithQuotation(projectId);
-    res.status(200).json({ data });
-  } catch (error) {
-    res.status(400).json({ message: error.message });
+    const { requestId } = req.params;
+    const requests = await WorkOrderRequestService.getRequestWithApprovedQuotation(requestId);
+    res.json({ data: requests });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
   }
 };

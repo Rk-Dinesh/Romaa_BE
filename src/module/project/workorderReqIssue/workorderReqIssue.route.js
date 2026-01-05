@@ -1,17 +1,18 @@
 import { Router } from "express";
-import { approveVendorQuotation, createWorkOrderRequest, getAllByProjectIdSelectedVendorWithQuotation, getAllWorkOrdersByProjectId, getAllWorkOrdersByProjectIdApproved, getAllWorkOrdersBySelectedVendor, getVendorQuotationByQuotationId, getWorkOrderByProjectAndRequestId, postVendorQuotationWithTenderCheck } from "./workorderReqIssue.controller.js";
+import { createWorkOrderRequest, getAllByNewRequest, getQuotationRequested, approveVendorQuotation, rejectVendor, postVendorQuotationWithTenderCheck, getWorkOrderByProjectAndRequestId, getQuotationApproved, getAllByQuotationApproved } from "./workorderReqIssue.controller.js";
 
 const workOrderRequestrouter = Router();
 
 workOrderRequestrouter.post('/api/create', createWorkOrderRequest   );
-workOrderRequestrouter.get('/api/getbyId/:projectId', getAllWorkOrdersByProjectId);
-workOrderRequestrouter.get('/api/getbyIdapproved/:projectId', getAllWorkOrdersByProjectIdApproved);
+workOrderRequestrouter.get('/api/getbyIdNewRequest/:projectId', getAllByNewRequest);
+workOrderRequestrouter.get('/api/getQuotationRequested/:projectId/:requestId', getQuotationRequested);
+workOrderRequestrouter.get('/api/getbyIdQuotationApproved/:projectId', getAllByQuotationApproved);
+workOrderRequestrouter.put('/api/workorder-requests/:workOrderId/approve-vendor', approveVendorQuotation);
+workOrderRequestrouter.put('/api/workorder-requests/:workOrderId/reject-vendor', rejectVendor);
+workOrderRequestrouter.post('/api/workorder-requests/:workOrderId/vendor-quotation', postVendorQuotationWithTenderCheck);
 workOrderRequestrouter.get('/api/getdetailbyId/:projectId/:requestId', getWorkOrderByProjectAndRequestId);
-workOrderRequestrouter.get('/api/getslectedvendor/:projectId', getAllWorkOrdersBySelectedVendor);
-workOrderRequestrouter.post('/api/workorder-requests/:workOrderRequestId/vendor-quotation', postVendorQuotationWithTenderCheck);
-workOrderRequestrouter.get('/api/vendor-quotations/:quotationId', getVendorQuotationByQuotationId);
-workOrderRequestrouter.put('/api/workorder-requests/:workOrderRequestId/approve-vendor', approveVendorQuotation);
-workOrderRequestrouter.get('/api/workorder-requests/project/:projectId/selected-vendor', getAllByProjectIdSelectedVendorWithQuotation);
+workOrderRequestrouter.get('/api/getQuotationApproved/:requestId', getQuotationApproved);
+
 
 
 export default workOrderRequestrouter;
