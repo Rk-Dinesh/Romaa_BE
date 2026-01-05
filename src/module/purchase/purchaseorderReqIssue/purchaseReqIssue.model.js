@@ -4,6 +4,8 @@ const PurchaseRequestSchema = new mongoose.Schema(
   {
     requestId: { type: String},
     projectId: { type: String, required: true },
+    tender_name: { type: String, default: "" },
+    tender_project_name: { type: String, default: "" },
     title: { type: String, required: true },
     description: { type: String, required: true },
     siteDetails: {

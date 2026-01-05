@@ -1,4 +1,5 @@
 import IdcodeServices from "../../idcode/idcode.service.js";
+import TenderModel from "../../tender/tender/tender.model.js";
 import VendorPermittedModel from "../../tender/vendorpermitted/vendorpermitted.mode.js";
 import VendorModel from "../vendor/vendor.model.js";
 import PurchaseRequestModel from "./purchaseReqIssue.model.js";
@@ -11,10 +12,13 @@ class PurchaseRequestService {
     const idcode = "POR";
     await IdcodeServices.addIdCode(idname, idcode);
     const requestId = await IdcodeServices.generateCode(idname);
-
+    const tenderName = await TenderModel.findOne({ tender_id: purchaseData.projectId }).select("tender_name tender_project_name");
+    if (!tenderName) throw new Error("Tender not found");
     const purchaseRequest = new PurchaseRequestModel({
       requestId,
       ...purchaseData,
+      tender_name: tenderName.tender_name,
+      tender_project_name: tenderName.tender_project_name,
     });
 
     return await purchaseRequest.save(); // Returns the created document
@@ -29,7 +33,7 @@ class PurchaseRequestService {
     // Only selected fields: requestId, title, description, vendorQuotations, siteDetails, materialsRequired, status, requestDate
     return await PurchaseRequestModel.find({ projectId }).select(
       "requestId projectId title description vendorQuotations siteDetails materialsRequired status requestDate requiredByDate "
-    ); // field selection
+    ).sort({  requestDate: -1 }); // field selection
   }
 
   static async getAllByProjectIdForMaterialReceived(projectId) {
@@ -40,7 +44,7 @@ class PurchaseRequestService {
 
   static async getAllByNewRequest() {
     return await PurchaseRequestModel.find({ status: "Request Raised" }).select(
-      "requestId projectId title  status requestDate requiredByDate  siteDetails"
+      "requestId projectId tender_name tender_project_name title  status requestDate requiredByDate  siteDetails "
     ); // field selection
   }
 
@@ -48,7 +52,7 @@ class PurchaseRequestService {
     return await PurchaseRequestModel.find({
       status: { $in: ["Quotation Requested", "Quotation Received","Vendor Approved"] }
     })
-      .select("requestId projectId title status requestDate requiredByDate siteDetails")
+      .select("requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails")
       .sort({ status: 1, requestDate: -1 }); // 1. Status Ascending (Received first), 2. Newest dates first
   }
 
@@ -56,7 +60,7 @@ class PurchaseRequestService {
     return await PurchaseRequestModel.find({
       status: { $in: ["Vendor Approved","Purchase Order Issued","Completed"] }
     })
-      .select("requestId projectId title status requestDate requiredByDate siteDetails")
+      .select("requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails")
       .sort({ status: 1, requestDate: -1 }); // 1. Status Ascending (Received first), 2. Newest dates first
   }
 

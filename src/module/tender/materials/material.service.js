@@ -118,6 +118,7 @@ static async addMaterialReceived(payload) {
         date: new Date(),
         quantity: qtyToIssue,
         issued_to: entry.issued_to || "",
+        item_description: entry.item_description || "",
         site_location: entry.work_location || "", // Specific block/floor
         work_description: entry.purpose || "",
         issued_by: issued_by || "Admin",
@@ -218,7 +219,7 @@ static async addMaterialReceived(payload) {
   static async getMaterialList(tender_id) {
     // Fetch only specific fields to optimize performance
     const materialDoc = await MaterialModel.findOne({ tender_id })
-      .select("items.item_description items.unit items.unit_rate items.quantity items.total_item_quantity items.category items.total_received_qty items.total_issued_qty items._id")
+      .select("items.item_description items.unit items.unit_rate items.quantity items.total_item_quantity items.category items.total_received_qty items.total_issued_qty items.current_stock_on_hand items.pending_procurement_qty items._id")
       .lean();
 
     if (!materialDoc) return { items: [] };
@@ -234,6 +235,7 @@ static async addMaterialReceived(payload) {
       total_received_qty: item.total_received_qty,
       total_issued_qty: item.total_issued_qty,
       current_stock_on_hand: item.current_stock_on_hand,
+      pending_procurement_qty: item.pending_procurement_qty,
     }));
 
     return {
@@ -318,6 +320,35 @@ static async getMaterialInwardHistory(tender_id, item_id) {
       history: history
     };
   }
+
+  static async getMaterialOutwardHistory(tender_id, item_id) {
+    // 1. Find the main document
+    const materialDoc = await MaterialModel.findOne({ tender_id });
+    if (!materialDoc) {
+      throw new Error("Project (Tender) not found");
+    }
+
+    // 2. Find the specific material item sub-document
+    const item = materialDoc.items.id(item_id); 
+    if (!item) {
+      throw new Error("Material Item not found");
+    }
+
+    // 3. Sort history by date (newest first)
+    // Targeting 'outward_history' this time
+    const history = (item.outward_history || []).sort((a, b) => 
+      new Date(b.date) - new Date(a.date)
+    );
+
+    // 4. Return the formatted object
+    return {
+      item_name: item.item_description,
+      unit: item.unit,
+      total_issued: item.total_issued_qty, // Total quantity sent out
+      current_stock: item.current_stock_on_hand,
+      history: history
+    };
+}
 }
 
 export default MaterialService;

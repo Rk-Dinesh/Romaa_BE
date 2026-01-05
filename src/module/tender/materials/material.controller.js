@@ -138,3 +138,30 @@ export const getMaterialInwardHistory = async (req, res) => {
       });
     }
 }
+
+export const getMaterialOutwardHistory = async (req, res) => {
+    try { 
+      const { tender_id, item_id } = req.params;
+
+      // Call the service
+      const historyData = await materialService.getMaterialOutwardHistory(tender_id, item_id);
+
+      // Send success response
+      return res.status(200).json({
+        success: true,
+        data: historyData,
+      });
+
+    } catch (error) {
+      console.error("Error fetching outward history:", error);
+
+      // Determine status code based on error message (optional refinement)
+      const statusCode = error.message.includes("not found") ? 404 : 500;
+
+      return res.status(statusCode).json({
+        success: false,
+        error: error.message || "Internal Server Error",
+      });
+    }
+}
+

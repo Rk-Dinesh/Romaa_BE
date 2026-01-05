@@ -6,7 +6,8 @@ import {
   getItemLedger, 
   getMaterialList,
   getPOReceivedHistory,
-  getMaterialInwardHistory
+  getMaterialInwardHistory,
+  getMaterialOutwardHistory
 } from "./material.controller.js";
 
 const materialRouter = Router();
@@ -18,5 +19,6 @@ materialRouter.get("/ledger/:tender_id/:item_id", getItemLedger);
 materialRouter.get("/list/:tender_id", getMaterialList);
 materialRouter.get("/getPOReceivedHistory/:tender_id/:requestId", getPOReceivedHistory);
 materialRouter.get("/getMaterialInwardHistory/:tender_id/:item_id", getMaterialInwardHistory);
+materialRouter.get("/getMaterialOutwardHistory/:tender_id/:item_id", getMaterialOutwardHistory);
 
 export default materialRouter;
