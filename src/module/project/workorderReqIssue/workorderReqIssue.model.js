@@ -4,6 +4,8 @@ const WorkOrderRequestSchema = new mongoose.Schema(
   {
     requestId: { type: String, required: true },
     projectId: { type: String, required: true },
+    tender_name: { type: String, default: "" },
+    tender_project_name: { type: String, default: "" },
     title: { type: String, required: true },
     description: { type: String, required: true },
     siteDetails: {
@@ -21,6 +23,7 @@ const WorkOrderRequestSchema = new mongoose.Schema(
         materialName: String,
         quantity: Number,
         unit: String,
+        ex_quantity: Number,
       },
     ],
 

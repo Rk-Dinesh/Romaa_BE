@@ -863,6 +863,7 @@ class WorkItemService {
           ),
           tax_amount: 0,
           final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
+          ex_quantity: Number(it.total_item_quantity.toFixed(2)),
         })),
         nmr: Array.from(raBuckets.nmr.values()).map((it) => ({
           ...it,
@@ -1645,6 +1646,7 @@ static async updateRateAnalysis(payload, tender_id) {
           ),
           tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
           final_amount: Number(it.total_amount).toFixed(2),
+          ex_quantity: Number(it.total_item_quantity.toFixed(2)),
         })),
         nmr: Array.from(raBuckets.nmr.values()).map((it) => ({
           ...it,

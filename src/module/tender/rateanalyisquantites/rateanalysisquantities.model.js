@@ -18,7 +18,8 @@ const ItemSchema = new mongoose.Schema(
         total_amount: { type: Number, default: 0 },
         final_amount: { type: Number, default: 0 },
         escalation_amount: { type: Number, default: 0 },
-        percentage_value_of_material: { type: Number, default: 0 }
+        percentage_value_of_material: { type: Number, default: 0 },
+        ex_quantity: { type: Number },
     },
     { _id: false }
 );

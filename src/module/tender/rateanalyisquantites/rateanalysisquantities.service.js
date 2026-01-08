@@ -30,6 +30,47 @@ class RateAnalysisQuantitiesService {
     return {data:docData,freeze};
   }
 
+    static async getRateAnalysisQuantitiesAllowed(tender_id, nametype) {
+    const rateAnalysis = await WorkItemModel.findOne({ tender_id });
+    const freeze = rateAnalysis.freeze;
+    const allowed = [
+      "consumable_material",
+      "bulk_material",
+      "machinery",
+      "fuel",
+      "contractor",
+      "nmr",
+    ];
+
+    if (!allowed.includes(nametype)) {
+      throw new Error(`Invalid nametype: ${nametype}`);
+    }
+
+    const doc = await RAQuantityModel.findOne(
+      { tender_id },
+      { quantites: 1, _id: 0 }
+    );
+
+    if (!doc) return [];
+
+    const docData = doc.quantites?.[nametype] || [];
+
+    const data = docData.map((item) => {
+   
+
+      return {
+        item_description:item.item_description,
+        total_item_quantity:item.total_item_quantity,
+        unit:item.unit,
+        category:item.category,
+        ex_quantity:item.ex_quantity,
+      };
+    });
+
+
+    return {data:data,freeze};
+  }
+
   static async updateRateAnalysisQuantities(tender_id, nametype, data) {
     const allowed = [
       "consumable_material",

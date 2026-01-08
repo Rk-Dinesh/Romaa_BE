@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createWorkOrderRequest, getAllByNewRequest, getQuotationRequested, approveVendorQuotation, rejectVendor, postVendorQuotationWithTenderCheck, getWorkOrderByProjectAndRequestId, getQuotationApproved, getAllByQuotationApproved } from "./workorderReqIssue.controller.js";
+import { createWorkOrderRequest, getAllByNewRequest, getQuotationRequested, approveVendorQuotation, rejectVendor, postVendorQuotationWithTenderCheck, getWorkOrderByProjectAndRequestId, getQuotationApproved, getAllByQuotationApproved, getAllByWorkOrderIssuedForWorkDone, getAllByWorkOrderIssuedForWorkDoneMaterial, updateStatusRequest } from "./workorderReqIssue.controller.js";
 
 const workOrderRequestrouter = Router();
 
@@ -12,6 +12,9 @@ workOrderRequestrouter.put('/api/workorder-requests/:workOrderId/reject-vendor',
 workOrderRequestrouter.post('/api/workorder-requests/:workOrderId/vendor-quotation', postVendorQuotationWithTenderCheck);
 workOrderRequestrouter.get('/api/getdetailbyId/:projectId/:requestId', getWorkOrderByProjectAndRequestId);
 workOrderRequestrouter.get('/api/getQuotationApproved/:requestId', getQuotationApproved);
+workOrderRequestrouter.get('/api/getWorkOrderIssuedForWorkDone/:projectId', getAllByWorkOrderIssuedForWorkDone);
+workOrderRequestrouter.get('/api/getWorkOrderIssuedForWorkDoneMaterial/:projectId/:requestId', getAllByWorkOrderIssuedForWorkDoneMaterial);
+workOrderRequestrouter.put('/api/pass_wo/:requestId', updateStatusRequest); 
 
 
 

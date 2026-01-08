@@ -45,7 +45,7 @@ class PurchaseRequestService {
   static async getAllByNewRequest() {
     return await PurchaseRequestModel.find({ status: "Request Raised" }).select(
       "requestId projectId tender_name tender_project_name title  status requestDate requiredByDate  siteDetails "
-    ); // field selection
+    ).sort({ requestId: -1 }); // field selection
   }
 
   static async getAllByQuotationRequested() {

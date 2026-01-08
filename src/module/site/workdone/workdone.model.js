@@ -39,6 +39,11 @@ const WorkDoneSchema = new mongoose.Schema(
       required: true,
       index: true // Index this for fast retrieval of all reports for a tender
     },
+    workOrder_id: { 
+      type: String, 
+      required: true,
+      index: true // Index this for fast retrieval of all reports for a tender
+    },
 
     report_date: { 
       type: Date, 
