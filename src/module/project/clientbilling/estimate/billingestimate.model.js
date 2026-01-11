@@ -40,8 +40,8 @@ const WorkItemSchema = new mongoose.Schema(
     item_code: { type: String, default: "" },   // e.g., "ID001"
     day:{type:String,default:""},
     item_name: { type: String, required: true }, // e.g., "PCC Concrete"
-    description: { type: String, default: "" }, // Full technical spec
     unit: { type: String, required: true },     // e.g., "Cum", "Sqm"
+    quantity:{type:Number,default:0},
     mb_book_ref:{type:String,default:""},
     
     // The "Details" Array (Level 3)

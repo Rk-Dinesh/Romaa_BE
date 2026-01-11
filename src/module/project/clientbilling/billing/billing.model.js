@@ -4,24 +4,36 @@ import mongoose from "mongoose";
 const ItemSchema = new mongoose.Schema(
   {
     // 1. Basic Item Details
-    s_no: { type: String, required: true }, 
-    description: { type: String, required: true },
+    item_code: { type: String, required: true }, 
+    item_name: { type: String, required: true },
     unit: { type: String, default: "Nos" },
     rate: { type: Number, required: true, default: 0 }, 
+    
     // 2. Agreement Reference (Total Planned)
-    agreement_qty: { type: Number, default: 0 }, 
+    agreement_qty: { type: Number, default: 0 },
+    agreement_amount: { type: Number, default: 0 }, 
+    
     // 3. Cumulative (Total work done from Day 1 to Now)
     upto_date_qty: { type: Number, default: 0 },
     upto_date_amount: { type: Number, default: 0 }, 
+    
     // 4. Previous Bill (Total work paid in RA1 + RA2 + ... + RA(N-1))
-    // IMPORTANT: For RA3, this must equal RA2's 'upto_date_qty'
     prev_bill_qty: { type: Number, default: 0 },
     prev_bill_amount: { type: Number, default: 0 },
+    
     // 5. Current Bill (The actual claim for this specific bill)
-    // Calculated as: (Upto Date) - (Previous)
     current_qty: { type: Number, default: 0 }, 
     current_amount: { type: Number, default: 0 }, 
+    
+    // 6. Excess & Balance (Calculated fields)
     excess_qty: { type: Number, default: 0 },
+    excess_amount: { type: Number, default: 0 },
+    excess_percentage: { type: Number, default: 0 },
+    
+    balance_qty: { type: Number, default: 0 },
+    balance_amount: { type: Number, default: 0 },
+    balance_percentage: { type: Number, default: 0 },
+    
     mb_book_ref: { type: String, default: "" }, 
   },
   { _id: false }
@@ -50,7 +62,6 @@ const BillingSchema = new mongoose.Schema(
     },
 
     // --- Sequence Tracking ---
-    // 1 = RA1, 2 = RA2, 3 = RA3, etc.
     bill_sequence: { 
       type: Number, 
       required: true,
@@ -64,8 +75,6 @@ const BillingSchema = new mongoose.Schema(
       default: "RA Bill" 
     },
 
-    // Optional: Link to the previous bill ID for audit trails
-    // e.g., If this is RA2, this field stores the _id of RA1
     previous_bill_id: { 
       type: mongoose.Schema.Types.ObjectId, 
       ref: "billing",
@@ -91,7 +100,6 @@ const BillingSchema = new mongoose.Schema(
 );
 
 // --- Automation Hook ---
-// Automatically calculates the 'Current' column based on 'Upto Date' - 'Previous'
 BillingSchema.pre('save', function(next) {
   let grandTotal = 0;
   let totalUpto = 0;
@@ -99,15 +107,50 @@ BillingSchema.pre('save', function(next) {
 
   if (this.items && this.items.length > 0) {
     this.items.forEach(item => {
-      // 1. Calculate Amounts based on Rate
-      item.upto_date_amount = item.upto_date_qty * item.rate;
-      item.prev_bill_amount = item.prev_bill_qty * item.rate;
-      
-      // 2. Logic: Current = Cumulative - Previous
-      item.current_qty = item.upto_date_qty - item.prev_bill_qty;
-      item.current_amount = item.current_qty * item.rate;
+      // Ensure values are numbers to prevent NaN
+      const rate = Number(item.rate) || 0;
+      const agreementQty = Number(item.agreement_qty) || 0;
+      const uptoQty = Number(item.upto_date_qty) || 0;
+      const prevQty = Number(item.prev_bill_qty) || 0;
 
-      // 3. Sum up totals
+      // 1. Basic Calculations (Amount = Qty * Rate)
+      item.upto_date_amount = uptoQty * rate;
+      item.prev_bill_amount = prevQty * rate;
+      
+      // 2. Current Bill Calculations
+      item.current_qty = uptoQty - prevQty;
+      item.current_amount = item.current_qty * rate;
+
+      // 3. Excess vs Balance Logic
+      // If work done (uptoQty) is greater than agreement, we have Excess.
+      // If work done is less than agreement, we have Balance.
+      if (uptoQty > agreementQty) {
+        item.excess_qty = uptoQty - agreementQty;
+        item.balance_qty = 0; // No balance left, we overshot
+      } else {
+        item.excess_qty = 0;
+        item.balance_qty = agreementQty - uptoQty;
+      }
+
+      // 4. Calculate Amounts for Excess/Balance
+      item.excess_amount = item.excess_qty * rate;
+      item.balance_amount = item.balance_qty * rate;
+
+      // 5. Calculate Percentages
+      // Avoid division by zero
+      if (agreementQty > 0) {
+        item.excess_percentage = (item.excess_qty / agreementQty) * 100;
+        item.balance_percentage = (item.balance_qty / agreementQty) * 100;
+      } else {
+        // If agreement is 0, percentage is undefined/0
+        item.excess_percentage = 0;
+        item.balance_percentage = 0;
+      }
+
+      // 6. Optional: Rounding (to 4 decimal places for precision in DB)
+      // item.current_amount = Math.round(item.current_amount * 10000) / 10000;
+      
+      // 7. Sum up totals for the Bill Header
       totalUpto += item.upto_date_amount;
       totalPrev += item.prev_bill_amount;
       grandTotal += item.current_amount;

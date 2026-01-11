@@ -2083,3 +2083,123 @@ static async updateDrawingQuantity(tender_id, item_code, drawing_quantity) {
         }
     }
 }
+
+ {
+            "tender_id": "TND024",
+            "bill_sequence": 7,
+            "bill_id": "RA-07",
+            "items": [
+                {
+                    "item_code": "ID001",
+                    "item_name": "Clearing Scrub Jungle as Directed by the Departmental Officers ​",
+                    "day": "DAY-1",
+                    "unit": "m2",
+                    "quantity": 3999.996,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID002",
+                    "item_name": "Earth Work Excavation for Foundation ​",
+                    "day": "DAY-1",
+                    "unit": "M3",
+                    "quantity": 566.3172,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID007",
+                    "item_name": "Cement Concrete 1:5:10 for Foundation ​",
+                    "day": "DAY-2",
+                    "unit": "M3",
+                    "quantity": 16.650000000000002,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID014",
+                    "item_name": "Supplying MS/RTS Grills for Reinforcement ​",
+                    "day": "DAY-3",
+                    "unit": "Qtl",
+                    "quantity": 106.34753580246914,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID011",
+                    "item_name": "Providing Form Work for Column Footing, Plinth Beam ​",
+                    "day": "DAY-4",
+                    "unit": "M3",
+                    "quantity": 199.79999999999998,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID013",
+                    "item_name": "Form Work for Column, Ratguard Slab ​",
+                    "day": "DAY-4",
+                    "unit": "M3",
+                    "quantity": 257.355,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID030",
+                    "item_name": "RCC 1:1.5:3 in Foundation and Basement ​",
+                    "day": "DAY-5",
+                    "unit": "M3",
+                    "quantity": 112.97766,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID014",
+                    "item_name": "Supplying MS/RTS Grills for Reinforcement ​",
+                    "day": "DAY-6",
+                    "unit": "Qtl",
+                    "quantity": 55.749412345679,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID011",
+                    "item_name": "Providing Form Work for Column Footing, Plinth Beam ​",
+                    "day": "DAY-7",
+                    "unit": "M3",
+                    "quantity": 380.706,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID030",
+                    "item_name": "RCC 1:1.5:3 in Foundation and Basement ​",
+                    "day": "DAY-7",
+                    "unit": "M3",
+                    "quantity": 64.72002,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID008",
+                    "item_name": "Brick Work in Cement Mortar 1:5 ​",
+                    "day": "DAY-7",
+                    "unit": "M3",
+                    "quantity": 181.40699999999998,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID003",
+                    "item_name": "Refilling with Excavated Earth in Basement ​",
+                    "day": "DAY-8",
+                    "unit": "M3",
+                    "quantity": 269.325,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID005",
+                    "item_name": "Refilling with Conveyed Earth to a Lead of 10km ​",
+                    "day": "DAY-9",
+                    "unit": "M3",
+                    "quantity": 822.9375,
+                    "mb_book_ref": "6981ACE/1"
+                },
+                {
+                    "item_code": "ID004",
+                    "item_name": "Supplying and Filling in Foundation with Gravel ​",
+                    "day": "DAY-10",
+                    "unit": "M3",
+                    "quantity": 927.675,
+                    "mb_book_ref": "6981ACE/1"
+                }
+            ]
+        }

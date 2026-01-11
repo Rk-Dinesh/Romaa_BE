@@ -1,5 +1,6 @@
 import mongoose from "mongoose";
 import BillingEstimateModel from "./billingestimate.model.js";
+import BillingService from "../billing/billing.service.js";
 
 class BillingEstimateService {
 
@@ -102,7 +103,7 @@ class BillingEstimateService {
                         items: []
                     });
                 } else {
-                // 2.2: Update Existing (with specific sequence)
+                    // 2.2: Update Existing (with specific sequence)
 
                 }
             }
@@ -141,12 +142,11 @@ class BillingEstimateService {
                 // --- Level 1: Root Item ---
                 if (level === 1) {
                     currentWorkItem = {
-                        s_no: code,       // Satisfy Schema "required"
                         item_code: code,
                         item_name: desc,
-                        description: desc,
                         day: activeDay,   // Apply sticky day
                         unit: unit,
+                        quantity: qty,
                         mb_book_ref: mb_book_ref || "",
                         details: []
                     };
@@ -188,13 +188,28 @@ class BillingEstimateService {
             targetDoc.items = items; // Overwrite items list
             await targetDoc.save({ session });
 
+            // --- TRIGGER BILL CREATION (Level 1 Only) ---
+            // We map 'items' to remove the 'details' array, creating a clean Level 1 list
+            const level1Items = items.map(({ details, ...rest }) => rest);
+
+            if (level1Items.length > 0 && abstract_name === "Abstract Estimate") {
+
+                await BillingService.createBill(
+                    {
+                        tender_id: tender_id,
+                        bill_sequence: final_sequence,
+                        bill_id: final_bill_id,
+                        items: level1Items
+                    }
+                );
+            }
             await session.commitTransaction();
             session.endSession();
 
             return {
                 success: true,
                 message: `Successfully processed '${abstract_name}' as ${targetDoc.bill_id}. Items: ${items.length}`,
-                data: targetDoc
+                data: targetDoc,
             };
 
         } catch (err) {

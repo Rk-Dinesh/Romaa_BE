@@ -1,67 +1,132 @@
 import BillingModel from "./billing.model.js";
-import IdcodeServices from "../../../idcode/idcode.service.js"; 
+import BidModel from "../../../tender/bid/bid.model.js";
 
 class BillingService {
-  
-  // --- Create a New Bill (RA1, RA2, etc.) ---
-  static async createBill(payload) {
-    const { tender_id, items } = payload;
 
-    // 1. Determine Sequence (RA1, RA2...)
-    // Count existing bills for this tender to find the next number
-    const count = await BillingModel.countDocuments({ tender_id });
-    const nextSequence = count + 1;
+static async createBill({tender_id, bill_sequence, bill_id, items}) {
+    try {
+      // --- 1. Fetch The Bid (Agreement Data) ---
+      // We need the Bid to get the base Agreement Quantity and Negotiated Rate (n_rate)
+      const bidDoc = await BidModel.findOne({ tender_id: tender_id })
+        .sort({ createdAt: -1 }) // Get latest if multiple exist
+        .select("items");
 
-    // 2. Generate ID (e.g., RA-1001)
-    const idname = "Billing";
-    const idcode = "RA";
-    try { await IdcodeServices.addIdCode(idname, idcode); } catch(e) {}
-    const generatedBillId = await IdcodeServices.generateCode(idname);
-
-    // 3. Find Previous Bill (to auto-fill 'Previous Qty')
-    let previousBillItems = [];
-    if (nextSequence > 1) {
-      const prevBill = await BillingModel.findOne({ tender_id, bill_sequence: nextSequence - 1 });
-      if (prevBill) {
-        previousBillItems = prevBill.items;
+      if (!bidDoc) {
+        throw new Error(`No Bid found for Tender ID: ${tender_id}`);
       }
-    }
 
-    // 4. Process Items (Auto-fill Previous Qty Logic)
-    const processedItems = items.map(newItem => {
-      // Find matching item from previous bill
-      const prevItem = previousBillItems.find(p => p.s_no === newItem.s_no);
+      // --- 2. Fetch Previous Bill (if sequence > 1) ---
+      // We need this to get 'prev_bill_qty'
+      const prevBillItemsMap = new Map();
       
-      // If RA1, prev is 0. If RA2, prev is RA1's 'upto_date_qty'
-      const prevQty = prevItem ? prevItem.upto_date_qty : 0;
+      if (bill_sequence > 1) {
+        const prevBill = await BillingModel.findOne({ 
+          tender_id: tender_id, 
+          bill_sequence: bill_sequence - 1 
+        });
 
-      return {
-        ...newItem,
-        prev_bill_qty: prevQty, // Auto-set previous
-        // Schema pre-save hook will calculate: Current = UptoDate - Prev
+        if (prevBill && prevBill.items) {
+          // Map: item_code (s_no) -> Item Object
+          prevBill.items.forEach(item => prevBillItemsMap.set(item.s_no, item));
+        }
+      }
+
+      // --- 3. Aggregate Payload Quantities (Sum Duplicates) ---
+      // The payload might have multiple rows for "ID001" (Day 1, Day 2...). 
+      // We sum them up to get the total "Upto Date Qty".
+      const payloadMap = new Map();
+      const payloadRefMap = new Map(); // To store auxiliary data like mb_book_ref
+
+      items.forEach((item) => {
+        const code = item.item_code;
+        const qty = Number(item.quantity) || 0;
+
+        // Sum quantities if code exists, else set new
+        if (payloadMap.has(code)) {
+          payloadMap.set(code, payloadMap.get(code) + qty);
+        } else {
+          payloadMap.set(code, qty);
+          // Store first occurrence of metadata
+          payloadRefMap.set(code, {
+            mb_book_ref: item.mb_book_ref || ""
+          });
+        }
+      });
+
+      // --- 4. Construct Final Bill Items (Based on BID Items) ---
+      // We iterate over BID items ensures all agreement items are present, even if quantity is 0
+      const processedItems = bidDoc.items.map((bidItem) => {
+        const itemCode = bidItem.item_id; // Mapping Bid item_id -> Billing s_no
+
+        // A. Get Agreement Data (From Bid)
+        const agreementQty = bidItem.quantity || 0;
+        const agreementAmount = bidItem.n_amount || 0;
+        const rate = bidItem.n_rate || 0; 
+
+        // B. Get Upto Date Quantity (From Aggregated Payload)
+        // If not in payload, defaults to 0
+        const uptoDateQty = payloadMap.get(itemCode) || 0;
+        const payloadMeta = payloadRefMap.get(itemCode) || {};
+
+        // C. Get Previous Bill Quantity (From Previous Bill Map)
+        const prevItem = prevBillItemsMap.get(itemCode);
+        const prevQty = prevItem ? (prevItem.upto_date_qty || 0) : 0;
+
+        return {
+          item_code: itemCode,           // Redundant but safe
+          item_name: bidItem.item_name,  // Work Classification Code
+          description: bidItem.description,
+          unit: bidItem.unit,
+          rate: rate,                    // n_rate from Bid
+          
+          mb_book_ref: payloadMeta.mb_book_ref || "",
+
+          // --- The Core Columns ---
+          agreement_qty: agreementQty,
+          agreement_amount: agreementAmount,
+          upto_date_qty: uptoDateQty,
+          prev_bill_qty: prevQty,
+
+          // Note: 'current_qty', 'upto_date_amount', 'prev_bill_amount', 'current_amount'
+          // will be calculated automatically by the BillingModel's pre('save') hook.
+        };
+      });
+
+      // --- 5. Create or Update the Document ---
+      const billPayload = {
+        bill_id: bill_id,
+        tender_id: tender_id,
+        bill_sequence: bill_sequence,
+        items: processedItems,
+        bill_type: "RA Bill",
+        status: "Draft",
+        created_by_user: "ADMIN"
       };
-    });
 
-    // 5. Create Document
-    const newBill = new BillingModel({
-      bill_id: generatedBillId,
-      tender_id,
-      bill_sequence: nextSequence,
-      items: processedItems,
-      bill_type: payload.bill_type || "RA Bill",
-      mb_book_ref: payload.mb_book_ref,
-      created_by_user: payload.created_by_user || "ADMIN"
-    });
+      // Upsert: Update if exists, Create if new
+      const savedBill = await BillingModel.findOneAndUpdate(
+        { tender_id: tender_id, bill_sequence: bill_sequence },
+        { $set: billPayload },
+        { new: true, upsert: true, runValidators: true }
+      );
 
-    return await newBill.save();
+      // Trigger Mongoose Pre-Save Hook for Calculations
+      await savedBill.save();
+
+      return savedBill;
+
+    } catch (error) {
+      console.error("Error creating bill:", error);
+      throw new Error(`Failed to create Bill: ${error.message}`);
+    }
   }
 
   // --- Get History (Timeline View) ---
   static async getBillHistory(tender_id) {
     return await BillingModel.find({ tender_id })
       .sort({ bill_sequence: 1 }) // Sort 1 (RA1), 2 (RA2), 3 (RA3)...
-      .select("bill_id bill_date bill_sequence grand_total total_upto_date_amount status"); 
-      // Returns a summary list
+      .select("bill_id bill_date bill_sequence grand_total total_upto_date_amount status");
+    // Returns a summary list
   }
 
   // --- Get Full Details of One Bill ---
