@@ -34,6 +34,7 @@ import siteoverheadrouter from './src/module/tender/siteoverheads/siteoverhead.r
 import rateanalysisquantitesrouter from './src/module/tender/rateanalyisquantites/rateanalysisquantites.route.js';
 import scheduleLiteRouter from './src/module/project/scheduleNew/schedulelite/schedulelite.route.js';
 import workDoneRouter from './src/module/site/workdone/workdone.route.js';
+import billingEstimateRouter from './src/module/project/clientbilling/estimate/billingestimate.route.js';
 
 
 
@@ -96,6 +97,7 @@ app.use('/siteoverhead',siteoverheadrouter);
 app.use('/raquantities',rateanalysisquantitesrouter);
 app.use('/schedulelite',scheduleLiteRouter);
 app.use('/workdone',workDoneRouter);
+app.use('/billing',billingEstimateRouter);
 
 app.get('/',(req,res)=>{
     res.send(`Welcome to Romaa Backend`)
