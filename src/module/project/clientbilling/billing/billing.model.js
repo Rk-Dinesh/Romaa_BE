@@ -110,26 +110,26 @@ BillingSchema.pre('save', function(next) {
       // Ensure values are numbers to prevent NaN
       const rate = Number(item.rate) || 0;
       const agreementQty = Number(item.agreement_qty) || 0;
-      const uptoQty = Number(item.upto_date_qty) || 0;
+      const currentQty = Number(item.current_qty) || 0;
       const prevQty = Number(item.prev_bill_qty) || 0;
 
       // 1. Basic Calculations (Amount = Qty * Rate)
-      item.upto_date_amount = uptoQty * rate;
+      item.current_amount = currentQty * rate;
       item.prev_bill_amount = prevQty * rate;
       
       // 2. Current Bill Calculations
-      item.current_qty = uptoQty - prevQty;
-      item.current_amount = item.current_qty * rate;
+      item.upto_date_qty = currentQty + prevQty;
+      item.upto_date_amount = item.upto_date_qty * rate;
 
       // 3. Excess vs Balance Logic
       // If work done (uptoQty) is greater than agreement, we have Excess.
       // If work done is less than agreement, we have Balance.
-      if (uptoQty > agreementQty) {
-        item.excess_qty = uptoQty - agreementQty;
+      if (item.upto_date_qty > agreementQty) {
+        item.excess_qty = item.upto_date_qty - agreementQty;
         item.balance_qty = 0; // No balance left, we overshot
       } else {
         item.excess_qty = 0;
-        item.balance_qty = agreementQty - uptoQty;
+        item.balance_qty = agreementQty - item.upto_date_qty;
       }
 
       // 4. Calculate Amounts for Excess/Balance

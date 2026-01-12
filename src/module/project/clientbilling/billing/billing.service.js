@@ -4,7 +4,7 @@ import BidModel from "../../../tender/bid/bid.model.js";
 class BillingService {
 
 static async createBill({tender_id, bill_sequence, bill_id, items}) {
-    try {
+    try { 
       // --- 1. Fetch The Bid (Agreement Data) ---
       // We need the Bid to get the base Agreement Quantity and Negotiated Rate (n_rate)
       const bidDoc = await BidModel.findOne({ tender_id: tender_id })
@@ -23,11 +23,11 @@ static async createBill({tender_id, bill_sequence, bill_id, items}) {
         const prevBill = await BillingModel.findOne({ 
           tender_id: tender_id, 
           bill_sequence: bill_sequence - 1 
-        });
+        });        
 
         if (prevBill && prevBill.items) {
           // Map: item_code (s_no) -> Item Object
-          prevBill.items.forEach(item => prevBillItemsMap.set(item.s_no, item));
+          prevBill.items.forEach(item => prevBillItemsMap.set(item.item_code, item));
         }
       }
 
@@ -56,7 +56,7 @@ static async createBill({tender_id, bill_sequence, bill_id, items}) {
       // --- 4. Construct Final Bill Items (Based on BID Items) ---
       // We iterate over BID items ensures all agreement items are present, even if quantity is 0
       const processedItems = bidDoc.items.map((bidItem) => {
-        const itemCode = bidItem.item_id; // Mapping Bid item_id -> Billing s_no
+        const itemCode = bidItem.item_id; // Mapping Bid item_id -> Billing item_code
 
         // A. Get Agreement Data (From Bid)
         const agreementQty = bidItem.quantity || 0;
@@ -65,7 +65,7 @@ static async createBill({tender_id, bill_sequence, bill_id, items}) {
 
         // B. Get Upto Date Quantity (From Aggregated Payload)
         // If not in payload, defaults to 0
-        const uptoDateQty = payloadMap.get(itemCode) || 0;
+        const currentQty = payloadMap.get(itemCode) || 0;
         const payloadMeta = payloadRefMap.get(itemCode) || {};
 
         // C. Get Previous Bill Quantity (From Previous Bill Map)
@@ -84,8 +84,9 @@ static async createBill({tender_id, bill_sequence, bill_id, items}) {
           // --- The Core Columns ---
           agreement_qty: agreementQty,
           agreement_amount: agreementAmount,
-          upto_date_qty: uptoDateQty,
+          current_qty: currentQty,
           prev_bill_qty: prevQty,
+          previous_bill_id: prevItem ? prevItem._id : null,
 
           // Note: 'current_qty', 'upto_date_amount', 'prev_bill_amount', 'current_amount'
           // will be calculated automatically by the BillingModel's pre('save') hook.
