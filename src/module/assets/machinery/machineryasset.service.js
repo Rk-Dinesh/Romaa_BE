@@ -1,141 +1,90 @@
-import IdcodeServices from "../../idcode/idcode.service.js";
-import MachineryAssetModel from "./machineryasset.model.js";
-
+import MachineDailyLog from "../machinerylogs/machinerylogs.model.js";
+import MaintenanceLog from "../maintainencelog/maintainencelog.model.js";
+import MachineryAsset from "./machineryasset.model.js";
 
 class MachineryAssetService {
-  // Create machinery with generated unique assetId
-  static async createMachinery(data) {
-    const idname = "MachineryAsset";
-    const idcode = "MACH";
-    await IdcodeServices.addIdCode(idname, idcode).catch(() => {}); // Ignore 'exists' warning
-    const assetId = await IdcodeServices.generateCode(idname);
 
-    const newMachinery = new MachineryAssetModel({
-      assetId,
-      ...data,
-    });
-    return await newMachinery.save();
+  // 1. Create New Asset
+  static async addMachineryAsset(data) {
+    // Check if assetId already exists
+    const exists = await MachineryAsset.findOne({ assetId: data.assetId });
+    if (exists) throw new Error(`Asset ID ${data.assetId} already exists`);
+
+    const asset = new MachineryAsset(data);
+    return await asset.save();
   }
 
-  // Update projectId and site details by assetId
-  static async assignProjectAndSite(assetId, projectId, siteDetails) {
-    return await MachineryAssetModel.findOneAndUpdate(
-      { assetId },
-      { projectId, currentSite: siteDetails },
+  // 2. Get Single Asset (By assetId)
+  static async getAssetByAssetId(assetId) {
+    return await MachineryAsset.findOne({ assetId: assetId });
+  }
+
+  // 3. Update Asset (By assetId)
+  static async updateAssetDetails(assetId, updateData) {
+    return await MachineryAsset.findOneAndUpdate(
+      { assetId: assetId },
+      updateData,
       { new: true }
     );
   }
 
-  // Get basic asset details with site info by projectId
-  static async getAssetsByProject(projectId) {
-    return await MachineryAssetModel.find({ projectId }).select(
-      "assetId assetName assetType currentSite currentStatus availabilityStatus"
+  // 4. Get Full History (Aggregation using assetId)
+  // This replaces "populate" since we are joining on a custom string field
+  static async getAssetHistory(assetId) {
+    const asset = await MachineryAsset.findOne({ assetId: assetId }).lean();
+    if (!asset) return null;
+
+    // Fetch Logs using the String ID
+    const logs = await MachineDailyLog.find({ assetId: assetId }).sort({ logDate: -1 }).limit(30);
+    const maintenance = await MaintenanceLog.find({ assetId: assetId }).sort({ date: -1 });
+
+    return { ...asset, dailyLogs: logs, maintenanceHistory: maintenance };
+  }
+
+  // 5. Transfer Asset
+  static async transferAsset(assetId, projectId, currentSite) {
+    return await MachineryAsset.findOneAndUpdate(
+      { assetId: assetId },
+      { projectId, currentSite },
+      { new: true }
     );
   }
 
-  // Update currentStatus or availabilityStatus
-  static async updateStatus(assetId, { currentStatus, availabilityStatus }) {
-    const update = {};
-    if (currentStatus) update.currentStatus = currentStatus;
-    if (availabilityStatus) update.availabilityStatus = availabilityStatus;
-    return await MachineryAssetModel.findOneAndUpdate({ assetId }, update, {
-      new: true,
-    });
+  static async getAssets(query={}) {
+    return await MachineryAsset.find(query).sort({ assetId: 1 });
   }
 
-  // Optional: Get single asset details by assetId
-  static async getAssetByAssetId(assetId) {
-    return await MachineryAssetModel.findOne({ assetId });
+  // 7. Update Operational Status (Active, Breakdown, etc.)
+  static async updateAssetStatus(assetId, status, remarks) {
+    return await MachineryAsset.findOneAndUpdate(
+      { assetId: assetId },
+      { 
+        currentStatus: status,
+        remarks: remarks // Log why the status changed
+      },
+      { new: true }
+    );
   }
 
-  // Get meter reading history by assetId (with optional date filtering)
-static async getMeterReadingHistory(assetId, { fromDate, toDate, limit = 50 } = {}) {
-  const query = { assetId };
-  const projection = { 
-    assetName: 1, 
-    assetId: 1, 
-    meterReadingHistory: { 
-      $slice: ["$meterReadingHistory", -limit] // Last N records
-    } 
-  };
+  // 8. Expiry Alerts API (Compliance Check)
+  // Finds items expiring within 'days' (default 30) or already expired
+  static async getExpiryAlerts(days = 30) {
+    const targetDate = new Date();
+    targetDate.setDate(targetDate.getDate() + parseInt(days));
 
-  if (fromDate || toDate) {
-    query["meterReadingHistory.readingDate"] = {};
-    if (fromDate) query["meterReadingHistory.readingDate"].$gte = new Date(fromDate);
-    if (toDate) query["meterReadingHistory.readingDate"].$lte = new Date(toDate);
+    // Check all compliance fields
+    const query = {
+      $or: [
+        { "compliance.insuranceExpiry": { $lte: targetDate, $ne: null } },
+        { "compliance.fitnessCertExpiry": { $lte: targetDate, $ne: null } },
+        { "compliance.pollutionCertExpiry": { $lte: targetDate, $ne: null } },
+        { "compliance.roadTaxExpiry": { $lte: targetDate, $ne: null } },
+        { "compliance.permitExpiry": { $lte: targetDate, $ne: null } }
+      ]
+    };
+
+    return await MachineryAsset.find(query).select("assetName assetId compliance projectId");
   }
-
-  const asset = await MachineryAssetModel.findOne(query).lean();
-  if (!asset) throw new Error("Asset not found");
-
-  return {
-    assetId: asset.assetId,
-    assetName: asset.assetName,
-    meterReadingHistory: asset.meterReadingHistory || []
-  };
 }
 
-// Get trip history by assetId (with optional date filtering)
-static async getTripHistory(assetId, { fromDate, toDate, limit = 50 } = {}) {
-  const query = { assetId };
-  const projection = { 
-    assetName: 1, 
-    assetId: 1, 
-    tripHistory: { 
-      $slice: ["$tripHistory", -limit] // Last N records
-    } 
-  };
-
-  if (fromDate || toDate) {
-    query["tripHistory.tripDate"] = {};
-    if (fromDate) query["tripHistory.tripDate"].$gte = new Date(fromDate);
-    if (toDate) query["tripHistory.tripDate"].$lte = new Date(toDate);
-  }
-
-  const asset = await MachineryAssetModel.findOne(query).lean();
-  if (!asset) throw new Error("Asset not found");
-
-  return {
-    assetId: asset.assetId,
-    assetName: asset.assetName,
-    tripHistory: asset.tripHistory || []
-  };
-}
-
-// Add new meter reading entry
-static async addMeterReading(assetId, meterData) {
-  const update = {
-    $push: { meterReadingHistory: meterData },
-    $set: {
-      meterStartReading: meterData.meterStartReading,
-      meterEndReading: meterData.meterEndReading,
-      tripCount: meterData.tripCount,
-      fuelReading: meterData.fuelReading,
-      recordedBy: meterData.recordedBy,
-      operatorName: meterData.operatorName,
-      shift: meterData.shift,
-      remarks: meterData.remarks,
-      location: meterData.location,
-      fuelFilled: meterData.fuelFilled,
-      fuelCost: meterData.fuelCost
-    },
-  };
-
-  return await MachineryAssetModel.findOneAndUpdate({ assetId }, update, { new: true });
-}
-
-// Add new trip details entry
-static async addTripDetails(assetId, tripData) {
-  return await MachineryAssetModel.findOneAndUpdate(
-    { assetId },
-    { $push: { tripHistory: tripData } },
-    { new: true }
-  );
-}
-static async getAllAssets() {
-    return await MachineryAssetModel.find().sort({ createdAt: -1 });
-  }
-
-}
-
-export default  MachineryAssetService;
+export default MachineryAssetService;

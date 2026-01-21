@@ -1,33 +1,26 @@
 import express from "express";
-import { addMeterReading, addTripDetails, assignProjectAndSite, createMachinery, getAllAssets, getAssetsByProject, getMeterReadingHistory, getTripHistory, updateStatus } from "./machineryasset.controller.js";
+import { createMachineryAsset, 
+    getMachineryAsset, 
+    updateMachineryAsset,
+    getAssetDashboard,
+    transferMachineryAsset,
+    updateAssetStatus,
+    getAssets,
+    getExpiryAlerts
+} from "./machineryasset.controller.js";
 
 
 const machineryrouter = express.Router();
 
-// Create machinery
-machineryrouter.post("/api/machinery-assets", createMachinery);
+machineryrouter.post("/createasset", createMachineryAsset);
+machineryrouter.get("/getbyid/:assetId", getMachineryAsset);
+machineryrouter.put("/update/:assetId", updateMachineryAsset);
+machineryrouter.get("/dashboard/:assetId", getAssetDashboard);
+machineryrouter.put("/transfer/:assetId", transferMachineryAsset);
+machineryrouter.put("/status/:assetId", updateAssetStatus);
+machineryrouter.get("/getall/assets", getAssets);
+machineryrouter.get("/expiry-alerts", getExpiryAlerts);
 
-// Assign project and site details
-machineryrouter.put("/api/machinery-assets/:assetId/assign-project-site", assignProjectAndSite);
 
-// Get assets by project
-machineryrouter.get("/api/machinery-assets/project/:projectId", getAssetsByProject);
-
-// Update currentStatus / availabilityStatus
-machineryrouter.patch("/api/machinery-assets/:assetId/status", updateStatus);
-
-// Get meter reading history
-machineryrouter.get("/api/machinery-assets/:assetId/meter-reading-history", getMeterReadingHistory);
-
-// Get trip history
-machineryrouter.get("/api/machinery-assets/:assetId/trip-history", getTripHistory);
-
-// POST meter reading
-machineryrouter.post("/api/machinery-assets/:assetId/meter-reading", addMeterReading);
-
-// POST trip details
-machineryrouter.post("/api/machinery-assets/:assetId/trip-details", addTripDetails);
-
-machineryrouter.get("/api/allmachinery-assets", getAllAssets);
 
 export default machineryrouter;

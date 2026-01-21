@@ -1,152 +1,98 @@
-import machineryassetService from "./machineryasset.service.js";
+import MachineryAssetService from "./machineryasset.service.js";
 
-// Create machinery asset
-export const createMachinery = async (req, res) => {
+export const createMachineryAsset = async (req, res) => {
   try {
-    const machinery = await machineryassetService.createMachinery(req.body);
-    res.status(201).json({ message: "Machinery created", data: machinery });
+    const result = await MachineryAssetService.addMachineryAsset(req.body);
+    res.status(201).json({ status: true, message: "Machinery Asset created", data: result });
   } catch (error) {
-    res.status(400).json({ message: "Error creating machinery", error: error.message });
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// Assign project id and site details
-export const assignProjectAndSite = async (req, res) => {
+// Get Asset by assetId (e.g., /api/assets/EX-01)
+export const getMachineryAsset = async (req, res) => {
   try {
-    const { assetId } = req.params;
-    const { projectId, siteDetails } = req.body;
-    if (!projectId || !siteDetails) return res.status(400).json({ message: "projectId and siteDetails required" });
-
-    const updated = await machineryassetService.assignProjectAndSite(assetId, projectId, siteDetails);
-    if (!updated) return res.status(404).json({ message: "Asset not found" });
-
-    res.status(200).json({ message: "Project and site assigned", data: updated });
-  } catch (error) {
-    res.status(400).json({ message: "Error assigning project/site", error: error.message });
-  }
-};
-
-// Get assets by projectId
-export const getAssetsByProject = async (req, res) => {
-  try {
-    const { projectId } = req.params;
-    const assets = await machineryassetService.getAssetsByProject(projectId);
-    res.status(200).json({ data: assets });
-  } catch (error) {
-    res.status(400).json({ message: "Error fetching assets", error: error.message });
-  }
-};
-
-
-// Update status
-export const updateStatus = async (req, res) => {
-  try {
-    const { assetId } = req.params;
-    const { currentStatus, availabilityStatus } = req.body;
-    if (!currentStatus && !availabilityStatus) return res.status(400).json({ message: "Provide currentStatus or availabilityStatus" });
-
-    const updated = await machineryassetService.updateStatus(assetId, { currentStatus, availabilityStatus });
-    if (!updated) return res.status(404).json({ message: "Asset not found" });
-
-    res.status(200).json({ message: "Status updated", data: updated });
-  } catch (error) {
-    res.status(400).json({ message: "Error updating status", error: error.message });
-  }
-};
-
-// Get meter reading history
-export const getMeterReadingHistory = async (req, res) => {
-  try {
-    const { assetId } = req.params;
-    const { fromDate, toDate, limit } = req.query;
+    const { assetId } = req.params; // Expecting string like "EX-01"
+    const result = await MachineryAssetService.getAssetByAssetId(assetId);
     
-    const history = await machineryassetService.getMeterReadingHistory(assetId, {
-      fromDate,
-      toDate,
-      limit: parseInt(limit) || 50
-    });
+    if (!result) return res.status(404).json({ status: false, message: "Asset not found" });
     
-    res.status(200).json({ 
-      message: "Meter reading history fetched", 
-      data: history 
-    });
+    res.status(200).json({ status: true, data: result });
   } catch (error) {
-    res.status(400).json({ 
-      message: "Error fetching meter reading history", 
-      error: error.message 
-    });
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// Get trip history
-export const getTripHistory = async (req, res) => {
+// Update Asset
+export const updateMachineryAsset = async (req, res) => {
   try {
     const { assetId } = req.params;
-    const { fromDate, toDate, limit } = req.query;
-    
-    const history = await machineryassetService.getTripHistory(assetId, {
-      fromDate,
-      toDate,
-      limit: parseInt(limit) || 50
-    });
-    
-    res.status(200).json({ 
-      message: "Trip history fetched", 
-      data: history 
-    });
+    const result = await MachineryAssetService.updateAssetDetails(assetId, req.body);
+    res.status(200).json({ status: true, message: "Asset updated", data: result });
   } catch (error) {
-    res.status(400).json({ 
-      message: "Error fetching trip history", 
-      error: error.message 
-    });
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// POST new meter reading
-export const addMeterReading = async (req, res) => {
+// Get Full History (Dashboard View)
+export const getAssetDashboard = async (req, res) => {
   try {
     const { assetId } = req.params;
-    const meterData = req.body;
-
-    const updatedAsset = await machineryassetService.addMeterReading(assetId, meterData);
-    if (!updatedAsset) return res.status(404).json({ message: "Asset not found" });
-
-    res.status(201).json({ message: "Meter reading added", data: updatedAsset });
+    const result = await MachineryAssetService.getAssetHistory(assetId);
+    res.status(200).json({ status: true, data: result });
   } catch (error) {
-    res.status(400).json({ message: "Error adding meter reading", error: error.message });
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// POST new trip details
-export const addTripDetails = async (req, res) => {
+export const transferMachineryAsset = async (req, res) => {
   try {
     const { assetId } = req.params;
-    const tripData = req.body;
+    const { projectId, currentSite } = req.body; // Expect these in body
 
-    const updatedAsset = await machineryassetService.addTripDetails(assetId, tripData);
-    if (!updatedAsset) return res.status(404).json({ message: "Asset not found" });
-
-    res.status(201).json({ message: "Trip details added", data: updatedAsset });
-  } catch (error) {
-    res.status(400).json({ message: "Error adding trip details", error: error.message });
-  }
-};
-export  const  getAllAssets = async (req, res) => {
-    try {
-      const assets = await machineryassetService.getAllAssets();
-
-      if (!assets || assets.length === 0) {
-        return res.status(404).json({ message: "No machinery assets found" });
-      }
-
-      return res.status(200).json({
-        message: "Machinery assets fetched successfully",
-        data: assets,
-      });
-    } catch (error) {
-      console.error("Error fetching machinery assets:", error);
-      return res.status(500).json({
-        message: "Internal server error while fetching machinery assets",
-      });
+    if (!projectId || !currentSite) {
+        return res.status(400).json({ status: false, message: "projectId and currentSite are required" });
     }
-  };
+
+    const result = await MachineryAssetService.transferAsset(assetId, projectId, currentSite);
+    res.status(200).json({ status: true, message: "Asset transferred successfully", data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const getAssets = async (req, res) => {
+  try {
+    const { query } = req.params;
+    const result = await MachineryAssetService.getAssets(query);
+    res.status(200).json({ status: true, data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const updateAssetStatus = async (req, res) => {
+  try {
+    const { assetId } = req.params;
+    const { status, remarks } = req.body;
+
+    if (!status) {
+      return res.status(400).json({ status: false, message: "Status is required" });
+    }
+
+    const result = await MachineryAssetService.updateAssetStatus(assetId, status, remarks);
+    res.status(200).json({ status: true, message: "Asset status updated", data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const getExpiryAlerts = async (req, res) => {
+  try {
+    const result = await MachineryAssetService.getExpiryAlerts();
+    res.status(200).json({ status: true, data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
