@@ -218,6 +218,11 @@ class BillingEstimateService {
             throw err;
         }
     }
+
+    static async getDetailedBill(tender_id,bill_id,abstract_name,bill_sequence){
+        const doc = await BillingEstimateModel.findOne({ tender_id, bill_id, abstract_name,bill_sequence });
+        return doc;
+    }
 }
 
 export default BillingEstimateService;

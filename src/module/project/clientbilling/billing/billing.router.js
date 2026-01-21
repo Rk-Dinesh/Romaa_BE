@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { createBill, getHistory, getDetails } from "./billing.controller";
+import { createBill, getHistory, getDetails } from "./billing.controller.js";
 
 const billingRouter = Router();
 
@@ -10,6 +10,6 @@ billingRouter.post('/api/create', createBill);
 billingRouter.get('/api/history/:tender_id', getHistory);
 
 // GET: View full details (items, measurements) of a specific bill
-billingRouter.get('/api/details/:bill_id', getDetails);
+billingRouter.get('/api/details/:tender_id/:bill_id', getDetails);
 
 export default billingRouter;

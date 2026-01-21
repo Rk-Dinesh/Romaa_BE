@@ -95,3 +95,15 @@ export const uploadBillingEstimateCSV = async (req, res, next) => {
   }
 };
 
+export const getDetailedBill = async (req, res, next) => {
+  try {
+    const { tender_id, bill_id, abstract_name, bill_sequence } = req.params;
+    if (!tender_id || !bill_id || !abstract_name || !bill_sequence) return res.status(400).json({ error: "Missing required parameters" });
+    const result = await BillingEstimateService.getDetailedBill(tender_id, bill_id, abstract_name, bill_sequence);
+    res.status(200).json({ status: true, message: "Detailed bill fetched successfully", data: result });
+  } catch (error) {
+    res.status(400).json({ status: false, error: error.message });
+  }
+};
+
+

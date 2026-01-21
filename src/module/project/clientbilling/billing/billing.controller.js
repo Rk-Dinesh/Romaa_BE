@@ -26,8 +26,8 @@ export const getHistory = async (req, res) => {
 // Get Single Bill (Detailed View)
 export const getDetails = async (req, res) => {
   try {
-    const { bill_id } = req.params;
-    const bill = await BillingService.getBillDetails(bill_id);
+    const { tender_id, bill_id } = req.params;
+    const bill = await BillingService.getBillDetails(tender_id, bill_id);
     if(!bill) return res.status(404).json({ error: "Bill not found" });
     res.status(200).json({ success: true, data: bill });
   } catch (error) {

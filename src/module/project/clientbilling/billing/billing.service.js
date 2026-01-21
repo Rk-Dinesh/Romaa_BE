@@ -126,13 +126,13 @@ static async createBill({tender_id, bill_sequence, bill_id, items}) {
   static async getBillHistory(tender_id) {
     return await BillingModel.find({ tender_id })
       .sort({ bill_sequence: 1 }) // Sort 1 (RA1), 2 (RA2), 3 (RA3)...
-      .select("bill_id bill_date bill_sequence grand_total total_upto_date_amount status");
+      .select("bill_id bill_date bill_sequence grand_total total_upto_date_amount status tender_id");
     // Returns a summary list
   }
 
   // --- Get Full Details of One Bill ---
-  static async getBillDetails(bill_id) {
-    return await BillingModel.findOne({ bill_id });
+  static async getBillDetails(tender_id, bill_id) {
+    return await BillingModel.findOne({ tender_id, bill_id });
   }
 }
 
