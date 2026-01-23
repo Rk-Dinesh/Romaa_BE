@@ -216,3 +216,18 @@ if predecessor is edited
   "predecessor": "8FS+2"
 }
 
+Summary work flow:
+1. Two types of Employees:
+    a.office Staff
+    b.NMR Staff
+
+Here we will maintain the attendance of both types of employees.Payroll will be calculated based on the attendance.
+Location based attendance.if the employee is in office location then the attendance will be marked as office
+Leave Management
+
+This above segment is for the  HR & Labour Management Schedule.
+
+2. Assing Roles to Employees for Login of Dashboard.
+
+Here we will assign roles to employees for login of dashboard.
+Roles will be created by the user and assigned to employees.we can allocate them the access to the modules. like site,project,tender,employee,attendance etc.
