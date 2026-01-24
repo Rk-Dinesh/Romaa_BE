@@ -12,7 +12,8 @@ import {
   updateEmployeeAccess,
   resetPassword,
   getUnassignedEmployees,
-  getEmployeesWithRoles
+  getEmployeesWithRoles,
+  assignProjects
 } from "./employee.controller.js";
 import { verifyJWT } from "../../../common/Auth.middlware.js";
 
@@ -35,7 +36,7 @@ employeeRoute.put("/update/:employeeId", updateEmployee);
 employeeRoute.delete("/delete/:employeeId", deleteEmployee);
 
 // --- Role Management ---
-employeeRoute.put("/role/re-assign", assignRole); // Body: { employeeId, roleId }
+
 employeeRoute.get("/role/filter", getUsersByRole); // Query: ?role=ADMIN
 
 employeeRoute.get("/with-roles", getEmployeesWithRoles); // 1. Has Role
@@ -43,6 +44,8 @@ employeeRoute.get("/unassigned", getUnassignedEmployees); // 2. No Role (Lite da
 
 // --- Update Operations ---
 employeeRoute.put("/update-access/:employeeId", updateEmployeeAccess); // 3. Update Role/Site/Status
+employeeRoute.put("/role/re-assign", assignRole); // Body: { employeeId, roleId }
+employeeRoute.put("/assign-projects", assignProjects); // Body: { employeeId, assignedProject: [projectId] }
 employeeRoute.post("/reset-password",verifyJWT, resetPassword);
 
 export default employeeRoute;

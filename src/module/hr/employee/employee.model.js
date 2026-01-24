@@ -33,8 +33,12 @@ const employeeSchema = new mongoose.Schema(
       enum: ["Office", "Site"],
       default: "Office"
     },
-    // If userType is "Site", link them to a specific project so they can only see that data
-    assignedProject: { type: Schema.Types.ObjectId, ref: "Tenders", default: null },
+    assignedProject: [
+    { 
+      type: mongoose.Schema.Types.ObjectId, 
+      ref: "Tenders" 
+    }
+  ],
     // --- Profile Details ---
     designation: String,
     dateOfJoining: Date,

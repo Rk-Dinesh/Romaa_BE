@@ -227,3 +227,44 @@ export const resetPassword = async (req, res) => {
     res.status(400).json({ status: false, message: error.message });
   }
 };
+
+
+export const assignProjects = async (req, res) => {
+  try {
+    const { employeeId, assignedProject } = req.body;
+
+    // Basic Validation
+    if (!employeeId) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Employee ID is required" 
+      });
+    }
+
+    if (!Array.isArray(assignedProject)) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "assignedProject must be an array of IDs" 
+      });
+    }
+
+    // Call Service
+    const updatedEmployee = await EmployeeService.assignProjectsToUser(
+      employeeId, 
+      assignedProject
+    );
+
+    return res.status(200).json({
+      status: true,
+      message: "Projects assigned successfully",
+      data: updatedEmployee,
+    });
+
+  } catch (error) {
+    console.error("Error assigning projects:", error);
+    return res.status(500).json({
+      status: false,
+      message: error.message || "Internal Server Error",
+    });
+  }
+};

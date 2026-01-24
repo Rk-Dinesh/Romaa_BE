@@ -2,6 +2,7 @@ import EmployeeModel from "./employee.model.js";
 import IdcodeServices from "../../idcode/idcode.service.js"; 
 import RoleModel from "../../role/role.model.js";
 import bcrypt from "bcrypt";
+import TenderModel from "../../tender/tender/tender.model.js";
 
 class EmployeeService {
   
@@ -108,7 +109,7 @@ static async assignRoleToUser(employeeId, roleId) {
   }
 
   static async getEmployeeById(employeeId) {
-    return await EmployeeModel.findOne({ employeeId }).select("-password").populate("role");
+    return await EmployeeModel.findOne({ employeeId }).select("-password").populate("role").populate("assignedProject", "tender_id tender_project_name");
   }
 
   static async updateEmployee(employeeId, updateData) {
@@ -195,6 +196,43 @@ static async updateEmployeeAccess(employeeId, { role, status, password }) {
     await employee.save();
 
     return true;
+  }
+  /**
+   * Assign multiple projects/sites to an employee
+   * @param {String} employeeId - The unique Employee ID (e.g., EMP001)
+   * @param {Array} projectIds - Array of MongoDB ObjectIds (strings)
+   */
+  static async assignProjectsToUser(employeeId, projectIds) {
+    // 1. (Optional but recommended) Validate that all project IDs actually exist
+    // This prevents adding invalid IDs to the employee record
+    if (projectIds.length > 0) {
+      const validProjects = await TenderModel.countDocuments({
+        _id: { $in: projectIds }
+      });
+      
+      if (validProjects !== projectIds.length) {
+        throw new Error("One or more Site/Project IDs are invalid");
+      }
+    }
+
+    // 2. Update the Employee
+    const updatedEmployee = await EmployeeModel.findOneAndUpdate(
+      { employeeId: employeeId },
+      { 
+        $set: { 
+          assignedProject: projectIds 
+        } 
+      },
+      { new: true, runValidators: true }
+    )
+    .populate("assignedProject", "tender_id tender_project_name") // Populate to return full details
+    .populate("role", "roleName"); // Populate role if needed for context
+
+    if (!updatedEmployee) {
+      throw new Error("Employee not found");
+    }
+
+    return updatedEmployee;
   }
 }
 
