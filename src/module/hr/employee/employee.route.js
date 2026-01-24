@@ -35,7 +35,7 @@ employeeRoute.put("/update/:employeeId", updateEmployee);
 employeeRoute.delete("/delete/:employeeId", deleteEmployee);
 
 // --- Role Management ---
-employeeRoute.put("/role/assign", assignRole); // Body: { employeeId, roleId }
+employeeRoute.put("/role/re-assign", assignRole); // Body: { employeeId, roleId }
 employeeRoute.get("/role/filter", getUsersByRole); // Query: ?role=ADMIN
 
 employeeRoute.get("/with-roles", getEmployeesWithRoles); // 1. Has Role

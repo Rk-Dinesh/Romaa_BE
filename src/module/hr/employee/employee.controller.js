@@ -111,8 +111,8 @@ export const deleteEmployee = async (req, res) => {
 export const assignRole = async (req, res) => {
   try {
     const { employeeId, roleId } = req.body;
-    if (!employeeId || !roleId) {
-      return res.status(400).json({ status: false, message: "Employee ID and Role ID required" });
+    if (!employeeId) {
+      return res.status(400).json({ status: false, message: "Employee ID is required" });
     }
     
     const data = await EmployeeService.assignRoleToUser(employeeId, roleId);

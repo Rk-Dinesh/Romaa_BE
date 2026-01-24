@@ -59,17 +59,38 @@ class EmployeeService {
 
   // --- 3. Role Management ---
   
-  // Assign Role to User
-  static async assignRoleToUser(employeeId, roleId) {
+  // Re-Assign Role to User
+static async assignRoleToUser(employeeId, roleId) {
+  let updateData = {};
+
+  if (roleId !== null) {
+    // --- CASE 1: Assigning a Role ---
+    // Validate role exists
     const role = await RoleModel.findById(roleId);
     if (!role) throw new Error("Role not found");
+    
+    // Only update the role, keep existing password (if any)
+    updateData = { role: roleId };
 
-    return await EmployeeModel.findOneAndUpdate(
-      { employeeId: employeeId },
-      { $set: { role: roleId } },
-      { new: true }
-    ).populate("role");
+  } else {
+    // --- CASE 2: Revoking Access (roleId is null) ---
+    // Set both Role and Password to null
+    updateData = { 
+        role: null, 
+        password: null 
+    };
   }
+
+  const updatedEmployee = await EmployeeModel.findOneAndUpdate(
+    { employeeId: employeeId },
+    { $set: updateData },
+    { new: true }
+  ).populate("role");
+
+  if (!updatedEmployee) throw new Error("Employee not found");
+
+  return updatedEmployee;
+}
 
   // Get Users by Specific Role (e.g., Get all "Site Engineers")
   static async getUsersByRole(roleName) {
