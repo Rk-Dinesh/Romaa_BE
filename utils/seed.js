@@ -88,7 +88,8 @@ export const seedDatabase = async () => {
         idProof: {
             type: "PAN",
             number: "ABCDE1234F"
-        }
+        },
+        accessMode:"BOTH"
       });
 
       console.log(`🚀 Created User: ${newUser.name} (${newUser.employeeId})`);

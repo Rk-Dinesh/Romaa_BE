@@ -110,12 +110,12 @@ export const deleteEmployee = async (req, res) => {
 // 7. Assign Role
 export const assignRole = async (req, res) => {
   try {
-    const { employeeId, roleId } = req.body;
+    const { employeeId, roleId,accessMode } = req.body;
     if (!employeeId) {
       return res.status(400).json({ status: false, message: "Employee ID is required" });
     }
     
-    const data = await EmployeeService.assignRoleToUser(employeeId, roleId);
+    const data = await EmployeeService.assignRoleToUser(employeeId, roleId,accessMode);
     res.status(200).json({ status: true, message: "Role assigned successfully", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -186,13 +186,14 @@ export const updateEmployeeAccess = async (req, res) => {
   try {
     const { employeeId } = req.params;
     // Extract only allowed fields to prevent overwriting sensitive data
-    const { role, assignedSite, status,password } = req.body;
+    const { role, assignedSite, status,password,accessMode } = req.body;
 
     const updatedData = await EmployeeService.updateEmployeeAccess(employeeId, {
       role,
       assignedSite,
       status,
       password,
+      accessMode
     });
 
     res.status(200).json({

@@ -11,6 +11,7 @@ const employeeSchema = new mongoose.Schema(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true }, // Login ID
     phone: { type: String, required: true },
+    employeeReference:{type:String},
     
     // --- Security & Auth ---
     password: { 
@@ -39,6 +40,11 @@ const employeeSchema = new mongoose.Schema(
       ref: "Tenders" 
     }
   ],
+  accessMode:{
+    type: String,
+    enum:["WEBSITE","MOBILE","BOTH"],
+    default: null
+  },
     // --- Profile Details ---
     designation: String,
     dateOfJoining: Date,

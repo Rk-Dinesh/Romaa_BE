@@ -1,20 +1,20 @@
-import EmployeeModel from "./employee.model.js"; 
-import IdcodeServices from "../../idcode/idcode.service.js"; 
+import EmployeeModel from "./employee.model.js";
+import IdcodeServices from "../../idcode/idcode.service.js";
 import RoleModel from "../../role/role.model.js";
 import bcrypt from "bcrypt";
 import TenderModel from "../../tender/tender/tender.model.js";
 
 class EmployeeService {
-  
+
   // --- 1. Create New Employee (Register) ---
   static async addEmployee(employeeData) {
     // A. Generate Custom ID (EMP-001)
     const idname = "EMPLOYEE";
     const idcode = "EMP";
     // Ensure ID config exists
-    await IdcodeServices.addIdCode(idname, idcode); 
-    const employeeId = await IdcodeServices.generateCode(idname); 
-    
+    await IdcodeServices.addIdCode(idname, idcode);
+    const employeeId = await IdcodeServices.generateCode(idname);
+
     if (!employeeId) throw new Error("Failed to generate employee ID");
 
     // B. Check if Role exists
@@ -52,46 +52,47 @@ class EmployeeService {
 
     // Remove sensitive fields from response
     const loggedInUser = await EmployeeModel.findById(user._id)
-        .select("-password -refreshToken")
-        .populate("role");
+      .select("-password -refreshToken")
+      .populate("role");
 
     return { user: loggedInUser, accessToken, refreshToken };
   }
 
   // --- 3. Role Management ---
-  
+
   // Re-Assign Role to User
-static async assignRoleToUser(employeeId, roleId) {
-  let updateData = {};
+  static async assignRoleToUser(employeeId, roleId, accessMode) {
+    const updateData = {}; // Initialize
 
-  if (roleId !== null) {
-    // --- CASE 1: Assigning a Role ---
-    // Validate role exists
-    const role = await RoleModel.findById(roleId);
-    if (!role) throw new Error("Role not found");
-    
-    // Only update the role, keep existing password (if any)
-    updateData = { role: roleId };
+    // 1. Set Access Mode
+    if (accessMode) {
+      updateData.accessMode = accessMode;
+    }
 
-  } else {
-    // --- CASE 2: Revoking Access (roleId is null) ---
-    // Set both Role and Password to null
-    updateData = { 
-        role: null, 
-        password: null 
-    };
+    if (roleId) {
+      // --- CASE 1: Assigning a Role ---
+      // Validate role exists
+      const role = await RoleModel.findById(roleId);
+      if (!role) throw new Error("Role not found");
+      updateData.role = roleId;
+
+    } else {
+      // --- CASE 2: Revoking Access (roleId is null) ---
+      updateData.role = null;
+      updateData.password = null;
+      updateData.accessMode = null; // Optional: Reset access mode if revoking role
+    }
+
+    const updatedEmployee = await EmployeeModel.findOneAndUpdate(
+      { employeeId: employeeId },
+      { $set: updateData },
+      { new: true }
+    ).populate("role");
+
+    if (!updatedEmployee) throw new Error("Employee not found");
+
+    return updatedEmployee;
   }
-
-  const updatedEmployee = await EmployeeModel.findOneAndUpdate(
-    { employeeId: employeeId },
-    { $set: updateData },
-    { new: true }
-  ).populate("role");
-
-  if (!updatedEmployee) throw new Error("Employee not found");
-
-  return updatedEmployee;
-}
 
   // Get Users by Specific Role (e.g., Get all "Site Engineers")
   static async getUsersByRole(roleName) {
@@ -146,27 +147,27 @@ static async assignRoleToUser(employeeId, roleId) {
     return { total, employees };
   }
 
-static async getEmployeesWithRoles() {
-  // Filter where role is NOT null
-  return await EmployeeModel.find({ role: { $ne: null } })
-    .populate("role", "role_id roleName") 
-    .sort({ createdAt: -1 });
-}
+  static async getEmployeesWithRoles() {
+    // Filter where role is NOT null
+    return await EmployeeModel.find({ role: { $ne: null } })
+      .populate("role", "role_id roleName")
+      .sort({ createdAt: -1 });
+  }
 
   static async getUnassignedEmployees() {
     // Filter where role IS null
     // Select only specific fields: _id, employeeId, name
     return await EmployeeModel.find({ role: null })
-      .select("employeeId name email") 
+      .select("employeeId name email")
       .lean();
   }
 
-static async updateEmployeeAccess(employeeId, { role, status, password }) {
+  static async updateEmployeeAccess(employeeId, { role, status, password, accessMode }) {
     const updateData = {};
 
     if (role) updateData.role = role;
     if (status) updateData.status = status;
-
+    if (accessMode) updateData.accessMode = accessMode;
     // ✅ Hash password before adding to updateData
     if (password) {
       updateData.password = await bcrypt.hash(password, 10);
@@ -180,7 +181,7 @@ static async updateEmployeeAccess(employeeId, { role, status, password }) {
 
     if (!updatedEmployee) throw new Error("Employee not found");
     return updatedEmployee;
-}
+  }
 
   static async resetPassword(userId, oldPassword, newPassword) {
     // 1. Find user and explicitly select password (hidden by default)
@@ -209,7 +210,7 @@ static async updateEmployeeAccess(employeeId, { role, status, password }) {
       const validProjects = await TenderModel.countDocuments({
         _id: { $in: projectIds }
       });
-      
+
       if (validProjects !== projectIds.length) {
         throw new Error("One or more Site/Project IDs are invalid");
       }
@@ -218,15 +219,15 @@ static async updateEmployeeAccess(employeeId, { role, status, password }) {
     // 2. Update the Employee
     const updatedEmployee = await EmployeeModel.findOneAndUpdate(
       { employeeId: employeeId },
-      { 
-        $set: { 
-          assignedProject: projectIds 
-        } 
+      {
+        $set: {
+          assignedProject: projectIds
+        }
       },
       { new: true, runValidators: true }
     )
-    .populate("assignedProject", "tender_id tender_project_name") // Populate to return full details
-    .populate("role", "roleName"); // Populate role if needed for context
+      .populate("assignedProject", "tender_id tender_project_name") // Populate to return full details
+      .populate("role", "roleName"); // Populate role if needed for context
 
     if (!updatedEmployee) {
       throw new Error("Employee not found");
