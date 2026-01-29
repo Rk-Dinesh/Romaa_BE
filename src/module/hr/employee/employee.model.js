@@ -11,21 +11,21 @@ const employeeSchema = new mongoose.Schema(
     name: { type: String, required: true },
     email: { type: String, required: true, unique: true, lowercase: true }, // Login ID
     phone: { type: String, required: true },
-    employeeReference:{type:String},
-    
+    employeeReference: { type: String },
+
     // --- Security & Auth ---
-    password: { 
-      type: String, 
+    password: {
+      type: String,
       select: false // Never return password in API queries by default
     },
     refreshToken: { type: String, select: false }, // For session management
-    
+
     // --- Access Control ---
-    role: { type: Schema.Types.ObjectId, ref: "Role",default: null }, // Link to Role Model
-    status: { 
-      type: String, 
-      enum: ["Active", "Inactive", "Suspended"], 
-      default: "Active" 
+    role: { type: Schema.Types.ObjectId, ref: "Role", default: null }, // Link to Role Model
+    status: {
+      type: String,
+      enum: ["Active", "Inactive", "Suspended"],
+      default: "Active"
     },
 
     // --- Office / Site Logic ---
@@ -35,16 +35,16 @@ const employeeSchema = new mongoose.Schema(
       default: "Office"
     },
     assignedProject: [
-    { 
-      type: mongoose.Schema.Types.ObjectId, 
-      ref: "Tenders" 
-    }
-  ],
-  accessMode:{
-    type: String,
-    enum:["WEBSITE","MOBILE","BOTH"],
-    default: null
-  },
+      {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Tenders"
+      }
+    ],
+    accessMode: {
+      type: String,
+      enum: ["WEBSITE", "MOBILE", "BOTH"],
+      default: null
+    },
     // --- Profile Details ---
     designation: String,
     dateOfJoining: Date,
@@ -63,7 +63,15 @@ const employeeSchema = new mongoose.Schema(
       relationship: String,
       phone: String,
     },
-    
+    resetOTP: {
+      type: String,
+      default: null
+    },
+    resetOTPExpires: {
+      type: Date,
+      default: null
+    }
+
   },
   { timestamps: true }
 );
@@ -83,9 +91,9 @@ employeeSchema.methods.isPasswordCorrect = async function (password) {
 // --- Method: Generate Access Token ---
 employeeSchema.methods.generateAccessToken = function () {
   return jwt.sign(
-    { 
-      _id: this._id, 
-      email: this.email, 
+    {
+      _id: this._id,
+      email: this.email,
       role: this.role._id || this.role
     },
     process.env.ACCESS_TOKEN_SECRET,

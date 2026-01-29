@@ -13,7 +13,9 @@ import {
   resetPassword,
   getUnassignedEmployees,
   getEmployeesWithRoles,
-  assignProjects
+  assignProjects,
+  forgotPassword,
+  resetPasswordWithOTP
 } from "./employee.controller.js";
 import { verifyJWT } from "../../../common/Auth.middlware.js";
 
@@ -47,5 +49,7 @@ employeeRoute.put("/update-access/:employeeId", updateEmployeeAccess); // 3. Upd
 employeeRoute.put("/role/re-assign", assignRole); // Body: { employeeId, roleId }
 employeeRoute.put("/assign-projects", assignProjects); // Body: { employeeId, assignedProject: [projectId] }
 employeeRoute.post("/reset-password",verifyJWT, resetPassword);
+employeeRoute.post("/forgot-password", forgotPassword);
+employeeRoute.post("/reset-password-with-otp", resetPasswordWithOTP);
 
 export default employeeRoute;

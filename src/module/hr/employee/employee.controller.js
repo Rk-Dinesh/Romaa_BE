@@ -211,7 +211,7 @@ export const resetPassword = async (req, res) => {
     // Assuming the user is logged in, we get ID from req.user (Middleware)
     // OR if an admin is resetting it, we get ID from req.body/params.
     // Here assuming the user is resetting THEIR OWN password:
-    const userId = req.user._id; 
+    const userId = req.user.employeeId; 
     const { oldPassword, newPassword } = req.body;
 
     if (!oldPassword || !newPassword) {
@@ -266,6 +266,74 @@ export const assignProjects = async (req, res) => {
     return res.status(500).json({
       status: false,
       message: error.message || "Internal Server Error",
+    });
+  }
+};
+
+export const forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Email is required" 
+      });
+    }
+
+    const result = await EmployeeService.forgotPassword(email);
+
+    return res.status(200).json({
+      status: true,
+      message: result.message,
+    });
+
+  } catch (error) {
+    console.error("Forgot Password Error:", error);
+    
+    // Security Best Practice: Don't always reveal if a user exists or not explicitly 
+    // to prevent enumeration, but for internal tools, error messages are okay.
+    return res.status(400).json({
+      status: false,
+      message: error.message || "Something went wrong",
+    });
+  }
+};
+
+export const resetPasswordWithOTP = async (req, res) => {
+  try {
+    const { email, otp, newPassword } = req.body;
+
+    // Basic Validation
+    if (!email || !otp || !newPassword) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Email, OTP, and New Password are required." 
+      });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ 
+        status: false, 
+        message: "Password must be at least 6 characters long." 
+      });
+    }
+
+    // Call Service
+    const result = await EmployeeService.verifyOTPAndResetPassword(email, otp, newPassword);
+
+    return res.status(200).json({
+      status: true,
+      message: result.message,
+    });
+
+  } catch (error) {
+    console.error("Reset Password Error:", error);
+    
+    // Return specific error messages (Invalid OTP, Expired, etc.)
+    return res.status(400).json({
+      status: false,
+      message: error.message || "Failed to reset password",
     });
   }
 };

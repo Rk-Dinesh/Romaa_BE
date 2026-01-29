@@ -3,6 +3,7 @@ import IdcodeServices from "../../idcode/idcode.service.js";
 import RoleModel from "../../role/role.model.js";
 import bcrypt from "bcrypt";
 import TenderModel from "../../tender/tender/tender.model.js";
+import { sendOTPEmail } from "../../../../utils/emailSender.js";
 
 class EmployeeService {
 
@@ -234,6 +235,87 @@ class EmployeeService {
     }
 
     return updatedEmployee;
+  }
+
+  static async forgotPassword(email) {
+    // 1. Check if user exists
+    const employee = await EmployeeModel.findOne({ email });
+    if (!employee) {
+      throw new Error("User with this email does not exist.");
+    }
+
+    if (employee.status !== "Active") {
+      throw new Error("Account is inactive. Contact Admin.");
+    }
+
+    // 2. Generate 6-digit OTP
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+
+    // 3. Set Expiration (5 Minutes from now)
+    const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
+
+    // 4. Save to Database
+    employee.resetOTP = otp;
+    employee.resetOTPExpires = expiryTime;
+    await employee.save();
+
+    // 5. Send Email via SMTP
+    const emailSent = await sendOTPEmail(employee.email, employee.name, otp);
+
+    if (!emailSent) {
+      throw new Error("Failed to send OTP email. Please try again later.");
+    }
+
+    return { message: `OTP sent to ${email}` };
+  }
+  /**
+   * Verify OTP and Set New Password
+   * @param {String} email 
+   * @param {String} otp 
+   * @param {String} newPassword 
+   */
+  static async verifyOTPAndResetPassword(email, otp, newPassword) {
+    // 1. Find User
+    // We select '+resetOTP +resetOTPExpires' because they might not be selected by default in your schema
+    const employee = await EmployeeModel.findOne({ email }).select("+resetOTP +resetOTPExpires");
+
+    if (!employee) {
+      throw new Error("User not found.");
+    }
+
+    // 2. Validate OTP Existence
+    if (!employee.resetOTP) {
+      throw new Error("No password reset requested.");
+    }
+
+    // 3. Check if OTP matches
+    if (employee.resetOTP !== otp) {
+      throw new Error("Invalid OTP.");
+    }
+
+    // 4. Check if OTP is expired
+    // resetOTPExpires is a Date object. We compare it to current time.
+    if (employee.resetOTPExpires < Date.now()) {
+      // Optional: Clear expired OTP
+      employee.resetOTP = null;
+      employee.resetOTPExpires = null;
+      await employee.save();
+      
+      throw new Error("OTP has expired. Please request a new one.");
+    }
+
+    // 5. Hash the New Password
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    // 6. Update User & Clear OTP fields
+    employee.password = hashedPassword;
+    employee.resetOTP = null;
+    employee.resetOTPExpires = null;
+
+    await employee.save();
+
+    return { message: "Password reset successfully. You can now login." };
   }
 }
 
