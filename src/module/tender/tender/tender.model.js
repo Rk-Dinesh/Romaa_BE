@@ -220,6 +220,7 @@ const tenderSchema = new mongoose.Schema(
     tender_start_date: { type: Date, default: null },
     tender_end_date: { type: Date, default: null },
     tender_duration: { type: String, default: "" },
+    consider_completion_duration: { type: String, default: "" },
     tender_duration_unit: { type: String, default: "" },
     workOrder_id: { type: String, default: "" },
     workOrder_issued_date: { type: Date, default: null },
@@ -272,6 +273,10 @@ const tenderSchema = new mongoose.Schema(
     follow_up_ids: { type: [followUpDateSchema], default: [] },
     BoQ_id: { type: String, default: "" },
     created_by_user: { type: String, default: "" },
+    site_location:{
+      latitude: { type: Number, default: 0 },
+      longitude: { type: Number, default: 0 },
+    }
   },
   { timestamps: true }
 );

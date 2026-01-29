@@ -1,3 +1,4 @@
+
 import fs from "fs";
 import path from "path";
 import csvParser from "csv-parser";
@@ -66,12 +67,14 @@ const parseFileToJson = (filePath, originalName) => {
 };
 
 export const uploadBillingEstimateCSV = async (req, res, next) => {
+
+  let filePath = null;
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
-    const { tender_id, abstract_name, user_sequence,created_by_user } = req.body;
+    const { tender_id, bill_id, user_sequence, abstract_name, created_by_user } = req.body;
     if (!tender_id) return res.status(400).json({ error: "tender_id is required" });
-    const filePath = path.join(__dirname, "../../../../../uploads", req.file.filename);
+    filePath = path.join(__dirname, "../../../../../uploads", req.file.filename);
 
     const dataRows = await parseFileToJson(filePath, req.file.originalname);
 
@@ -79,7 +82,7 @@ export const uploadBillingEstimateCSV = async (req, res, next) => {
       return res.status(400).json({ status: false, error: "File is empty" });
     }
 
-    const result = await BillingEstimateService.bulkInsert(dataRows, tender_id, abstract_name, user_sequence, created_by_user);
+    const result = await BillingEstimateService.bulkInsert(dataRows, tender_id, bill_id, user_sequence, abstract_name, created_by_user);
     res.status(200).json({ status: true, message: "CSV data uploaded successfully", data: result });
   } catch (error) {
     res.status(400).json({ status: false, error: error.message });

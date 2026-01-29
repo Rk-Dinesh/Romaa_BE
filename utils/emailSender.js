@@ -4,9 +4,7 @@ dotenv.config();
 
 // --- SMTP Configuration ---
 const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST, // e.g., smtp.gmail.com
-  port: process.env.SMTP_PORT, // 587 or 465
-  secure: false, // true for 465, false for other ports
+  service: "gmail", // Use 'service' for Gmail to auto-configure ports/secure
   auth: {
     user: process.env.SMTP_USER,
     pass: process.env.SMTP_PASS,
@@ -36,7 +34,7 @@ const getOTPTemplate = (name, otp) => {
         </p>
       </div>
       <div style="border-top: 1px solid #eee; padding-top: 15px; text-align: center; color: #aaa; font-size: 12px;">
-        &copy; ${new Date().getFullYear()} Your Company Name. All rights reserved.
+        &copy; ${new Date().getFullYear()} Romaa Infra. All rights reserved.
       </div>
     </div>
   `;

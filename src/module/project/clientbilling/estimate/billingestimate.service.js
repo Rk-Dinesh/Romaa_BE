@@ -17,7 +17,7 @@ class BillingEstimateService {
         return 0;
     }
 
-static async bulkInsert(csvRows, tender_id, abstract_name, user_sequence = null, created_by_user) {
+static async bulkInsert(csvRows, tender_id, bill_id, user_sequence = null, abstract_name, created_by_user) {
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -143,9 +143,10 @@ static async bulkInsert(csvRows, tender_id, abstract_name, user_sequence = null,
             const desc = getValue(row, "Description");
             const unit = getValue(row, "Unit");
 
-            const nos1 = getValue(row, "Nos1") || getValue(row, "Nos");
+            const nos1 = getValue(row, "Nos1");
+            const x = getValue(row, "X");
             const nos2 = getValue(row, "Nos2");
-            const nos = nos2 ? `${nos1}X${nos2}` : nos1;
+            const nos = nos2 ? `${nos1}${x}${nos2}` : nos1;
 
             const length = safeParseFloat(getValue(row, "Length"));
             const breadth = safeParseFloat(getValue(row, "Breadth"));

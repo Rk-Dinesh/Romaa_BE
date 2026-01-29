@@ -129,6 +129,7 @@ const parseFileToJson = (filePath, originalName) => {
 };
 
 export const uploadBidCSV = async (req, res, next) => {
+let filePath = null;
   try {
     if (!req.file) return res.status(400).json({ error: "No file uploaded" });
 
@@ -139,7 +140,7 @@ export const uploadBidCSV = async (req, res, next) => {
     if (isNaN(parsedRevision)) {
       return res.status(400).json({ error: "revision must be a valid number" });
     }
-    const filePath = path.join(__dirname, "../../../../uploads", req.file.filename);
+     filePath = path.join(__dirname, "../../../../uploads", req.file.filename);
 
     const dataRows = await parseFileToJson(filePath, req.file.originalname);
 

@@ -304,12 +304,7 @@ class EmployeeService {
       throw new Error("OTP has expired. Please request a new one.");
     }
 
-    // 5. Hash the New Password
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-    // 6. Update User & Clear OTP fields
-    employee.password = hashedPassword;
+    employee.password = newPassword;
     employee.resetOTP = null;
     employee.resetOTPExpires = null;
 

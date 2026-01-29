@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 import EmployeeService from "./employee.service.js";
+import EmployeeModel from "./employee.model.js";
 
 // --- AUTHENTICATION ---
 
@@ -278,6 +279,14 @@ export const forgotPassword = async (req, res) => {
       return res.status(400).json({ 
         status: false, 
         message: "Email is required" 
+      });
+    }
+
+    const user = await EmployeeModel.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ 
+        status: false, 
+        message: "User not found" 
       });
     }
 
