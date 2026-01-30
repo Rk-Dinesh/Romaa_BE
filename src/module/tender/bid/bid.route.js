@@ -9,7 +9,8 @@ import {
   addItemToBid,
   removeItemFromBid,
   uploadBidCSV,
-  freezeBid
+  freezeBid,
+  getBidItemsLite
 } from "./bid.controller.js";
 
 const upload = multer({ dest: "uploads/" });
@@ -26,5 +27,6 @@ bidRouter.post("/additem/:bid_id", addItemToBid); //not in use
 bidRouter.delete("/removeitem/:bid_id/:item_code", removeItemFromBid); //not in use
 bidRouter.post("/uploadcsv", upload.single("file"), uploadBidCSV);
 bidRouter.put("/freeze/:tender_id", freezeBid);
+bidRouter.get("/getitemslite/:tender_id", getBidItemsLite);
 
 export default bidRouter;

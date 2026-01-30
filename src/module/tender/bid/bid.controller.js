@@ -172,3 +172,13 @@ export const freezeBid = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
+
+export const getBidItemsLite = async (req, res) => {
+  try {
+    const result = await BidService.getBidItemsLite(req.params.tender_id);
+    res.status(200).json({ status: true, data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};

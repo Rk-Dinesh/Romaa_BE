@@ -106,4 +106,15 @@ export const getAssetsByProjectId = async (req, res) => {
   }
 };
 
+export const getAssetsByProjectIdSelect = async (req, res) => {
+  try {
+    const { projectId } = req.params;
+    const result = await MachineryAssetService.getAssetsByProjectIdSelect(projectId);
+    res.status(200).json({ status: true, data: result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+
 

@@ -91,6 +91,10 @@ class MachineryAssetService {
     return await MachineryAsset.find({ projectId: projectId });
   }
 
+   static async getAssetsByProjectIdSelect(projectId) {
+    return await MachineryAsset.find({ projectId: projectId }).select("assetName assetId ");
+  }
+
 }
 
 export default MachineryAssetService;

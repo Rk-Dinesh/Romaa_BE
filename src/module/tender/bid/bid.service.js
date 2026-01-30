@@ -294,6 +294,16 @@ static async freezeBid(tender_id) {
   return await bid.save();
 }
 
+
+  static async getBidItemsLite(tender_id) {
+    const bid = await BidModel.findOne({ tender_id })
+      .sort({ revision: -1 }) 
+      .select("_id items.item_id items.item_name ")
+      .lean(); 
+
+    return bid ? bid : [];
+  }
+
 }
 
 export default BidService;

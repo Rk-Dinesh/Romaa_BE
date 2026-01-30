@@ -17,7 +17,7 @@ const bidItemSchema = new mongoose.Schema(
     remarks: String,
     work_section: String,
   },
-  { _id: false }
+  { _id: true }
 );
 
 

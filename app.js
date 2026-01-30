@@ -37,6 +37,7 @@ import workDoneRouter from './src/module/site/workdone/workdone.route.js';
 import billingEstimateRouter from './src/module/project/clientbilling/estimate/billingestimate.route.js';
 import billingRouter from './src/module/project/clientbilling/billing/billing.router.js';
 import steelestimaterouter from './src/module/project/clientbilling/steelestimate/steelestimate.route.js';
+import machinerylogrouter from './src/module/assets/machinerylogs/machinerylogs.route.js';
 
 
 
@@ -107,8 +108,9 @@ app.use('/raquantities', rateanalysisquantitesrouter);
 app.use('/schedulelite', scheduleLiteRouter);
 app.use('/workdone', workDoneRouter);
 app.use('/billing', billingEstimateRouter);
-app.use('/clientbilling', billingRouter)
-app.use('/steelestimate', steelestimaterouter)
+app.use('/clientbilling', billingRouter);
+app.use('/steelestimate', steelestimaterouter);
+app.use('/machinerylogs', machinerylogrouter);
 
 app.get('/', (req, res) => {
   res.send(`Welcome to Romaa Backend`)
