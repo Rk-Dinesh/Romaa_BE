@@ -2,7 +2,10 @@ import BidModel from "../bid/bid.model.js";
 import DetailedEstimateModel from "./detailedestimate.model.js";
 
 class detailedestimateService {
-  static async createDetailedEstimateCustomHeadings({ tender_id }, { heading, abstract = [], detailed = [] }) {
+  static async createDetailedEstimateCustomHeadings(
+    { tender_id },
+    { heading, abstract = [], detailed = [] },
+  ) {
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
     const bid = await BidModel.findOne({ tender_id });
     if (bid.freezed === false) {
@@ -20,7 +23,7 @@ class detailedestimateService {
     const newHeading = {
       heading,
       [`${headingKeyPrefix}abstract`]: abstract,
-      [`${headingKeyPrefix}detailed`]: detailed
+      [`${headingKeyPrefix}detailed`]: detailed,
     };
 
     detailedEstimate.detailed_estimate[0].customheadings.push(newHeading);
@@ -35,13 +38,13 @@ class detailedestimateService {
     }
 
     const customHeadings = detailedEstimate.detailed_estimate[0].customheadings;
-    const headingPairs = customHeadings.map(headingObj => {
+    const headingPairs = customHeadings.map((headingObj) => {
       const heading = headingObj.heading;
       const keyPrefix = heading.toLowerCase();
       return {
         heading,
         abstractKey: `${keyPrefix}abstract`,
-        detailedKey: `${keyPrefix}detailed`
+        detailedKey: `${keyPrefix}detailed`,
       };
     });
 
@@ -51,7 +54,8 @@ class detailedestimateService {
   static async bulkInsertCustomHeadingsFromCsv(tender_id, nametype, csvRows) {
     if (!tender_id) throw new Error("tender_id is required");
     const match = nametype.match(/^(.*)(abstract|detailed)$/i);
-    if (!match) throw new Error("nametype must end with 'abstract' or 'detailed'");
+    if (!match)
+      throw new Error("nametype must end with 'abstract' or 'detailed'");
 
     const baseHeading = match[1].toLowerCase();
     const type = match[2].toLowerCase();
@@ -62,33 +66,45 @@ class detailedestimateService {
 
     if (type === "abstract") {
       // Extract all abstract_ids from CSV
-      const csvAbstractIds = csvRows.map(row => row.abstract_id);
+      const csvAbstractIds = csvRows.map((row) => row.abstract_id);
 
       // Find duplicates
       const seen = new Set();
-      const duplicates = csvAbstractIds.filter(id => {
+      const duplicates = csvAbstractIds.filter((id) => {
         if (seen.has(id)) return true;
         seen.add(id);
         return false;
       });
 
       if (duplicates.length > 0) {
-        throw new Error(`Duplicate abstract IDs  ${[...new Set(duplicates)].join(', ')}`);
+        throw new Error(
+          `Duplicate abstract IDs  ${[...new Set(duplicates)].join(", ")}`,
+        );
       }
 
       // Fetch billOfQty item_ids
-      const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-      if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
+      const detailedEstimate = await DetailedEstimateModel.findOne({
+        tender_id,
+      });
+      if (!detailedEstimate)
+        throw new Error("Detailed estimate not found for this tender_id");
 
       const estimate = detailedEstimate.detailed_estimate[0];
-      if (!estimate || !estimate.billofqty) throw new Error("Bill of Qty not found");
+      if (!estimate || !estimate.billofqty)
+        throw new Error("Bill of Qty not found");
 
-      const billOfQtyItemIds = new Set(estimate.billofqty.map(item => item.item_id));
+      const billOfQtyItemIds = new Set(
+        estimate.billofqty.map((item) => item.item_id),
+      );
 
       // Find missing IDs
-      const missingIds = csvAbstractIds.filter(id => !billOfQtyItemIds.has(id));
+      const missingIds = csvAbstractIds.filter(
+        (id) => !billOfQtyItemIds.has(id),
+      );
       if (missingIds.length > 0) {
-        throw new Error(`Abstract IDs ${missingIds.join(', ')} are not found in bill of quantity`);
+        throw new Error(
+          `Abstract IDs ${missingIds.join(", ")} are not found in bill of quantity`,
+        );
       }
       for (const row of csvRows) {
         const amount = Number(row.amount) || 0;
@@ -101,32 +117,49 @@ class detailedestimateService {
           amount,
           balance_quantity: Number(row.quantity) || 0,
           balance_amount: amount,
-          phase_breakdown: []
+          phase_breakdown: [],
         });
         totalAmount += amount;
       }
     } else if (type === "detailed") {
-      const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-      if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
+      const detailedEstimate = await DetailedEstimateModel.findOne({
+        tender_id,
+      });
+      if (!detailedEstimate)
+        throw new Error("Detailed estimate not found for this tender_id");
 
       const estimate = detailedEstimate.detailed_estimate[0];
-      if (!estimate || !estimate.customheadings) throw new Error("Custom headings not found for this tender_id");
+      if (!estimate || !estimate.customheadings)
+        throw new Error("Custom headings not found for this tender_id");
 
-      const headingObj = estimate.customheadings.find(h => h.heading === baseHeading);
-      if (!headingObj) throw new Error(`Custom heading ${baseHeading} not found for this tender_id`);
+      const headingObj = estimate.customheadings.find(
+        (h) => h.heading === baseHeading,
+      );
+      if (!headingObj)
+        throw new Error(
+          `Custom heading ${baseHeading} not found for this tender_id`,
+        );
 
       const abstractKey = `${baseHeading}abstract`;
       if (!headingObj[abstractKey] || headingObj[abstractKey].length === 0) {
-        throw new Error(`${baseHeading} Abstract is empty. Please add items before proceeding.`);
+        throw new Error(
+          `${baseHeading} Abstract is empty. Please add items before proceeding.`,
+        );
       }
 
       // Extract abstract_ids from CSV
-      const csvAbstractIds = csvRows.map(row => row.abstract_id);
+      const csvAbstractIds = csvRows.map((row) => row.abstract_id);
       // Validate abstract_id exists in abstract array
-      const abstractIds = new Set(headingObj[abstractKey].map(item => item.abstract_id));
-      const missingInAbstract = csvAbstractIds.filter(id => !abstractIds.has(id));
+      const abstractIds = new Set(
+        headingObj[abstractKey].map((item) => item.abstract_id),
+      );
+      const missingInAbstract = csvAbstractIds.filter(
+        (id) => !abstractIds.has(id),
+      );
       if (missingInAbstract.length > 0) {
-        throw new Error(`Abstract IDs ${missingInAbstract.join(', ')} are not found in ${abstractKey}: `);
+        throw new Error(
+          `Abstract IDs ${missingInAbstract.join(", ")} are not found in ${abstractKey}: `,
+        );
       }
 
       const grouped = {};
@@ -142,7 +175,7 @@ class detailedestimateService {
           d_h: Number(row.d_h) || 0,
           content: Number(row.content) || 0,
           balance_quantity: Number(row.content) || 0,
-          phase_breakdown: []
+          phase_breakdown: [],
         });
       }
       for (const [abstract_id, breakdown] of Object.entries(grouped)) {
@@ -151,14 +184,15 @@ class detailedestimateService {
     }
 
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-    if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
+    if (!detailedEstimate)
+      throw new Error("Detailed estimate not found for this tender_id");
 
     if (detailedEstimate.detailed_estimate.length === 0) {
       detailedEstimate.detailed_estimate.push({
         customheadings: [],
         generalabstract: [],
         billofqty: [],
-        total_spent: {}
+        total_spent: {},
       });
     }
 
@@ -167,7 +201,9 @@ class detailedestimateService {
     if (!estimate.generalabstract) estimate.generalabstract = [];
     if (!estimate.billofqty) estimate.billofqty = [];
 
-    let headingObj = estimate.customheadings.find(h => h.heading === baseHeading);
+    let headingObj = estimate.customheadings.find(
+      (h) => h.heading === baseHeading,
+    );
     if (!headingObj) {
       headingObj = { heading: baseHeading };
       estimate.customheadings.push(headingObj);
@@ -179,27 +215,40 @@ class detailedestimateService {
     if (type === "abstract") {
       estimate.generalabstract.push({
         heading: baseHeading,
-        total_amount: totalAmount
+        total_amount: totalAmount,
       });
 
       // Update dynamic fields (inletquantity, inletamount, etc.)
       if (Array.isArray(estimate.billofqty)) {
         for (const row of csvRows) {
-          const item = estimate.billofqty.find(b => b.item_id === row.abstract_id);
+          const item = estimate.billofqty.find(
+            (b) => b.item_id === row.abstract_id,
+          );
           if (item) {
             item[`${baseHeading}quantity`] = Number(row.quantity) || 0;
-            item[`${baseHeading}amount`] = Number((row.quantity * item.n_rate).toFixed(2)) || 0;
+            item[`${baseHeading}amount`] =
+              Number((row.quantity * item.n_rate).toFixed(2)) || 0;
           }
         }
       }
 
       // ✅ Calculate totals for ALL items (this is correct)
       for (const item of estimate.billofqty) {
-        const quantityKeys = Object.keys(item).filter(k => k.endsWith('quantity') && k !== 'total_quantity');
-        const amountKeys = Object.keys(item).filter(k => k.endsWith('amount') && k !== 'total_amount');
+        const quantityKeys = Object.keys(item).filter(
+          (k) => k.endsWith("quantity") && k !== "total_quantity",
+        );
+        const amountKeys = Object.keys(item).filter(
+          (k) => k.endsWith("amount") && k !== "total_amount",
+        );
 
-        item.total_quantity = quantityKeys.reduce((sum, key) => sum + (Number(item[key]) || 0), 0);
-        item.total_amount = amountKeys.reduce((sum, key) => sum + (Number(item[key]) || 0), 0);
+        item.total_quantity = quantityKeys.reduce(
+          (sum, key) => sum + (Number(item[key]) || 0),
+          0,
+        );
+        item.total_amount = amountKeys.reduce(
+          (sum, key) => sum + (Number(item[key]) || 0),
+          0,
+        );
       }
       // Track total spent for this heading
       const headingAmountKey = `${baseHeading}amount`;
@@ -209,51 +258,284 @@ class detailedestimateService {
 
       if (!estimate.total_spent) estimate.total_spent = {};
       estimate.total_spent[baseHeading] = totalHeadingAmount;
-
-
     }
 
-    detailedEstimate.markModified('detailed_estimate');
+    detailedEstimate.markModified("detailed_estimate");
     await detailedEstimate.save();
     return detailedEstimate;
   }
 
-  static async getCustomHeadingsByTenderAndNameTypeService(tender_id, nametype) {
+ static getLevelFromCode(code) {
+    if (!code) return 0;
+    code = code.toString().trim();
+
+    // Level 1: Abstract (e.g., ABS001)
+    if (/^[A-Z]{2,}[\s\-_]?\d+$/i.test(code)) return 1; 
+    
+    // Level 2: Detailed (e.g., 1, 2, 3)
+    if (/^\d+(\.\d+)?$/.test(code)) return 2;
+
+    return 0;
+  }
+
+  static async bulkInsertCustomHeadingsFromCsvNew(tender_id, nametype, csvRows) {
+    if (!tender_id) throw new Error("tender_id is required");
+    if (!nametype) throw new Error("baseHeading is required (e.g., 'road', 'bridge')");
+
+    // normalize baseHeading
+   const baseHeading = nametype.toLowerCase();
+
+    // --- 1. SEPARATE ROWS INTO ABSTRACT AND DETAILED ---
+    const abstractRows = [];
+    const detailedRows = [];
+    
+    // Track the "current" abstract ID for detailed rows 
+    let currentAbstractId = null; 
+
+    for (const row of csvRows) {
+        const code = row.Code; // Assumes CSV header is 'Code'
+        const level = this.getLevelFromCode(code);
+
+        if (level === 1) {
+            currentAbstractId = code; // Context for subsequent detailed rows
+            
+            abstractRows.push({
+                abstract_id: code,
+                description: row.Description,
+                unit: row.Unit,
+                quantity: row.Quantity, // Main quantity for abstract
+                rate: row.Rate,
+                amount: row.Rate && row.Quantity ? (row.Rate * row.Quantity) : (Number(row.amount) || 0)
+            });
+        } else if (level === 2) {
+            if (!currentAbstractId) {
+                // If a detailed row appears before any abstract row, skip or throw error
+                continue; 
+            }
+
+            detailedRows.push({
+                abstract_id: currentAbstractId, // Link to parent
+                particulars: row.Description,
+                nos: row.Nos,
+                l: row.Length,
+                b: row.Breadth,
+                d_h: row.Depth,
+                content: row.Quantity // In detailed view, Quantity column is the content/volume
+            });
+        }
+    }
+
+    // --- 2. PROCESS ABSTRACT DATA (Validation & Structure) ---
+    const abstractKey = `${baseHeading}abstract`;
+    const abstractDataArray = [];
+    let totalAmount = 0;
+
+    if (abstractRows.length > 0) {
+        // Extract all abstract_ids
+        const csvAbstractIds = abstractRows.map((row) => row.abstract_id);
+
+        // Check Duplicates within the file
+        const seen = new Set();
+        const duplicates = csvAbstractIds.filter((id) => {
+            if (seen.has(id)) return true;
+            seen.add(id);
+            return false;
+        });
+
+        if (duplicates.length > 0) {
+            throw new Error(`Duplicate abstract IDs found: ${[...new Set(duplicates)].join(", ")}`);
+        }
+
+        // Fetch billOfQty item_ids to validate existence
+        const detailedEstimateDoc = await DetailedEstimateModel.findOne({ tender_id });
+        if (!detailedEstimateDoc) throw new Error("Detailed estimate not found for this tender_id");
+
+        const estimate = detailedEstimateDoc.detailed_estimate[0];
+        if (!estimate || !estimate.billofqty) throw new Error("Bill of Qty not found");
+
+        const billOfQtyItemIds = new Set(estimate.billofqty.map((item) => item.item_id));
+
+        // Find missing IDs (Abstract IDs must exist in BOQ)
+        const missingIds = csvAbstractIds.filter((id) => !billOfQtyItemIds.has(id));
+        if (missingIds.length > 0) {
+            throw new Error(`Abstract IDs ${missingIds.join(", ")} are not found in bill of quantity`);
+        }
+
+        // Prepare Abstract Data for DB
+        for (const row of abstractRows) {
+            const amount = Number(row.amount) || 0;
+            abstractDataArray.push({
+                abstract_id: row.abstract_id,
+                description: row.description,
+                unit: row.unit || "",
+                quantity: Number(row.quantity) || 0,
+                rate: Number(row.rate) || 0,
+                amount,
+                balance_quantity: Number(row.quantity) || 0,
+                balance_amount: amount,
+                phase_breakdown: [], // Default empty
+            });
+            totalAmount += amount;
+        }
+    }
+
+    // --- 3. PROCESS DETAILED DATA (Grouping) ---
+    const detailedKey = `${baseHeading}detailed`;
+    const detailedDataArray = [];
+
+    if (detailedRows.length > 0) {
+        // Group detailed rows by their abstract_id
+        const grouped = {};
+        for (const row of detailedRows) {
+            if (!grouped[row.abstract_id]) {
+                grouped[row.abstract_id] = [];
+            }
+            grouped[row.abstract_id].push({
+                particulars: row.particulars,
+                nos: row.nos || "",
+                l: Number(row.l) || 0,
+                b: Number(row.b) || 0,
+                d_h: Number(row.d_h) || 0,
+                content: Number(row.content) || 0,
+                balance_quantity: Number(row.content) || 0,
+                phase_breakdown: [],
+            });
+        }
+        // Convert grouped object to array format required by schema
+        for (const [abstract_id, breakdown] of Object.entries(grouped)) {
+            detailedDataArray.push({ abstract_id, breakdown });
+        }
+    }
+
+    // --- 4. DATABASE UPDATE ---
+    const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
+    // Note: Re-fetching is safer if logic above was split, but we can reuse 'detailedEstimateDoc' if preferred.
+    
+    if (detailedEstimate.detailed_estimate.length === 0) {
+        detailedEstimate.detailed_estimate.push({
+            customheadings: [],
+            generalabstract: [],
+            billofqty: [],
+            total_spent: {},
+        });
+    }
+
+    const estimate = detailedEstimate.detailed_estimate[0];
+    if (!estimate.customheadings) estimate.customheadings = [];
+    if (!estimate.generalabstract) estimate.generalabstract = [];
+    if (!estimate.billofqty) estimate.billofqty = [];
+
+    // Find or Create Heading Object (e.g., 'road')
+    let headingObj = estimate.customheadings.find((h) => h.heading === baseHeading);
+    if (!headingObj) {
+        headingObj = { heading: baseHeading };
+        estimate.customheadings.push(headingObj);
+    }
+
+    // 4a. Save Abstract Data & Update BOQ
+    if (abstractDataArray.length > 0) {
+        if (!headingObj[abstractKey]) headingObj[abstractKey] = [];
+        headingObj[abstractKey].push(...abstractDataArray);
+
+        // Update General Abstract Summary
+        estimate.generalabstract.push({
+            heading: baseHeading,
+            total_amount: totalAmount,
+        });
+
+        // Update Bill of Qty items (Dynamic Columns: roadquantity, roadamount)
+        if (Array.isArray(estimate.billofqty)) {
+            for (const row of abstractRows) {
+                const item = estimate.billofqty.find((b) => b.item_id === row.abstract_id);
+                if (item) {
+                    item[`${baseHeading}quantity`] = Number(row.quantity) || 0;
+                    item[`${baseHeading}amount`] = Number((row.quantity * item.n_rate).toFixed(2)) || 0;
+                }
+            }
+        }
+
+        // Recalculate totals for ALL items in BOQ
+        for (const item of estimate.billofqty) {
+            const quantityKeys = Object.keys(item).filter(
+                (k) => k.endsWith("quantity") && k !== "total_quantity"
+            );
+            const amountKeys = Object.keys(item).filter(
+                (k) => k.endsWith("amount") && k !== "total_amount"
+            );
+
+            item.total_quantity = quantityKeys.reduce((sum, key) => sum + (Number(item[key]) || 0), 0);
+            item.total_amount = amountKeys.reduce((sum, key) => sum + (Number(item[key]) || 0), 0);
+        }
+
+        // Track total spent for this heading
+        const headingAmountKey = `${baseHeading}amount`;
+        const totalHeadingAmount = estimate.billofqty.reduce((sum, item) => {
+            return sum + (Number(item[headingAmountKey]) || 0);
+        }, 0);
+
+        if (!estimate.total_spent) estimate.total_spent = {};
+        estimate.total_spent[baseHeading] = totalHeadingAmount;
+    }
+
+    // 4b. Save Detailed Data
+    if (detailedDataArray.length > 0) {
+        if (!headingObj[detailedKey]) headingObj[detailedKey] = [];
+        headingObj[detailedKey].push(...detailedDataArray);
+    }
+
+    detailedEstimate.markModified("detailed_estimate");
+    await detailedEstimate.save();
+    return detailedEstimate;
+  }
+
+  static async getCustomHeadingsByTenderAndNameTypeService(
+    tender_id,
+    nametype,
+  ) {
     if (!tender_id) throw new Error("tender_id is required");
     if (!nametype) throw new Error("nametype is required");
 
     const match = nametype.match(/^(.*)(abstract|detailed)$/i);
-    if (!match) throw new Error("nametype must end with 'abstract' or 'detailed'");
+    if (!match)
+      throw new Error("nametype must end with 'abstract' or 'detailed'");
 
     const baseHeading = match[1].toLowerCase();
     const key = nametype.toLowerCase();
 
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-    if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
-    if (!detailedEstimate.detailed_estimate.length) throw new Error("No detailed estimates available");
+    if (!detailedEstimate)
+      throw new Error("Detailed estimate not found for this tender_id");
+    if (!detailedEstimate.detailed_estimate.length)
+      throw new Error("No detailed estimates available");
 
     const estimate = detailedEstimate.detailed_estimate[0];
-    if (!estimate.customheadings || !estimate.customheadings.length) throw new Error("No custom headings found");
+    if (!estimate.customheadings || !estimate.customheadings.length)
+      throw new Error("No custom headings found");
 
-    const headingObj = estimate.customheadings.find(h => h.heading === baseHeading);
-    if (!headingObj || !headingObj[key]) throw new Error(`No data found for ${nametype}`);
+    const headingObj = estimate.customheadings.find(
+      (h) => h.heading === baseHeading,
+    );
+    if (!headingObj || !headingObj[key])
+      throw new Error(`No data found for ${nametype}`);
 
     // If it's detailed, enrich with abstract details
     if (key.includes("detailed")) {
       const abstractKey = `${baseHeading}abstract`;
       const abstracts = headingObj[abstractKey] || [];
 
-      const enrichedData = headingObj[key].map(detailedItem => {
-        const abstract = abstracts.find(a => a.abstract_id === detailedItem.abstract_id);
+      const enrichedData = headingObj[key].map((detailedItem) => {
+        const abstract = abstracts.find(
+          (a) => a.abstract_id === detailedItem.abstract_id,
+        );
         return {
           ...detailedItem,
           abstract_details: abstract
             ? {
-              description: abstract.description,
-              quantity: abstract.quantity,
-              rate: abstract.rate
-            }
-            : null
+                description: abstract.description,
+                quantity: abstract.quantity,
+                rate: abstract.rate,
+              }
+            : null,
         };
       });
 
@@ -266,31 +548,44 @@ class detailedestimateService {
   static async getGeneralAbstractService(tender_id) {
     if (!tender_id) throw new Error("tender_id is required");
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-    if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
-    if (!detailedEstimate.detailed_estimate.length) throw new Error("No detailed estimates available");
+    if (!detailedEstimate)
+      throw new Error("Detailed estimate not found for this tender_id");
+    if (!detailedEstimate.detailed_estimate.length)
+      throw new Error("No detailed estimates available");
     const estimate = detailedEstimate.detailed_estimate[0];
-    if (!estimate.generalabstract || !estimate.generalabstract.length) throw new Error("No general abstract found");
+    if (!estimate.generalabstract || !estimate.generalabstract.length)
+      throw new Error("No general abstract found");
     return estimate.generalabstract;
   }
 
   static async getBillOfQtyService(tender_id) {
     if (!tender_id) throw new Error("tender_id is required");
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-    if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
-    if (!detailedEstimate.detailed_estimate.length) throw new Error("No detailed estimates available");
+    if (!detailedEstimate)
+      throw new Error("Detailed estimate not found for this tender_id");
+    if (!detailedEstimate.detailed_estimate.length)
+      throw new Error("No detailed estimates available");
     const estimate = detailedEstimate.detailed_estimate[0];
-    if (!estimate.billofqty || !estimate.billofqty.length) throw new Error("No bill of qty found");
+    if (!estimate.billofqty || !estimate.billofqty.length)
+      throw new Error("No bill of qty found");
     const billOfQty = estimate.billofqty;
     const spent = estimate.total_spent;
     return { billOfQty, spent };
   }
 
-  static async addPhaseBreakdownToAbstractService(tender_id, nametype, description, phase, quantity) {
+  static async addPhaseBreakdownToAbstractService(
+    tender_id,
+    nametype,
+    description,
+    phase,
+    quantity,
+  ) {
     if (!tender_id) throw new Error("tender_id is required");
     if (!nametype) throw new Error("nametype is required");
     if (!description) throw new Error("description is required");
     if (!phase) throw new Error("phase is required");
-    if (typeof quantity !== "number" || quantity <= 0) throw new Error("Valid quantity required");
+    if (typeof quantity !== "number" || quantity <= 0)
+      throw new Error("Valid quantity required");
 
     const match = nametype.match(/^(.*)(abstract)$/i);
     if (!match) throw new Error("nametype must end with 'abstract'");
@@ -299,17 +594,26 @@ class detailedestimateService {
     const key = nametype.toLowerCase();
 
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-    if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
-    if (!detailedEstimate.detailed_estimate.length) throw new Error("No detailed estimates available");
+    if (!detailedEstimate)
+      throw new Error("Detailed estimate not found for this tender_id");
+    if (!detailedEstimate.detailed_estimate.length)
+      throw new Error("No detailed estimates available");
 
     const estimate = detailedEstimate.detailed_estimate[0];
-    if (!estimate.customheadings || !estimate.customheadings.length) throw new Error("No custom headings found");
+    if (!estimate.customheadings || !estimate.customheadings.length)
+      throw new Error("No custom headings found");
 
-    const headingObj = estimate.customheadings.find(h => h.heading === baseHeading);
-    if (!headingObj || !headingObj[key]) throw new Error(`No data found for ${nametype}`);
+    const headingObj = estimate.customheadings.find(
+      (h) => h.heading === baseHeading,
+    );
+    if (!headingObj || !headingObj[key])
+      throw new Error(`No data found for ${nametype}`);
 
-    const abstractIndex = headingObj[key].findIndex(item => item.description === description);
-    if (abstractIndex === -1) throw new Error("Abstract item with given description not found");
+    const abstractIndex = headingObj[key].findIndex(
+      (item) => item.description === description,
+    );
+    if (abstractIndex === -1)
+      throw new Error("Abstract item with given description not found");
 
     const abstractItem = headingObj[key][abstractIndex];
     const rate = abstractItem.rate;
@@ -317,50 +621,86 @@ class detailedestimateService {
 
     if (!rate) throw new Error("Rate not defined in abstract item");
 
-    if (!Array.isArray(abstractItem.phase_breakdown)) abstractItem.phase_breakdown = [];
+    if (!Array.isArray(abstractItem.phase_breakdown))
+      abstractItem.phase_breakdown = [];
 
-    let currentSum = abstractItem.phase_breakdown.reduce((acc, pb) => pb.phase !== phase ? acc + pb.quantity : acc, 0);
-    let phaseEntry = abstractItem.phase_breakdown.find(pb => pb.phase === phase);
+    let currentSum = abstractItem.phase_breakdown.reduce(
+      (acc, pb) => (pb.phase !== phase ? acc + pb.quantity : acc),
+      0,
+    );
+    let phaseEntry = abstractItem.phase_breakdown.find(
+      (pb) => pb.phase === phase,
+    );
 
     if (phaseEntry) {
       if (currentSum + quantity > totalQty) {
-        throw new Error(`Total allocated quantity (${currentSum + quantity}) exceeds available quantity (${totalQty})`);
+        throw new Error(
+          `Total allocated quantity (${currentSum + quantity}) exceeds available quantity (${totalQty})`,
+        );
       }
       phaseEntry.quantity = quantity;
       phaseEntry.amount = quantity * rate;
     } else {
       if (currentSum + quantity > totalQty) {
-        throw new Error(`Total allocated quantity (${currentSum + quantity}) exceeds available quantity (${totalQty})`);
+        throw new Error(
+          `Total allocated quantity (${currentSum + quantity}) exceeds available quantity (${totalQty})`,
+        );
       }
-      abstractItem.phase_breakdown.push({ phase, quantity, amount: quantity * rate });
+      abstractItem.phase_breakdown.push({
+        phase,
+        quantity,
+        amount: quantity * rate,
+      });
     }
 
-    const finalSum = abstractItem.phase_breakdown.reduce((acc, pb) => acc + pb.quantity, 0);
-    const finalAmount = abstractItem.phase_breakdown.reduce((acc, pb) => acc + pb.amount, 0);
+    const finalSum = abstractItem.phase_breakdown.reduce(
+      (acc, pb) => acc + pb.quantity,
+      0,
+    );
+    const finalAmount = abstractItem.phase_breakdown.reduce(
+      (acc, pb) => acc + pb.amount,
+      0,
+    );
     abstractItem.balance_quantity = Math.max(totalQty - finalSum, 0);
-    abstractItem.balance_amount = Math.max(abstractItem.amount - finalAmount, 0);
+    abstractItem.balance_amount = Math.max(
+      abstractItem.amount - finalAmount,
+      0,
+    );
 
     const estimateIndex = 0;
-    const customHeadingsIndex = estimate.customheadings.findIndex(h => h.heading === baseHeading);
+    const customHeadingsIndex = estimate.customheadings.findIndex(
+      (h) => h.heading === baseHeading,
+    );
     const path = `detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIndex}.${key}.${abstractIndex}.phase_breakdown`;
     detailedEstimate.markModified(path);
-    detailedEstimate.markModified(`detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIndex}.${key}.${abstractIndex}.balance_quantity`);
-    detailedEstimate.markModified(`detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIndex}.${key}.${abstractIndex}.balance_amount`);
+    detailedEstimate.markModified(
+      `detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIndex}.${key}.${abstractIndex}.balance_quantity`,
+    );
+    detailedEstimate.markModified(
+      `detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIndex}.${key}.${abstractIndex}.balance_amount`,
+    );
 
     await detailedEstimate.save();
     return {
       phase_breakdown: abstractItem.phase_breakdown,
       balance_quantity: abstractItem.balance_quantity,
-      balance_amount: abstractItem.balance_amount
+      balance_amount: abstractItem.balance_amount,
     };
   }
 
-  static async addPhaseBreakdownToDetailedService(tender_id, nametype, description, phase, quantity) {
+  static async addPhaseBreakdownToDetailedService(
+    tender_id,
+    nametype,
+    description,
+    phase,
+    quantity,
+  ) {
     if (!tender_id) throw new Error("tender_id is required");
     if (!nametype) throw new Error("nametype is required");
     if (!description) throw new Error("description is required");
     if (!phase) throw new Error("phase is required");
-    if (typeof quantity !== "number" || quantity <= 0) throw new Error("Valid quantity required");
+    if (typeof quantity !== "number" || quantity <= 0)
+      throw new Error("Valid quantity required");
 
     const match = nametype.match(/^(.*)(detailed)$/i);
     if (!match) throw new Error("nametype must end with 'detailed'");
@@ -369,51 +709,77 @@ class detailedestimateService {
     const key = nametype.toLowerCase();
 
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
-    if (!detailedEstimate) throw new Error("Detailed estimate not found for this tender_id");
-    if (!detailedEstimate.detailed_estimate.length) throw new Error("No detailed estimates available");
+    if (!detailedEstimate)
+      throw new Error("Detailed estimate not found for this tender_id");
+    if (!detailedEstimate.detailed_estimate.length)
+      throw new Error("No detailed estimates available");
 
     const estimate = detailedEstimate.detailed_estimate[0];
-    if (!estimate.customheadings || !estimate.customheadings.length) throw new Error("No custom headings found");
+    if (!estimate.customheadings || !estimate.customheadings.length)
+      throw new Error("No custom headings found");
 
-    const headingObj = estimate.customheadings.find(h => h.heading === baseHeading);
-    if (!headingObj || !headingObj[key]) throw new Error(`No data found for ${nametype}`);
+    const headingObj = estimate.customheadings.find(
+      (h) => h.heading === baseHeading,
+    );
+    if (!headingObj || !headingObj[key])
+      throw new Error(`No data found for ${nametype}`);
 
-    const detailedIndex = headingObj[key].findIndex(item => item.description === description);
-    if (detailedIndex === -1) throw new Error("Detailed item with given description not found");
+    const detailedIndex = headingObj[key].findIndex(
+      (item) => item.description === description,
+    );
+    if (detailedIndex === -1)
+      throw new Error("Detailed item with given description not found");
 
     const detailedItem = headingObj[key][detailedIndex];
     const totalContents = detailedItem.contents;
 
-    if (!Array.isArray(detailedItem.phase_breakdown)) detailedItem.phase_breakdown = [];
+    if (!Array.isArray(detailedItem.phase_breakdown))
+      detailedItem.phase_breakdown = [];
 
-    let currentSum = detailedItem.phase_breakdown.reduce((acc, pb) => pb.phase !== phase ? acc + pb.quantity : acc, 0);
-    let phaseEntry = detailedItem.phase_breakdown.find(pb => pb.phase === phase);
+    let currentSum = detailedItem.phase_breakdown.reduce(
+      (acc, pb) => (pb.phase !== phase ? acc + pb.quantity : acc),
+      0,
+    );
+    let phaseEntry = detailedItem.phase_breakdown.find(
+      (pb) => pb.phase === phase,
+    );
 
     if (phaseEntry) {
       if (currentSum + quantity > totalContents) {
-        throw new Error(`Total allocated content (${currentSum + quantity}) exceeds available content (${totalContents})`);
+        throw new Error(
+          `Total allocated content (${currentSum + quantity}) exceeds available content (${totalContents})`,
+        );
       }
       phaseEntry.quantity = quantity;
     } else {
       if (currentSum + quantity > totalContents) {
-        throw new Error(`Total allocated content (${currentSum + quantity}) exceeds available content (${totalContents})`);
+        throw new Error(
+          `Total allocated content (${currentSum + quantity}) exceeds available content (${totalContents})`,
+        );
       }
       detailedItem.phase_breakdown.push({ phase, quantity });
     }
 
-    const finalSum = detailedItem.phase_breakdown.reduce((acc, pb) => acc + pb.quantity, 0);
+    const finalSum = detailedItem.phase_breakdown.reduce(
+      (acc, pb) => acc + pb.quantity,
+      0,
+    );
     detailedItem.balance_quantity = Math.max(totalContents - finalSum, 0);
 
     const estimateIndex = 0;
-    const customHeadingsIdx = estimate.customheadings.findIndex(h => h.heading === baseHeading);
+    const customHeadingsIdx = estimate.customheadings.findIndex(
+      (h) => h.heading === baseHeading,
+    );
     const path = `detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIdx}.${key}.${detailedIndex}.phase_breakdown`;
     detailedEstimate.markModified(path);
-    detailedEstimate.markModified(`detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIdx}.${key}.${detailedIndex}.balance_quantity`);
+    detailedEstimate.markModified(
+      `detailed_estimate.${estimateIndex}.customheadings.${customHeadingsIdx}.${key}.${detailedIndex}.balance_quantity`,
+    );
 
     await detailedEstimate.save();
     return {
       phase_breakdown: detailedItem.phase_breakdown,
-      balance_quantity: detailedItem.balance_quantity
+      balance_quantity: detailedItem.balance_quantity,
     };
   }
 }

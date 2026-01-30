@@ -7,7 +7,7 @@ class SiteOverheadService {
        
         const siteOverhead = await SiteOverheads.findOne({ tenderId: tender_id });
         const rateAnalysis = await WorkItemModel.findOne({ tender_id });
-        const freeze = rateAnalysis.freeze;
+        const freeze = rateAnalysis?.freeze || false;
         return {siteOverhead,freeze};
     }
     static async updateSiteOverhead(tender_id, siteOverhead) {

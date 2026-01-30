@@ -52,6 +52,8 @@ class TenderService {
     };
 
     const siteOverheads = new SiteOverheads(siteOverheadsPayload);
+    console.log(siteOverheads);
+    
     await siteOverheads.save();
 
     return await tender.save();
