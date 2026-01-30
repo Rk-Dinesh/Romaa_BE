@@ -52,7 +52,7 @@ connectDB();
 
 app.use(
   cors({
-    origin: ["http://localhost:5173", "http://localhost:3000"], // 👈 ALLOW ONLY YOUR FRONTEND URL
+    origin: ["http://localhost:5173", "http://localhost:3000","https://relaxed-starburst-6352fa.netlify.app/"], // 👈 ALLOW ONLY YOUR FRONTEND URL
     credentials: true, // 👈 ALLOW COOKIES
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
