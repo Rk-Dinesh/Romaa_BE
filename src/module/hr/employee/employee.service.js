@@ -240,8 +240,13 @@ class EmployeeService {
   static async forgotPassword(email) {
     // 1. Check if user exists
     const employee = await EmployeeModel.findOne({ email });
+
     if (!employee) {
       throw new Error("User with this email does not exist.");
+    }
+
+    if (employee.role === null) {
+      throw new Error("User is not authorized to reset password.");
     }
 
     if (employee.status !== "Active") {

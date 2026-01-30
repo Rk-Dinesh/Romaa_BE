@@ -6,7 +6,8 @@ import { createMachineryAsset,
     transferMachineryAsset,
     updateAssetStatus,
     getAssets,
-    getExpiryAlerts
+    getExpiryAlerts,
+    getAssetsByProjectId
 } from "./machineryasset.controller.js";
 
 
@@ -20,6 +21,7 @@ machineryrouter.put("/transfer/:assetId", transferMachineryAsset);
 machineryrouter.put("/status/:assetId", updateAssetStatus);
 machineryrouter.get("/getall/assets", getAssets);
 machineryrouter.get("/expiry-alerts", getExpiryAlerts);
+machineryrouter.get("/getbyproject/:projectId", getAssetsByProjectId);
 
 
 

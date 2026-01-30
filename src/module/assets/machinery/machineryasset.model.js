@@ -10,7 +10,9 @@ const MachineryAssetSchema = new mongoose.Schema(
       enum: ["Heavy Earthmover", "Transport Vehicle", "Stationary Equipment", "Lifting"],
       required: true
     },
-    assetType: { type: String, required: true }, // e.g., "Excavator", "Backhoe Loader", "Tipper"
+    assetType: { type: String,
+       enum: ["OWN ASSET", "RENTAL ASSET"],
+       required: true }, 
     
     // --- 2. Technical Specifications (Expanded) ---
     serialNumber: String,      // OEM Serial No

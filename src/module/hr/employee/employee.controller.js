@@ -37,6 +37,41 @@ export const login = async (req, res) => {
   }
 };
 
+export const mobileLogin = async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    if (!email || !password) {
+      return res.status(400).json({ status: false, message: "Email and password are required" });
+    }
+
+    const { user, accessToken, refreshToken } = await EmployeeService.loginUser(email, password);
+
+    // 1. Set Cookies (Great for Web)
+    const options = {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "strict"
+    };
+
+    return res
+      .status(200)
+      .cookie("accessToken", accessToken, options)
+      .cookie("refreshToken", refreshToken, options)
+      .json({
+        status: true,
+        message: "User logged in successfully",
+        data: { 
+          user,
+          accessToken, 
+          refreshToken 
+        } 
+      });
+
+  } catch (error) {
+    return res.status(401).json({ status: false, message: error.message });
+  }
+};
+
 // --- EMPLOYEE MANAGEMENT ---
 
 // 2. Create Employee (Register)

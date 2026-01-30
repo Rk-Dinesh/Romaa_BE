@@ -15,7 +15,8 @@ import {
   getEmployeesWithRoles,
   assignProjects,
   forgotPassword,
-  resetPasswordWithOTP
+  resetPasswordWithOTP,
+  mobileLogin
 } from "./employee.controller.js";
 import { verifyJWT } from "../../../common/Auth.middlware.js";
 
@@ -27,6 +28,7 @@ const employeeRoute = Router();
 
 // --- Auth Routes ---
 employeeRoute.post("/login", login);
+employeeRoute.post("/mobile-login", mobileLogin);
 employeeRoute.post("/logout", logout);
 employeeRoute.post("/register", createEmployee); // Creating a new user is essentially registration
 
