@@ -55,7 +55,7 @@ const employeeSchema = new mongoose.Schema(
       pincode: String,
     },
     idProof: {
-      type: { type: String },
+      type: { type: String }, // e.g., Aadhar, PAN
       number: { type: String }
     },
     emergencyContact: {
@@ -70,6 +70,47 @@ const employeeSchema = new mongoose.Schema(
     resetOTPExpires: {
       type: Date,
       default: null
+    },
+
+    // -----------------------------------------------------
+    // --- 2. NEW HRMS FIELDS ADDED BELOW ---
+    // -----------------------------------------------------
+
+    // --- A. HR & Reporting ---
+    photoUrl: { 
+      type: String, 
+      default: null // URL to AWS S3 / Cloudinary for Mobile App Profile
+    },
+    department: { 
+      type: String 
+    },
+    reportsTo: { 
+      type: Schema.Types.ObjectId, 
+      ref: "Employee", // Self-referencing: Links to their Manager for Leave Approvals
+      default: null 
+    },
+    hrStatus: {
+      type: String,
+      enum: ["Probation", "Confirmed", "Notice Period", "Relieved"],
+      default: "Probation"
+    },
+
+    // --- B. Leave Management (Current Balance) ---
+    leaveBalance: {
+      PL: { type: Number, default: 0 }, // Privilege Leave (Resets yearly)
+      CL: { type: Number, default: 12 }, // Casual Leave
+      SL: { type: Number, default: 12 }  // Sick Leave
+    },
+
+    // --- C. Payroll & Bank Details ---
+    payroll: {
+      basicSalary: { type: Number, default: 0 },
+      accountHolderName: { type: String },
+      bankName: { type: String },
+      accountNumber: { type: String },
+      ifscCode: { type: String },
+      uanNumber: { type: String }, // For Provident Fund (PF)
+      panNumber: { type: String }  // For Tax calculation
     }
 
   },
@@ -97,7 +138,7 @@ employeeSchema.methods.generateAccessToken = function () {
       role: this.role._id || this.role
     },
     process.env.ACCESS_TOKEN_SECRET,
-    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY } // e.g., "15m"
+    { expiresIn: process.env.ACCESS_TOKEN_EXPIRY }
   );
 };
 
@@ -106,7 +147,7 @@ employeeSchema.methods.generateRefreshToken = function () {
   return jwt.sign(
     { _id: this._id },
     process.env.REFRESH_TOKEN_SECRET,
-    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY } // e.g., "7d"
+    { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
   );
 };
 

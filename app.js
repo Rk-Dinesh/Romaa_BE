@@ -38,6 +38,7 @@ import billingEstimateRouter from './src/module/project/clientbilling/estimate/b
 import billingRouter from './src/module/project/clientbilling/billing/billing.router.js';
 import steelestimaterouter from './src/module/project/clientbilling/steelestimate/steelestimate.route.js';
 import machinerylogrouter from './src/module/assets/machinerylogs/machinerylogs.route.js';
+import AttendanceRoute from './src/module/hr/userAttendance/userAttendance.route.js';
 
 
 
@@ -111,6 +112,7 @@ app.use('/billing', billingEstimateRouter);
 app.use('/clientbilling', billingRouter);
 app.use('/steelestimate', steelestimaterouter);
 app.use('/machinerylogs', machinerylogrouter);
+app.use('/attendance', AttendanceRoute);
 
 app.get('/', (req, res) => {
   res.send(`Welcome to Romaa Backend`)

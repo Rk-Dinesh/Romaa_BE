@@ -54,7 +54,8 @@ class EmployeeService {
     // Remove sensitive fields from response
     const loggedInUser = await EmployeeModel.findById(user._id)
       .select("-password -refreshToken")
-      .populate("role");
+      .populate("role")
+      .populate("assignedProject", "tender_id tender_project_name site_location");
 
     return { user: loggedInUser, accessToken, refreshToken };
   }
