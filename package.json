@@ -22,6 +22,7 @@
     "csv-parser": "^3.2.0",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.1",
+    "exceljs": "^4.4.0",
     "express": "^5.1.0",
     "fs": "^0.0.1-security",
     "jsonwebtoken": "^9.0.3",
@@ -35,7 +36,6 @@
     "path": "^0.12.7",
     "uuidv4": "^6.2.13",
     "winston": "^3.17.0",
-    "winston-daily-rotate-file": "^5.0.0",
-    "xlsx": "^0.18.5"
+    "winston-daily-rotate-file": "^5.0.0"
   }
 }
