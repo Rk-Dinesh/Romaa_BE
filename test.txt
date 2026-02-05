@@ -231,3 +231,110 @@ This above segment is for the  HR & Labour Management Schedule.
 
 Here we will assign roles to employees for login of dashboard.
 Roles will be created by the user and assigned to employees.we can allocate them the access to the modules. like site,project,tender,employee,attendance etc.
+
+
+static async applyLeave(data) {
+    let { 
+      employeeId, leaveType, requestType, fromDate, toDate, 
+      reason, shortLeaveTime, coveringEmployeeId 
+    } = data;
+
+    // A. Validate Dates
+    const start = new Date(fromDate);
+    const end = new Date(toDate);
+    start.setUTCHours(0, 0, 0, 0);
+    end.setUTCHours(0, 0, 0, 0);
+
+    if (start > end) throw { statusCode: 400, message: "End date cannot be before start date." };
+
+    // Helper to format dates nicely
+    const dateStr = (d) => new Date(d).toLocaleDateString("en-GB"); // DD/MM/YYYY
+
+    // ---------------------------------------------------------
+    // 🚀 B. CALCULATE ACTUAL LEAVE DAYS (Server-Side Logic)
+    // ---------------------------------------------------------
+    let calculatedDays = 0;
+    let loopDate = new Date(start);
+    
+    // Store details of why days were skipped
+    const nonWorkingLog = []; 
+
+    while (loopDate <= end) {
+      const dayStatus = await CalendarService.checkDayStatus(loopDate);
+
+      if (dayStatus.isWorkingDay) {
+        // It is a working day, calculate count
+        if (requestType === "First Half" || requestType === "Second Half") {
+          calculatedDays += 0.5;
+        } else {
+          calculatedDays += 1;
+        }
+      } else {
+        // It is a Holiday/Weekend, record the reason
+        nonWorkingLog.push(`${dateStr(loopDate)}: ${dayStatus.reason}`);
+      }
+
+      loopDate.setDate(loopDate.getDate() + 1);
+    }
+
+    // 🛑 ERROR IF 0 DAYS (Detailed Explanation)
+    if (calculatedDays === 0) {
+      const details = nonWorkingLog.join(", ");
+      throw { 
+        statusCode: 400, 
+        message: `No leave needed. All selected dates are holidays/offs: [ ${details} ]` 
+      };
+    }
+
+    // ---------------------------------------------------------
+
+    // C. Check Leave Balance
+    const employee = await EmployeeModel.findById(employeeId);
+    if (!employee) throw { statusCode: 404, message: "Employee not found." };
+
+    const currentBalance = employee.leaveBalance[leaveType]; 
+    if (leaveType !== "LWP" && currentBalance < calculatedDays) {
+      throw { statusCode: 400, message: `Insufficient ${leaveType} balance. Need: ${calculatedDays}, Available: ${currentBalance}` };
+    }
+
+    // D. Check for Overlapping Requests
+    const overlap = await LeaveRequestModel.findOne({
+      employeeId,
+      status: { $in: ["Pending", "Manager Approved", "HR Approved", "Approved"] }, 
+      $or: [
+        { fromDate: { $lte: end }, toDate: { $gte: start } }
+      ]
+    });
+
+    if (overlap) {
+      const conflictStart = dateStr(overlap.fromDate);
+      const conflictEnd = dateStr(overlap.toDate);
+      throw { 
+        statusCode: 409, 
+        message: `Overlap Detected: You already have a '${overlap.status}' request for ${overlap.leaveType} from ${conflictStart} to ${conflictEnd}.` 
+      };
+    }
+
+    // E. Create Request
+    const newLeave = new LeaveRequestModel({
+      employeeId,
+      leaveType,
+      requestType,
+      fromDate: start,
+      toDate: end,
+      totalDays: calculatedDays,
+      reason,
+      shortLeaveTime,
+      coveringEmployeeId,
+      status: "Pending",
+      workflowLogs: [{
+        action: "Applied",
+        actionBy: employeeId,
+        role: "Employee",
+        remarks: reason
+      }]
+    });
+
+    await newLeave.save();
+    return newLeave;
+  }

@@ -2,88 +2,92 @@ import mongoose, { Schema } from "mongoose";
 
 const leaveRequestSchema = new mongoose.Schema(
   {
-    employeeId: { 
-      type: Schema.Types.ObjectId, 
-      ref: "Employee", 
-      required: true, 
-      index: true 
+    employeeId: {
+      type: Schema.Types.ObjectId,
+      ref: "Employee",
+      required: true,
+      index: true,
     },
 
-    // --- Leave Details ---
-    leaveType: { 
-      type: String, 
-      enum: ["CL", "SL", "PL", "LWP"], // Casual, Sick, Privilege, Leave Without Pay
-      required: true 
-    },
-    fromDate: { 
-      type: Date, 
-      required: true 
-    },
-    toDate: { 
-      type: Date, 
-      required: true 
-    },
-    totalDays: { 
-      type: Number, 
-      required: true // Handles half-days as 0.5
-    },
-    reason: { 
-      type: String, 
-      required: true 
-    },
-
-    // Optional: Proof for Sick Leaves > 2 days
-    attachmentUrl: { 
-      type: String, 
-      default: null // AWS S3/Cloudinary link to medical certificate
-    }, 
-
-    // --- Workflow & Approval ---
-    status: { 
-      type: String, 
-      enum: ["Pending", "Approved", "Rejected", "Cancelled"], 
-      default: "Pending" 
+    // --- Core Leave Details ---
+    leaveType: {
+      type: String,
+      enum: ["CL", "SL", "PL", "LWP", "CompOff", "Maternity", "Paternity", "Bereavement"],
+      required: true,
     },
     
-    // Who approved/rejected it? (Usually their Manager)
-    approvedBy: { 
-      type: Schema.Types.ObjectId, 
-      ref: "Employee", 
-      default: null 
-    },
-    
-    // Manager's feedback if rejected
-    managerRemarks: { 
-      type: String, 
-      default: null 
+    // Distinguish Full Day vs Half Day vs Short Leave
+    requestType: {
+      type: String,
+      enum: ["Full Day", "First Half", "Second Half", "Short Leave"],
+      default: "Full Day"
     },
 
-    approvalDate: { 
-      type: Date, 
-      default: null 
-    }
+    // Normalized Dates (Midnight UTC recommended)
+    fromDate: { type: Date, required: true }, 
+    toDate: { type: Date, required: true },   
+    
+    // Specifics for Short Leave (e.g., 2 hours permission)
+    shortLeaveTime: {
+        from: { type: String }, // e.g. "10:00"
+        to: { type: String }    // e.g. "12:00"
+    },
+
+    totalDays: {
+      type: Number,
+      required: true, // 0.5, 1, 3, etc.
+    },
+
+    reason: { type: String, required: true },
+    
+    // Optional: Proof for Sick Leaves
+    attachmentUrl: { type: String, default: null }, 
+
+    // --- Work Handover (Critical for Operations) ---
+    coveringEmployeeId: {
+        type: Schema.Types.ObjectId, 
+        ref: "Employee",
+        default: null // The person handling duties while applicant is away
+    },
+
+    // --- Workflow Status ---
+    status: {
+      type: String,
+      enum: ["Pending", "Manager Approved", "HR Approved", "Rejected", "Cancelled", "Revoked"],
+      default: "Pending",
+    },
+
+    // --- Audit Trail (Futuristic) ---
+    // Tracks the lifecycle: Applied -> Manager OK -> HR OK
+    workflowLogs: [
+      {
+        action: { type: String, enum: ["Applied", "Approved", "Rejected", "Cancelled"] },
+        actionBy: { type: Schema.Types.ObjectId, ref: "Employee" }, // User ID or Manager ID
+        actionDate: { type: Date, default: Date.now },
+        remarks: { type: String }, // e.g., "Approved, but ensure site handover."
+        role: { type: String } // "Employee", "Manager", "HR"
+      }
+    ],
+
+    // --- Final Metadata (For quick reporting) ---
+    finalApprovedBy: { type: Schema.Types.ObjectId, ref: "Employee", default: null },
+    finalApprovalDate: { type: Date, default: null },
+    rejectionReason: { type: String, default: null },
+
+    // --- Cancellation (Post-Approval) ---
+    isCancelled: { type: Boolean, default: false },
+    cancellationReason: { type: String },
+    cancelledAt: { type: Date },
+
   },
   { timestamps: true }
 );
 
-// Index for HR Dashboard queries (e.g., "Show all pending leaves this month")
-leaveRequestSchema.index({ status: 1, fromDate: 1 });
+// Indexes for performance
+leaveRequestSchema.index({ employeeId: 1, status: 1 }); // "My Pending Leaves"
+leaveRequestSchema.index({ status: 1, fromDate: 1 });   // "HR Dashboard: Who is on leave today?"
+leaveRequestSchema.index({ fromDate: 1, toDate: 1 });   // Overlap checks
 
 const LeaveRequestModel = mongoose.model("LeaveRequest", leaveRequestSchema);
 
 export default LeaveRequestModel;
-
-
-
-// How it works in the HRMS System:
-// Mobile App: Employee selects dates, leave type, and submits. totalDays is calculated on the frontend (excluding Sundays/Holidays).
-
-// Notification: Backend checks the employee.reportsTo field and sends a push notification to their Manager.
-
-// Manager Action: Manager views the request.
-
-// If Approved: Backend reduces the leaveBalance in the Employee schema and updates approvedBy.
-
-// If Rejected: Manager enters managerRemarks and status changes to "Rejected".
-
-// Attendance Link: A Cron job (background task) runs daily at midnight. If an employee has an "Approved" leave for today, it automatically marks their Attendance as "On Leave", so they don't get marked "Absent".

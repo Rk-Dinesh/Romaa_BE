@@ -16,7 +16,8 @@ import {
   assignProjects,
   forgotPassword,
   resetPasswordWithOTP,
-  mobileLogin
+  mobileLogin,
+  getAssignedEmployees
 } from "./employee.controller.js";
 import { verifyJWT } from "../../../common/Auth.middlware.js";
 
@@ -45,6 +46,7 @@ employeeRoute.get("/role/filter", getUsersByRole); // Query: ?role=ADMIN
 
 employeeRoute.get("/with-roles", getEmployeesWithRoles); // 1. Has Role
 employeeRoute.get("/unassigned", getUnassignedEmployees); // 2. No Role (Lite data)
+employeeRoute.get("/assigned", getAssignedEmployees); // 2. No Role (Lite data)
 
 // --- Update Operations ---
 employeeRoute.put("/update-access/:employeeId", updateEmployeeAccess); // 3. Update Role/Site/Status

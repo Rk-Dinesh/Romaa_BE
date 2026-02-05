@@ -218,6 +218,19 @@ export const getUnassignedEmployees = async (req, res) => {
   }
 };
 
+export const getAssignedEmployees = async (req, res) => {
+  try {
+    const employees = await EmployeeService.getAssignedEmployees();
+    res.status(200).json({
+      status: true,
+      message: "Fetched assigned employees",
+      data: employees,
+    });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 export const updateEmployeeAccess = async (req, res) => {
   try {
     const { employeeId } = req.params;

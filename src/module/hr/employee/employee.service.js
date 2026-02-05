@@ -164,6 +164,14 @@ class EmployeeService {
       .lean();
   }
 
+  static async getAssignedEmployees() {
+    // Filter where role IS NOT null
+    // Select only specific fields: _id, employeeId, name
+    return await EmployeeModel.find({ role: { $ne: null } })
+      .select("employeeId name email")
+      .lean();
+  }
+
   static async updateEmployeeAccess(employeeId, { role, status, password, accessMode }) {
     const updateData = {};
 

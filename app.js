@@ -39,6 +39,8 @@ import billingRouter from './src/module/project/clientbilling/billing/billing.ro
 import steelestimaterouter from './src/module/project/clientbilling/steelestimate/steelestimate.route.js';
 import machinerylogrouter from './src/module/assets/machinerylogs/machinerylogs.route.js';
 import AttendanceRoute from './src/module/hr/userAttendance/userAttendance.route.js';
+import CalendarRoute from './src/module/hr/holidays/holiday.route.js';
+import LeaveRoute from './src/module/hr/leave/leaverequest.route.js';
 
 
 
@@ -113,6 +115,11 @@ app.use('/clientbilling', billingRouter);
 app.use('/steelestimate', steelestimaterouter);
 app.use('/machinerylogs', machinerylogrouter);
 app.use('/attendance', AttendanceRoute);
+app.use('/calendar', CalendarRoute);
+app.use('/leave', LeaveRoute);
+
+
+
 
 app.get('/', (req, res) => {
   res.send(`Welcome to Romaa Backend`)

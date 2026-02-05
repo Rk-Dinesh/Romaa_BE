@@ -1,5 +1,6 @@
 import { getDistanceFromLatLonInMeters } from "../../../../utils/geofunction.js";
 import CalendarService from "../holidays/holiday.service.js";
+import LeaveRequestModel from "../leave/leaverequest.model.js";
 import UserAttendanceModel from "./userAttendance.model.js";
 
 const SHIFT_RULES = {
@@ -69,6 +70,21 @@ class AttendanceService {
     const now = new Date();
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
+
+    // We check if there is any approved leave that covers "today"
+    // const activeLeave = await LeaveRequestModel.findById({
+    //     employeeId,
+    //     status: "Approved", // Only block if fully approved
+    //     fromDate: { $lte: today },
+    //     toDate: { $gte: today }
+    // });
+
+    // if (activeLeave) {
+    //     throw { 
+    //         statusCode: 403, 
+    //         message: `Check-in Blocked: You are on approved ${activeLeave.leaveType} leave today.` 
+    //     };
+    // }
 
     // C. Duplicate Check
     const exists = await UserAttendanceModel.exists({
