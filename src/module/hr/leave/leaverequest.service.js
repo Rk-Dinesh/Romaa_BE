@@ -4,7 +4,6 @@ import UserAttendanceModel from "../userAttendance/userAttendance.model.js";
 import CalendarService from "../holidays/holiday.service.js";
 
 class LeaveService {
-
   // --- HELPER: Auto-Fill Attendance on Approval ---
   // This ensures the "Daily Dashboard" knows they are on leave weeks in advance.
   static async fillAttendanceForLeave(leaveRequest) {
@@ -16,25 +15,28 @@ class LeaveService {
       // 1. Check if it's a working day
       // We usually only mark "On Leave" for actual working days.
       const dayStatus = await CalendarService.checkDayStatus(currentDate);
-      
-      if (dayStatus.isWorkingDay) { 
+
+      if (dayStatus.isWorkingDay) {
         leaveDates.push({
           updateOne: {
-            filter: { employeeId: leaveRequest.employeeId, date: new Date(currentDate) },
+            filter: {
+              employeeId: leaveRequest.employeeId,
+              date: new Date(currentDate),
+            },
             // UPSERT: Create if new, Update if exists.
             // IMPORTANT: We use $set to overwrite status to 'On Leave'
-            update: { 
-              $set: { 
+            update: {
+              $set: {
                 status: "On Leave",
                 remarks: `Approved Leave: ${leaveRequest.leaveType} - ${leaveRequest.reason}`,
                 // We don't overwrite checkIn data if they accidentally came to work
-              }
+              },
             },
-            upsert: true
-          }
+            upsert: true,
+          },
         });
-      } 
-      
+      }
+
       currentDate.setDate(currentDate.getDate() + 1);
     }
 
@@ -51,16 +53,22 @@ class LeaveService {
     await UserAttendanceModel.deleteMany({
       employeeId: leaveRequest.employeeId,
       date: { $gte: leaveRequest.fromDate, $lte: leaveRequest.toDate },
-      status: "On Leave", 
-      "checkIn.time": { $exists: false } 
+      status: "On Leave",
+      "checkIn.time": { $exists: false },
     });
   }
 
   // --- 1. APPLY FOR LEAVE ---
 static async applyLeave(data) {
-    let { 
-      employeeId, leaveType, requestType, fromDate, toDate, 
-      reason, shortLeaveTime, coveringEmployeeId 
+    let {
+      employeeId,
+      leaveType,
+      requestType,
+      fromDate,
+      toDate,
+      reason,
+      shortLeaveTime,
+      coveringEmployeeId,
     } = data;
 
     // A. Validate Dates
@@ -71,80 +79,130 @@ static async applyLeave(data) {
 
     if (start > end) throw { statusCode: 400, message: "End date cannot be before start date." };
 
-    // Helper for formatting dates in error messages
-    const dateStr = (d) => new Date(d).toLocaleDateString("en-GB", { day: 'numeric', month: 'short' }); 
+    // Helper to format dates
+    const dateStr = (d) => new Date(d).toLocaleDateString("en-GB");
 
     // ---------------------------------------------------------
-    // 🚀 B. STRICT DATE VALIDATION (Reject if Holiday included)
+    // 🛑 1. GLOBAL PENDING LOCK (Strict "One at a Time" Policy)
     // ---------------------------------------------------------
-    let calculatedDays = 0;
-    let loopDate = new Date(start);
-    
-    // Array to collect any non-working days found in the range
-    const invalidDates = []; 
+    // Check if the user has ANY request currently processing.
+    // We REMOVED the date check here. If you have a pending request, you are blocked.
+    const hasPending = await LeaveRequestModel.findOne({
+      employeeId,
+      status: { $in: ["Pending"] } 
+    });
 
-    while (loopDate <= end) {
-      const dayStatus = await CalendarService.checkDayStatus(loopDate);
-
-      if (!dayStatus.isWorkingDay) {
-        // 🛑 FOUND A HOLIDAY/WEEKEND!
-        // Add specific detail to the error list
-        invalidDates.push(`${dateStr(loopDate)} is ${dayStatus.reason}`);
-      } else {
-        // It's a working day, calculate count as usual
-        if (requestType === "First Half" || requestType === "Second Half") {
-          calculatedDays += 0.5;
-        } else {
-          calculatedDays += 1;
-        }
-      }
-
-      loopDate.setDate(loopDate.getDate() + 1);
-    }
-
-    // 🚨 THROW ERROR if any invalid dates were found
-    if (invalidDates.length > 0) {
-      throw { 
-        statusCode: 400, 
-        message: `Request Rejected. Your selection includes non-working days: ${invalidDates.join(", ")}. Please apply for working days only.` 
-      };
-    }
-
-    // Safety check (shouldn't trigger if invalidDates check passes, but good to have)
-    if (calculatedDays === 0) {
-      throw { statusCode: 400, message: "Invalid selection. No working days found." };
+    if (hasPending) {
+       throw { 
+         statusCode: 400, 
+         message: `Action Required: You already have a pending request applied on ${dateStr(hasPending.createdAt)}. Please wait for it to be processed before applying for a new one.` 
+       };
     }
 
     // ---------------------------------------------------------
-
-    // C. Check Leave Balance
-    const employee = await EmployeeModel.findById(employeeId);
-    if (!employee) throw { statusCode: 404, message: "Employee not found." };
-
-    const currentBalance = employee.leaveBalance[leaveType]; 
-    if (leaveType !== "LWP" && currentBalance < calculatedDays) {
-      throw { statusCode: 400, message: `Insufficient ${leaveType} balance. Need: ${calculatedDays}, Available: ${currentBalance}` };
-    }
-
-    // D. Check for Overlapping Requests
+    // 🛑 2. APPROVED OVERLAP CHECK (Date Clash Preventer)
+    // ---------------------------------------------------------
+    // Since we passed Step 1, we know there are no pending requests.
+    // Now we check if the requested dates clash with an APPROVED leave.
     const overlap = await LeaveRequestModel.findOne({
       employeeId,
-      status: { $in: ["Pending", "Manager Approved", "HR Approved", "Approved"] }, 
+      status: { $in: ["Manager Approved", "HR Approved", "Approved"] },
       $or: [
         { fromDate: { $lte: end }, toDate: { $gte: start } }
       ]
     });
 
     if (overlap) {
-      const conflictStart = new Date(overlap.fromDate).toLocaleDateString("en-GB");
-      const conflictEnd = new Date(overlap.toDate).toLocaleDateString("en-GB");
-      throw { 
-        statusCode: 409, 
-        message: `Overlap: You already have a request from ${conflictStart} to ${conflictEnd}.` 
+      if (overlap.requestType === "Short Leave" && requestType === "Short Leave") {
+        throw { statusCode: 409, message: `You already have an Approved Permission for ${dateStr(overlap.fromDate)}.` };
+      }
+      throw {
+        statusCode: 409,
+        message: `Overlap Detected: You have an Approved ${overlap.leaveType} from ${dateStr(overlap.fromDate)} to ${dateStr(overlap.toDate)}.`
       };
     }
 
-    // E. Create Request
+    // ---------------------------------------------------------
+    // 🛑 3. PERMISSION (SHORT LEAVE) QUOTA CHECK
+    // ---------------------------------------------------------
+    if (requestType === "Short Leave") {
+        if (!shortLeaveTime?.from || !shortLeaveTime?.to) {
+            throw { statusCode: 400, message: "Please specify 'From' and 'To' time for the permission." };
+        }
+
+        const reqYear = start.getFullYear();
+        const reqMonth = start.getMonth();
+        const startOfMonth = new Date(reqYear, reqMonth, 1);
+        const endOfMonth = new Date(reqYear, reqMonth + 1, 0, 23, 59, 59);
+
+        // Count approved permissions in this month
+        const usedPermissions = await LeaveRequestModel.countDocuments({
+            employeeId,
+            requestType: "Short Leave",
+            status: { $in: ["Manager Approved", "HR Approved", "Approved"] }, 
+            fromDate: { $gte: startOfMonth, $lte: endOfMonth }
+        });
+
+        if (usedPermissions >= 3) {
+            const monthName = start.toLocaleString('default', { month: 'long' });
+            throw {
+                statusCode: 400,
+                message: `Permission Limit Exceeded. You have already used ${usedPermissions}/3 permissions for ${monthName}.`
+            };
+        }
+    }
+
+    // ---------------------------------------------------------
+    // 🚀 4. CALCULATE DAYS & VALIDATE WORKING DAYS
+    // ---------------------------------------------------------
+    let calculatedDays = 0;
+    let loopDate = new Date(start);
+    const nonWorkingDaysEntry = [];
+
+    while (loopDate <= end) {
+      const dayStatus = await CalendarService.checkDayStatus(loopDate);
+
+      if (dayStatus.isWorkingDay) {
+        if (requestType === "Short Leave") {
+            calculatedDays += 0; // Permissions do not deduct days
+        } else if (requestType === "First Half" || requestType === "Second Half") {
+            calculatedDays += 0.5;
+        } else {
+            calculatedDays += 1;
+        }
+      } else {
+        nonWorkingDaysEntry.push({
+          date: new Date(loopDate),
+          reason: dayStatus.reason,
+        });
+      }
+      loopDate.setDate(loopDate.getDate() + 1);
+    }
+
+    // Validation: Cannot take permission on a Holiday/Sunday
+    if (requestType === "Short Leave" && nonWorkingDaysEntry.length > 0) {
+        throw { statusCode: 400, message: "Permissions cannot be taken on Holidays or Week-offs." };
+    }
+
+    // ---------------------------------------------------------
+    // 5. CHECK BALANCE
+    // ---------------------------------------------------------
+    const employee = await EmployeeModel.findById(employeeId);
+    if (!employee) throw { statusCode: 404, message: "Employee not found." };
+
+    if (requestType !== "Short Leave") {
+        const currentBalance = employee.leaveBalance[leaveType] || 0;
+        if (leaveType !== "LWP" && currentBalance < calculatedDays) {
+          throw {
+            statusCode: 400,
+            message: `Insufficient ${leaveType} balance. Need: ${calculatedDays}, Available: ${currentBalance}`,
+          };
+        }
+    }
+
+    // ---------------------------------------------------------
+    // 6. CREATE & SAVE
+    // ---------------------------------------------------------
     const newLeave = new LeaveRequestModel({
       employeeId,
       leaveType,
@@ -152,42 +210,58 @@ static async applyLeave(data) {
       fromDate: start,
       toDate: end,
       totalDays: calculatedDays,
+      nonWorkingDays: nonWorkingDaysEntry,
       reason,
       shortLeaveTime,
       coveringEmployeeId,
       status: "Pending",
-      workflowLogs: [{
-        action: "Applied",
-        actionBy: employeeId,
-        role: "Employee",
-        remarks: reason
-      }]
+      workflowLogs: [
+        {
+          action: "Applied",
+          actionBy: employeeId,
+          role: "Employee",
+          remarks: reason,
+        },
+      ],
     });
 
     await newLeave.save();
     return newLeave;
   }
 
+
   // --- 2. ACTION LEAVE (Approve/Reject) ---
   static async actionLeave(data) {
-    const { leaveRequestId, actionBy, role, action, remarks } = data; 
-    
+    const { leaveRequestId, actionBy, role, action, remarks } = data;
+
     const leaveRequest = await LeaveRequestModel.findById(leaveRequestId);
     if (!leaveRequest) throw { statusCode: 404, message: "Request not found." };
 
     // Prevent re-approving
-    if (leaveRequest.status === "Approved" || leaveRequest.status === "Rejected" || leaveRequest.status === "Cancelled") {
-        throw { statusCode: 400, message: `Request is already ${leaveRequest.status}` };
+    if (
+      leaveRequest.status === "Approved" ||
+      leaveRequest.status === "Rejected" ||
+      leaveRequest.status === "Cancelled"
+    ) {
+      throw {
+        statusCode: 400,
+        message: `Request is already ${leaveRequest.status}`,
+      };
     }
 
     if (action === "Approve") {
       // 1. Re-Check Balance & Deduct
       if (leaveRequest.leaveType !== "LWP") {
         const employee = await EmployeeModel.findById(leaveRequest.employeeId);
-        if (employee.leaveBalance[leaveRequest.leaveType] < leaveRequest.totalDays) {
-           throw { statusCode: 400, message: `Cannot Approve. Insufficient balance.` };
+        if (
+          employee.leaveBalance[leaveRequest.leaveType] < leaveRequest.totalDays
+        ) {
+          throw {
+            statusCode: 400,
+            message: `Cannot Approve. Insufficient balance.`,
+          };
         }
-        
+
         employee.leaveBalance[leaveRequest.leaveType] -= leaveRequest.totalDays;
         await employee.save();
       }
@@ -195,10 +269,9 @@ static async applyLeave(data) {
       // 2. [FIX] Auto-Sync Attendance (The Edge Case Fix)
       await this.fillAttendanceForLeave(leaveRequest);
 
-      leaveRequest.status = "Manager Approved"; 
+      leaveRequest.status = "Manager Approved";
       leaveRequest.finalApprovedBy = actionBy;
       leaveRequest.finalApprovalDate = new Date();
-
     } else if (action === "Reject") {
       leaveRequest.status = "Rejected";
       leaveRequest.rejectionReason = remarks;
@@ -208,7 +281,7 @@ static async applyLeave(data) {
       action: action === "Approve" ? "Approved" : "Rejected",
       actionBy: actionBy,
       role: role,
-      remarks: remarks
+      remarks: remarks,
     });
 
     await leaveRequest.save();
@@ -221,14 +294,22 @@ static async applyLeave(data) {
     const leaveRequest = await LeaveRequestModel.findById(leaveRequestId);
 
     if (!leaveRequest) throw { statusCode: 404, message: "Request not found" };
-    if (leaveRequest.status === "Cancelled" || leaveRequest.status === "Rejected") {
-        throw { statusCode: 400, message: "Request is already inactive" };
+    if (
+      leaveRequest.status === "Cancelled" ||
+      leaveRequest.status === "Rejected"
+    ) {
+      throw { statusCode: 400, message: "Request is already inactive" };
     }
 
     // A. Refund Balance (If it was approved and not LWP)
-    if (leaveRequest.status === "Approved" && leaveRequest.leaveType !== "LWP") {
+    if (
+      leaveRequest.status === "Approved" &&
+      leaveRequest.leaveType !== "LWP"
+    ) {
       await EmployeeModel.findByIdAndUpdate(leaveRequest.employeeId, {
-        $inc: { [`leaveBalance.${leaveRequest.leaveType}`]: leaveRequest.totalDays }
+        $inc: {
+          [`leaveBalance.${leaveRequest.leaveType}`]: leaveRequest.totalDays,
+        },
       });
 
       // B. [FIX] Clear Attendance Records
@@ -238,8 +319,12 @@ static async applyLeave(data) {
     leaveRequest.status = "Cancelled";
     leaveRequest.isCancelled = true;
     leaveRequest.cancelledAt = new Date();
-    leaveRequest.workflowLogs.push({ action: "Cancelled", actionBy: cancelledBy, role: "User/HR" });
-    
+    leaveRequest.workflowLogs.push({
+      action: "Cancelled",
+      actionBy: cancelledBy,
+      role: "User/HR",
+    });
+
     await leaveRequest.save();
     return { message: "Leave cancelled and balance refunded." };
   }
@@ -247,7 +332,7 @@ static async applyLeave(data) {
   // --- 4. GET MY LEAVES ---
   static async getMyLeaves(employeeId, status) {
     const query = { employeeId };
-    if (status) query.status = status; 
+    if (status) query.status = status;
 
     return await LeaveRequestModel.find(query)
       .sort({ fromDate: -1 })
@@ -256,15 +341,17 @@ static async applyLeave(data) {
 
   // --- 5. GET PENDING APPROVALS ---
   static async getPendingLeavesForManager(managerId) {
-    const team = await EmployeeModel.find({ reportsTo: managerId }).select("_id");
-    const teamIds = team.map(t => t._id);
+    const team = await EmployeeModel.find({ reportsTo: managerId }).select(
+      "_id",
+    );
+    const teamIds = team.map((t) => t._id);
 
     return await LeaveRequestModel.find({
       employeeId: { $in: teamIds },
-      status: "Pending"
+      status: "Pending",
     })
-    .populate("employeeId", "name designation photoUrl leaveBalance") 
-    .sort({ fromDate: 1 });
+      .populate("employeeId", "name designation photoUrl leaveBalance")
+      .sort({ fromDate: 1 });
   }
 }
 

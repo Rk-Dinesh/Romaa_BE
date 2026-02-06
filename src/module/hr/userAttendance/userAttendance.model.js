@@ -63,7 +63,7 @@ const userAttendanceSchema = new mongoose.Schema(
     // The Final Status
     status: {
       type: String,
-      enum: ["Present", "Absent", "Half-Day", "On Leave"],
+      enum: ["Present", "Absent", "Half-Day", "On Leave", "Holiday"],
       default: "Absent",
     },
 

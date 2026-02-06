@@ -40,7 +40,7 @@ class CalendarService {
   static async getHolidaysList(year) {
     const holidays = await HolidayModel.find({
       date: { $gte: new Date(year, 0, 1), $lte: new Date(year, 11, 31) }
-    }).sort({ date: 1 }).select("date _id");
+    }).sort({ date: 1 }).select("date _id name");
 
     return holidays;
   }

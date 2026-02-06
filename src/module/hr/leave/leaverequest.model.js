@@ -12,7 +12,7 @@ const leaveRequestSchema = new mongoose.Schema(
     // --- Core Leave Details ---
     leaveType: {
       type: String,
-      enum: ["CL", "SL", "PL", "LWP", "CompOff", "Maternity", "Paternity", "Bereavement"],
+      enum: ["CL", "SL", "PL", "LWP", "CompOff", "Maternity", "Paternity", "Bereavement", "Permission"],
       required: true,
     },
     
@@ -37,6 +37,15 @@ const leaveRequestSchema = new mongoose.Schema(
       type: Number,
       required: true, // 0.5, 1, 3, etc.
     },
+
+    // --- NEW: Holiday/Weekend Tracking ---
+    // Stores the exact reason for any non-working days in the range
+    nonWorkingDays: [
+      {
+        date: { type: Date },
+        reason: { type: String } // e.g., "Sunday", "Public Holiday: Diwali"
+      }
+    ],
 
     reason: { type: String, required: true },
     
