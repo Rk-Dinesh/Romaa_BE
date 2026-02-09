@@ -8,105 +8,143 @@ const userAttendanceSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    date: { type: Date, required: true }, // Midnight UTC
+    // Normalized Date (Midnight UTC)
+    date: { type: Date, required: true },
 
-    // --- Shift Snapshot (Locked at Check-In) ---
-    // We store this here so if HR changes shift times tomorrow, 
-    // today's calculation doesn't break.
+    // --- 1. Shift Snapshot (Excellent, Keep this) ---
     shiftConfig: {
-      shiftType: { type: String, enum: ["Morning", "Evening", "Night"], default: "Morning" },
-      startTime: { type: String, default: "09:00" }, // HH:mm
-      endTime: { type: String, default: "18:00" },   // HH:mm
-      gracePeriodMins: { type: Number, default: 30 }, // 9:30 allowed
-      halfDayEntryCutoff: { type: String, default: "10:00" }, // After this, morning is absent
-      minHalfDayHours: { type: Number, default: 4 }, // 4 hours
-      minFullDayHours: { type: Number, default: 7.83 } // 7h 50m approx 7.83 hrs
+      shiftType: { type: String, enum: ["Fixed", "Rotational", "Flexible"], default: "Fixed" },
+      startTime: { type: String }, // 09:00
+      endTime: { type: String },   // 18:00
+      gracePeriodMins: { type: Number }, 
+      breakDurationMins: { type: Number, default: 90 }, // Expected break time
+      isNightShift: { type: Boolean, default: false } // Critical for cross-day calculation
     },
 
-    // --- Check-In ---
-    checkIn: {
-      time: { type: Date },
-      timeIST: { type: String },
-      photoUrl: { type: String },
-      visitType: { 
-        type: String, 
-        enum: ["Regular", "Client Visit", "Work From Home"], 
-        default: "Regular" 
-      },
-      clientName: { type: String },
-      location: {
-        lat: Number,
-        lng: Number,
-        address: String,
-      },
-      isLate: { type: Boolean, default: false }, // True if > 9:30
-      lateReason: { type: String } // "4th Late Penalty" or "Time > 10:00"
-    },
+    // --- 2. The Timeline (Multi-Punch Support) --- 
+    // Captures every single event: In -> Break -> In -> Out
+    timeline: [
+      {
+        punchType: { type: String, enum: ["In", "Out", "BreakStart", "LunchStart", "LunchEnd", "BreakEnd"] },
+        timestamp: { type: Date, required: true },
+        location: {
+          lat: Number,
+          lng: Number,
+          address: String,
+          accuracy: Number, // GPS Accuracy in meters
+          isMock: { type: Boolean, default: false } // Android "Mock Location" detection
+        },
+        device: {
+          deviceId: String,
+          model: String,
+          os: String,
+          ip: String
+        },
+        verification: {
+          method: { type: String, enum: ["Geofence", "Face", "Biometric", "Manual"], default: "Geofence" },
+          confidenceScore: { type: Number }, // AI Face Match %
+          photoUrl: String
+        },
+        geofenceSiteId: { type: Schema.Types.ObjectId, ref: "Tenders" },
+        geofenceId: { type: Schema.Types.ObjectId, ref: "Geofence" },
+        remarks: String,
+        syncedAt: { type: Date }
+      }
+    ],
 
-    // --- Check-Out ---
-    checkOut: {
-      time: { type: Date },
-      timeIST: { type: String },
-      photoUrl: { type: String },
-      location: {
-        lat: Number,
-        lng: Number,
-        address: String,
-      },
-    },
+    // --- 3. [NEW] Session Tracking (Processed Intervals) ---
+    // This is automatically calculated from the timeline whenever a punch happens.
+    // Use this for Payroll/Charts instead of recalculating from timeline every time.
+    sessions: [
+      {
+        startTime: { type: Date }, // e.g., 09:00 AM
+        endTime: { type: Date },   // e.g., 01:00 PM (Lunch Start)
+        durationMins: { type: Number, default: 0 }, // 240 mins
+        type: { type: String, enum: ["Work", "Break", "Lunch"], default: "Work" },
+        isBillable: { type: Boolean, default: true },
+        isAutoClosed: { type: Boolean, default: false }, // If system auto-punched out
+      }
+    ],
 
-    // --- Summaries ---
-    totalWorkingHours: { type: Number, default: 0 },
+    // --- 4. Calculated Summaries (Aggregated from Timeline) ---
+    firstIn: { type: Date },  // The very first punch
+    lastOut: { type: Date },  // The very last punch
+    
+    totalDuration: { type: Number, default: 0 }, // Raw time between First In and Last Out
+    totalBreakTime: { type: Number, default: 0 }, // Time spent in breaks
+    netWorkHours: { type: Number, default: 0 },   // (Total - Break) -> The "Payroll" hours
+    
     overtimeHours: { type: Number, default: 0 },
     workType: { type: String, enum: ["Regular", "Overtime", "Holiday Work"], default: "Regular" },
-
-    // The Final Status
+    
+    // --- 5. Status & Compliance ---
     status: {
       type: String,
-      enum: ["Present", "Absent", "Half-Day", "On Leave", "Holiday"],
+      enum: ["Present", "Absent", "Half-Day", "On Leave", "Missed Punch"],
       default: "Absent",
     },
-
-    regularization: {
-      status: { 
-        type: String, 
-        enum: ["None", "Pending", "Approved", "Rejected"], 
-        default: "None" 
-      },
-      reason: { type: String }, // e.g., "Forgot Punch", "System Issue"
-      
-      // The time they WANT to set
-      correctedCheckIn: { type: Date }, 
-      correctedCheckOut: { type: Date },
-      
-      requestedAt: { type: Date },
-      actionBy: { type: Schema.Types.ObjectId, ref: "Employee" }, // Manager who approved
-      actionDate: { type: Date },
-      remarks: { type: String } // Manager's comment
+    remarks: String,
+    attendanceType: {
+      type: String,
+      enum: ["Office", "Remote", "Site", "Hybrid","On Duty","Work From Home"],
+      default: "Office"
+    },
+    
+    // Flags for HR Reports
+    flags: {
+      isLateEntry: { type: Boolean, default: false },
+      isEarlyExit: { type: Boolean, default: false },
+      isAutoCheckOut: { type: Boolean, default: false }, // System auto-closed the day?
+      hasDispute: { type: Boolean, default: false } // Employee raised a concern?
     },
 
-    // Metadata
-    isRegularized: { type: Boolean, default: false },
-    remarks: { type: String },
+    // --- 6. Regularization (Correction Workflow) ---
+    regularization: {
+      isApplied: { type: Boolean, default: false },
+      status: { type: String, enum: ["Pending", "Approved", "Rejected"], default: "Pending" },
+      reasonCategory: { type: String, enum: ["Missed Punch", "System Glitch", "Work From Home", "Client Visit","on leave"] },
+      userReason: String,
+      managerReason: String,
+      originalData: { type: Object }, // Backup of data BEFORE correction
+      correctedBy: { type: Schema.Types.ObjectId, ref: "Employee" },
+      correctedAt: { type: Date }
+    },
+
+    // --- 7. Payroll & Locking (Critical for Salary Processing) ---
+    payroll: {
+      isLocked: { type: Boolean, default: false }, // True once salary is calculated
+      batchId: { type: String }, // Link to the Payroll Run ID (e.g., "OCT_2026_BATCH_A")
+      processedAt: { type: Date },
+      
+      // If penalties apply for this specific day
+      penalty: {
+        isApplied: { type: Boolean, default: false },
+        type: { type: String, enum: ["Late Deduction", "Half-Day Absent", "No Pay"] },
+        deductionAmount: { type: Number, default: 0 } // e.g., 0.5 days
+      }
+    },
+    // --- 8. Credits & Accruals ---
+    // Did working today earn them a leave for later?
+    rewards: {
+      isCompOffEligible: { type: Boolean, default: false },
+      compOffCredit: { type: Number, default: 0 }, // e.g., 1 or 0.5
+      expiryDate: { type: Date }, // 30days after the date of attendance
+      approvalStatus: { type: String, enum: ["Auto-Approved", "Pending", "Rejected"] }
+    },
+    // --- 9. Employee Sentiment ---
+    sentiment: {
+      score: { type: Number, min: 1, max: 5 }, // 1 (Bad) to 5 (Great)
+      tags: [{ type: String }], // ["Stressed", "Productive", "Sick"]
+      capturedAt: { type: Date }
+    }
   },
-  { timestamps: true },
+  { timestamps: true }
 );
 
-// Compound Index for Daily Uniqueness
-userAttendanceSchema.index({ employeeId: 1, date: 1 }, { unique: true });
+// ⚡ Performance Indexes
+userAttendanceSchema.index({ employeeId: 1, date: 1 }, { unique: true }); // Prevent duplicates
+userAttendanceSchema.index({ date: 1, status: 1 }); // "Who is absent today?"
+userAttendanceSchema.index({ "flags.isLateEntry": 1 }); // "Late comers report"
 
 const UserAttendanceModel = mongoose.model("UserAttendance", userAttendanceSchema);
 export default UserAttendanceModel;
-
-
-// "calculate total working hours" even though they missed checkout. Since we don't know when they actually left, the only logical time to stop the clock is the Shift End Time (stored in your shiftConfig.endTime).
-
-
-// Scenario,Time (Approx),Range,Previous Lates,Result Status,Notes
-// Normal,9:15 AM,< 1km,Any,Present,✅ Perfect
-// On Duty,9:15 AM,> 10km,Any,Present,"✅ Tagged ""Client Visit"""
-// Far Away,9:15 AM,> 1km,Any,Error 403,❌ Check-in Rejected
-// Duplicate,Any,Any,Any,Error 409,❌ Already Checked In
-// Late 1,9:45 AM,< 1km,0,Present,⚠️ Marked isLate: true
-// Late 4,9:45 AM,< 1km,3,Half-Day,⚠️ 3-Late Penalty Triggered
-// Too Late,10:15 AM,< 1km,Any,Half-Day,⚠️ Cutoff Time Exceeded

@@ -99,7 +99,15 @@ const employeeSchema = new mongoose.Schema(
     leaveBalance: {
       PL: { type: Number, default: 0 }, // Privilege Leave (Resets yearly)
       CL: { type: Number, default: 12 }, // Casual Leave
-      SL: { type: Number, default: 12 }  // Sick Leave
+      SL: { type: Number, default: 12 }, // Sick Leave
+      compOff: [
+        {
+          earnedDate: { type: Date, required: true }, // The holiday they worked
+          expiryDate: { type: Date, required: true }, // e.g., earned + 60 days
+          isUsed: { type: Boolean, default: false },  // Mark true when availed
+          reason: { type: String } // e.g., "Worked on Republic Day"
+        }
+      ]
     },
 
     // --- C. Payroll & Bank Details ---
@@ -111,7 +119,7 @@ const employeeSchema = new mongoose.Schema(
       ifscCode: { type: String },
       uanNumber: { type: String }, // For Provident Fund (PF)
       panNumber: { type: String }  // For Tax calculation
-    }
+    },
 
   },
   { timestamps: true }
