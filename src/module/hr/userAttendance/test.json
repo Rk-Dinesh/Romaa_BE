@@ -1,0 +1,76 @@
+{
+"URL":"http://localhost:5000/attendance/punch",
+"PunchType" : "IN"
+}
+{
+  "employeeId": "697c4c672ca1ca4f9940262f", 
+  "punchType": "In",
+  "latitude": 12.8394, 
+  "longitude": 80.2305,
+  "siteLatitude": 12.8394, 
+  "siteLongitude": 80.2305, 
+  "address": "SIPCOT IT Park, Siruseri",
+  "photoUrl": "https://s3.amazonaws.com/my-bucket/user_selfie.jpg",
+  "attendanceType": "Site",
+  "shiftType": "General",
+  "geofenceSiteId": "697b076a61f06e2e38ddd073", 
+  "deviceId": "android_pixel_7",
+  "deviceModel": "Pixel 7 Pro",
+  "ipAddress": "203.0.113.45",
+  "remarks": "Traffic was heavy",
+  "testDate": "2026-02-09T03:30:00.000Z"
+}
+
+{
+"URL":"http://localhost:5000/attendance/punch",
+"PunchType" : "LunchStart"
+}
+{
+  "employeeId": "697c4c672ca1ca4f9940262f",
+  "punchType": "LunchStart",
+  "latitude": 12.8395, 
+  "longitude": 80.2306,
+  "siteLatitude": 12.8394, 
+  "siteLongitude": 80.2305,
+  "attendanceType": "Site",
+  "geofenceSiteId": "697b076a61f06e2e38ddd073", 
+  "address": "Office Cafeteria",
+  "remarks": "Going for lunch",
+  "testDate": "2026-02-09T07:30:00.000Z"
+}
+{
+"URL":"http://localhost:5000/attendance/punch",
+"PunchType" : "LunchEnd"
+}
+{
+  "employeeId": "697c4c672ca1ca4f9940262f",
+  "punchType": "LunchEnd",
+  "latitude": 12.8395, 
+  "longitude": 80.2306,
+  "siteLatitude": 12.8394, 
+  "siteLongitude": 80.2305,
+  "attendanceType": "Site",
+  "geofenceSiteId": "697b076a61f06e2e38ddd073", 
+  "address": "Office Cafeteria",
+  "remarks": "Going for lunch",
+ "testDate": "2026-02-09T08:30:00.000Z"
+}
+{
+"URL":"http://localhost:5000/attendance/punch",
+"PunchType" : "Out"
+}
+{
+    "employeeId": "697c4c672ca1ca4f9940262f",
+    "punchType": "Out",
+    "latitude": 12.8394,
+    "longitude": 80.2305,
+    "siteLatitude": 12.8394,
+    "siteLongitude": 80.2305,
+    "attendanceType": "Site",
+    "geofenceSiteId": "697b076a61f06e2e38ddd073",
+    "photoUrl": "https://s3.amazonaws.com/my-bucket/user_selfie.jpg",
+    "address": "SIPCOT IT Park, Siruseri",
+    "remarks": "Closing for the day",
+    "testDate": "2026-02-09T12:30:00.000Z"
+}
+
