@@ -10,11 +10,14 @@ const userAttendanceSchema = new mongoose.Schema(
     },
     // Normalized Date (Midnight UTC)
     date: { type: Date, required: true },
+    istDate: { type: Date },
 
     // --- 1. Shift Snapshot (Excellent, Keep this) ---
     shiftConfig: {
       shiftType: { type: String, enum: ["Fixed", "Rotational", "Flexible"], default: "Fixed" },
       startTime: { type: String }, // 09:00
+      istStartTime: { type: String }, // 09:00
+      istEndTime: { type: String },   // 18:00
       endTime: { type: String },   // 18:00
       gracePeriodMins: { type: Number }, 
       breakDurationMins: { type: Number, default: 90 }, // Expected break time
@@ -27,6 +30,7 @@ const userAttendanceSchema = new mongoose.Schema(
       {
         punchType: { type: String, enum: ["In", "Out", "BreakStart", "LunchStart", "LunchEnd", "BreakEnd"] },
         timestamp: { type: Date, required: true },
+        istTimestamp: { type: Date },
         location: {
           lat: Number,
           lng: Number,
@@ -58,7 +62,9 @@ const userAttendanceSchema = new mongoose.Schema(
     sessions: [
       {
         startTime: { type: Date }, // e.g., 09:00 AM
+        istStartTime: { type: Date },
         endTime: { type: Date },   // e.g., 01:00 PM (Lunch Start)
+        istEndTime: { type: Date },
         durationMins: { type: Number, default: 0 }, // 240 mins
         type: { type: String, enum: ["Work", "Break", "Lunch"], default: "Work" },
         isBillable: { type: Boolean, default: true },
@@ -68,7 +74,9 @@ const userAttendanceSchema = new mongoose.Schema(
 
     // --- 4. Calculated Summaries (Aggregated from Timeline) ---
     firstIn: { type: Date },  // The very first punch
+    istFirstIn: { type: Date },
     lastOut: { type: Date },  // The very last punch
+    istLastOut: { type: Date },
     
     totalDuration: { type: Number, default: 0 }, // Raw time between First In and Last Out
     totalBreakTime: { type: Number, default: 0 }, // Time spent in breaks
