@@ -23,7 +23,7 @@ rateanalysisrouter.get('/getbytenderId', getWorkItemsByTenderId);
 rateanalysisrouter.get('getbyid/:id', getWorkItemById);
 rateanalysisrouter.put('/update/:id', updateWorkItem);
 rateanalysisrouter.delete('/delete/:id', deleteWorkItem);
-rateanalysisrouter.post('/uploadcsv1', upload.single('file'), uploadWorkItemsCSV1);
+rateanalysisrouter.post('/uploadcsv1', upload.single('file'), uploadWorkItemsCSV1); //not in use 
 rateanalysisrouter.post('/uploadcsv', upload.single('file'), uploadWorkItemsCSVAndSyncBoq);
 rateanalysisrouter.put('/updaterateanalysis/:tender_id', updateRateAnalysis);
 rateanalysisrouter.put('/freeze/:tender_id', freezeRateAnalysis);

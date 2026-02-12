@@ -20,6 +20,7 @@ const ItemSchema = new mongoose.Schema(
         escalation_amount: { type: Number, default: 0 },
         percentage_value_of_material: { type: Number, default: 0 },
         ex_quantity: { type: Number },
+        resouceGroup: { type: String, default: "" },
     },
     { _id: false }
 );

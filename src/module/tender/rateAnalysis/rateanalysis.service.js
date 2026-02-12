@@ -138,7 +138,7 @@ class WorkItemService {
 
     // Return work_items in expected nested format
     return updatedDoc.work_items;
-  }
+  } // not in use
 
   static parseWorkItemsFromCSV(csvRows) {
     const groupedByItem = {};
@@ -227,7 +227,7 @@ class WorkItemService {
     );
 
     return workItems;
-  }
+  } // not in use 
 
   static async syncBoqWithWorkItems(tender_id, workItems) {
     const boqDoc = await BoqModel.findOne({ tender_id });
@@ -291,7 +291,7 @@ class WorkItemService {
 
     await boqDoc.save();
     return boqDoc;
-  }
+  } 
   //one 
   //  static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
   //   // 1. Load BOQ once and map item_id -> description
@@ -452,30 +452,76 @@ class WorkItemService {
       boqById.set(String(item.item_id).trim(), item);
     }
     // 2. Group CSV rows by itemNo
+    // const grouped = new Map(); // itemNo -> { mainRow, detailRows: [] }
+
+    // for (const rawRow of csvRows) {
+    //   if (!rawRow) continue;
+
+    //   const itemNo = rawRow.ITEM_ID != null ? String(rawRow.ITEM_ID).trim() : "";
+    //   if (!itemNo) continue;
+
+    //   if (!boqById.has(itemNo)) {
+    //     throw new Error(`ItemNo "${itemNo}" not found in BOQ. Please check your CSV upload.`);
+    //   }
+
+    //   const category = rawRow.CATEGORY != null ? String(rawRow.CATEGORY).trim() : "";
+
+    //   let entry = grouped.get(itemNo);
+    //   if (!entry) {
+    //     entry = { mainRow: null, detailRows: [] };
+    //     grouped.set(itemNo, entry);
+    //   }
+
+    //   if (category === "MAIN_ITEM") {
+    //     entry.mainRow = rawRow;
+    //   } else {
+    //     entry.detailRows.push(rawRow);
+    //   }
+    // }
+
+    // 2. Group CSV rows by itemNo (Stateful grouping)
     const grouped = new Map(); // itemNo -> { mainRow, detailRows: [] }
+    let currentMainItemNo = null; // 👈 Tracks the active parent (e.g., ABS001)
 
     for (const rawRow of csvRows) {
       if (!rawRow) continue;
 
-      const itemNo = rawRow.ITEM_ID != null ? String(rawRow.ITEM_ID).trim() : "";
-      if (!itemNo) continue;
-
-      if (!boqById.has(itemNo)) {
-        throw new Error(`ItemNo "${itemNo}" not found in BOQ. Please check your CSV upload.`);
-      }
+      // Get the ID of the current row (e.g., "ABS001" or "1")
+      const rowItemId = rawRow.ITEM_ID != null ? String(rawRow.ITEM_ID).trim() : "";
+      if (!rowItemId) continue;
 
       const category = rawRow.CATEGORY != null ? String(rawRow.CATEGORY).trim() : "";
 
-      let entry = grouped.get(itemNo);
-      if (!entry) {
-        entry = { mainRow: null, detailRows: [] };
-        grouped.set(itemNo, entry);
-      }
-
       if (category === "MAIN_ITEM") {
+        // 🟢 Case A: This is a Parent Row (ABS001)
+        currentMainItemNo = rowItemId; // Update the active parent
+
+        // Validation: Parent must exist in BOQ
+        if (!boqById.has(currentMainItemNo)) {
+          throw new Error(`ItemNo "${currentMainItemNo}" not found in BOQ.`);
+        }
+
+        // Initialize group
+        let entry = grouped.get(currentMainItemNo);
+        if (!entry) {
+          entry = { mainRow: null, detailRows: [] };
+          grouped.set(currentMainItemNo, entry);
+        }
         entry.mainRow = rawRow;
+
       } else {
-        entry.detailRows.push(rawRow);
+        // 🟡 Case B: This is a Detail Row (1, 2, 3...)
+        // We ignore rowItemId ("1") for grouping, and use currentMainItemNo ("ABS001")
+        
+        if (!currentMainItemNo) {
+           // Safety check: ignore orphan rows at the start of file
+           continue; 
+        }
+
+        let entry = grouped.get(currentMainItemNo);
+        if (entry) {
+          entry.detailRows.push(rawRow);
+        }
       }
     }
 
@@ -564,7 +610,8 @@ class WorkItemService {
           quantity: lineQuantity,
           rate,
           amount,
-          total_rate
+          total_rate,
+          resouceGroup: rawRow.RESOURCE_GROUP || "",
         };
 
         lines.push(line);
@@ -600,7 +647,8 @@ class WorkItemService {
               tax_amount: 0,
               total_amount: 0,
               escalation_amount: 0,
-              percentage_value_of_material: 0
+              percentage_value_of_material: 0,
+              resouceGroup: line.resouceGroup || "",
             };
             bucket.set(key, itemAgg);
           }
@@ -622,6 +670,7 @@ class WorkItemService {
                 quantity: [], // Array of numbers
                 total_item_quantity: 0,
                 unit_rate: rate,
+                resouceGroup: line.resouceGroup || "",
                 total_amount: 0,
                 
                 // Initialize default fields required by schema
@@ -971,7 +1020,7 @@ class WorkItemService {
 
 
     return doc;
-  }
+  } // in use 
 
   //tw0
   // static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
@@ -1358,7 +1407,8 @@ static async updateRateAnalysis(payload, tender_id) {
           quantity: lineQuantity,
           rate,
           amount,
-          total_rate
+          total_rate,
+          resouceGroup: rawRow.resouceGroup || "",
         };
 
         lines.push(line);
@@ -1388,6 +1438,7 @@ static async updateRateAnalysis(payload, tender_id) {
                         quantity: [],
                         total_item_quantity: 0,
                         unit_rate: rate,
+                        resouceGroup: line.resouceGroup || "",
                         tax_percent: 0,
                         escalation_percent: 0,
                         tax_amount: 0,
@@ -1415,6 +1466,7 @@ static async updateRateAnalysis(payload, tender_id) {
                     quantity: [], 
                     total_item_quantity: 0,
                     unit_rate: rate,
+                    resouceGroup: line.resouceGroup || "",
                     total_amount: 0,
                     
                     // Initialize default fields required by schema
