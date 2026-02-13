@@ -1,36 +1,13 @@
+import { s3Client, uploadFileToS3 } from "../../../../utils/awsBucket.js";
 import IdcodeServices from "../../idcode/idcode.service.js";
 import TenderDocumentModel from "./tenderdocument.model.js";
 import S3Service from "./tenderdocument.service.js";
-import { S3Client, GetObjectCommand } from "@aws-sdk/client-s3";
+import { GetObjectCommand } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import dotenv from "dotenv";
 dotenv.config();
 
-// Initialize your S3 client with region and credentials
-const s3Client = new S3Client({
-  region: process.env.AWS_REGION,
-  credentials: {
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-  },
-});
 
-// export const uploadDocument = async (req, res) => {
-//   if (!req.file) {
-//     return res.status(400).json({ status: false, message: "No file uploaded" });
-//   }
-//   try {
-//     const result = await S3Service.uploadFileToS3(req.file, process.env.AWS_S3_BUCKET);
-//     res.status(201).json({
-//       status: true,
-//       message: "File uploaded to S3 successfully",
-//       url: result.Location,
-//       key: result.Key,
-//     });
-//   } catch (error) {
-//     res.status(500).json({ status: false, message: error.message });
-//   }
-// };
 
 export const uploadDocument = async (req, res) => {
   if (!req.file)
@@ -47,7 +24,7 @@ export const uploadDocument = async (req, res) => {
   }
 
   try {
-    const uploadResult = await S3Service.uploadFileToS3(
+    const uploadResult = await uploadFileToS3(
       req.file,
       process.env.AWS_S3_BUCKET
     );

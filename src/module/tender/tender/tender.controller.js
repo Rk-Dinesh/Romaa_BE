@@ -1,4 +1,4 @@
-import { uploadFileToS3 } from "../../../../utils/helperfunction.js";
+import { uploadFileToS3 } from "../../../../utils/awsBucket.js";
 import TenderModel from "./tender.model.js";
 import TenderService from "./tender.service.js";
 import dotenv from "dotenv";
