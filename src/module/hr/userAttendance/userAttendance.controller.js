@@ -38,3 +38,70 @@ export const uploadDocument = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
+//  Employee Applies for Regularization
+export const applyRegularization = async (req, res) => {
+  try {
+    const result = await UserAttendanceService.applyRegularization(req.user.employeeId, req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
+//  Manager Approves/Rejects
+export const actionRegularization = async (req, res) => {
+  try {
+    // Pass admin ID from token, and body contains action details
+    const result = await UserAttendanceService.actionRegularization(req.user.employeeId, req.body);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
+
+//  Get Smart Data (Single Employee - Calendar)
+export const getMyAttendanceStats = async (req, res) => {
+  try {
+    const { month, year, userId } = req.query;
+    // If Admin passes userId, view that user. Else view self.
+    const targetId = userId || req.user.employeeId; 
+    
+    const result = await UserAttendanceService.getEmployeeMonthlyStats(targetId, parseInt(month), parseInt(year));
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+//  Get Daily Report (All Employees)
+export const getDailyReport = async (req, res) => {
+  try {
+    const { date } = req.query; // Format: "2023-10-25"
+    const result = await UserAttendanceService.getDailyReport(date);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+export const getMonthlyReport = async (req, res) => {
+  try {
+    const { month, year } = req.query; // e.g., month=10, year=2023
+    
+    if(!month || !year) throw { statusCode: 400, message: "Month and Year required" };
+
+    const result = await UserAttendanceService.getMonthlyAttendanceReport(month, year);
+    res.status(200).json({
+      success: true,
+      data: result,
+      meta: {
+        month,
+        year,
+        generatedAt: new Date()
+      }
+    });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};

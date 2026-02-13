@@ -27,10 +27,10 @@ const leaveRequestSchema = new mongoose.Schema(
     fromDate: { type: Date, required: true }, 
     toDate: { type: Date, required: true },   
     
-    // Specifics for Short Leave (e.g., 2 hours permission)
+    // Specifics for Short Leave (e.g., 3 hours permission)
     shortLeaveTime: {
         from: { type: String }, // e.g. "10:00"
-        to: { type: String }    // e.g. "12:00"
+        to: { type: String }    // e.g. "13:00"
     },
 
     totalDays: {

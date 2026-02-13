@@ -80,6 +80,7 @@ const userAttendanceSchema = new mongoose.Schema(
     
     totalDuration: { type: Number, default: 0 }, // Raw time between First In and Last Out
     totalBreakTime: { type: Number, default: 0 }, // Time spent in breaks
+    permissionDurationMins: { type: Number, default: 0 },
     netWorkHours: { type: Number, default: 0 },   // (Total - Break) -> The "Payroll" hours
     
     overtimeHours: { type: Number, default: 0 },
@@ -103,7 +104,8 @@ const userAttendanceSchema = new mongoose.Schema(
       isLateEntry: { type: Boolean, default: false },
       isEarlyExit: { type: Boolean, default: false },
       isAutoCheckOut: { type: Boolean, default: false }, // System auto-closed the day?
-      hasDispute: { type: Boolean, default: false } // Employee raised a concern?
+      hasDispute: { type: Boolean, default: false }, // Employee raised a concern?
+      isPermission: { type: Boolean, default: false } // Permission Flag
     },
 
     // --- 6. Regularization (Correction Workflow) ---
