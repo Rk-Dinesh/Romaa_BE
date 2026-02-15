@@ -41,6 +41,7 @@ import machinerylogrouter from './src/module/assets/machinerylogs/machinerylogs.
 import AttendanceRoute from './src/module/hr/userAttendance/userAttendance.route.js';
 import CalendarRoute from './src/module/hr/holidays/holiday.route.js';
 import LeaveRoute from './src/module/hr/leave/leaverequest.route.js';
+import { startAbsenteeismCron } from './utils/dailyAbsenteeism.js';
 
 
 
@@ -50,6 +51,7 @@ const PORT = process.env.PORT;
 
 const app = express();
 connectDB();
+startAbsenteeismCron();
 
 
 //middleware

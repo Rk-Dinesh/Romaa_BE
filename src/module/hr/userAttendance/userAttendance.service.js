@@ -176,6 +176,8 @@ class AttendanceService {
       let initialStatus = "Present";
       let systemRemarks = "";
       let isLate = false;
+      let isPermissionActive = false;
+      let permissionDurationMins = 0;
 
       // Check Leave
       const approvedLeave = await LeaveRequestModel.findOne({
@@ -183,51 +185,66 @@ class AttendanceService {
         status: { $in: ["Manager Approved", "HR Approved"] },
         fromDate: { $lte: today },
         toDate: { $gte: today },
-        isCancelled: false
+        isCancelled: false,
       });
 
       if (approvedLeave) {
-            // Case 1: Permission (Short Leave)
-            if (approvedLeave.leaveType === "Permission" || approvedLeave.requestType === "Short Leave") {
-                if (approvedLeave.shortLeaveTime && approvedLeave.shortLeaveTime.from && approvedLeave.shortLeaveTime.to) {
-                    isPermissionActive = true;
-                    
-                    // Calculate Permission Duration (e.g., 10:00 to 13:00 = 180 mins)
-                    const [startH, startM] = approvedLeave.shortLeaveTime.from.split(':').map(Number);
-                    const [endH, endM] = approvedLeave.shortLeaveTime.to.split(':').map(Number);
-                    
-                    // Convert both to minutes from midnight
-                    const startMins = (startH * 60) + startM;
-                    const endMins = (endH * 60) + endM;
-                    
-                    permissionDurationMins = endMins - startMins;
+        // Case 1: Permission (Short Leave)
+        if (
+          approvedLeave.leaveType === "Permission" ||
+          approvedLeave.requestType === "Short Leave"
+        ) {
+          if (
+            approvedLeave.shortLeaveTime &&
+            approvedLeave.shortLeaveTime.from &&
+            approvedLeave.shortLeaveTime.to
+          ) {
+            isPermissionActive = true;
 
-                    systemRemarks = `On Permission (${approvedLeave.shortLeaveTime.from} - ${approvedLeave.shortLeaveTime.to})`;
-                }
-            }else if (approvedLeave.requestType === "Full Day") {
-                initialStatus = "Absent";
-                systemRemarks = `Work on Approved Leave (${approvedLeave.leaveType})`;
-            }else if (approvedLeave.requestType.includes("Half")) {
-                systemRemarks = `Half Day Leave (${approvedLeave.requestType})`;
-                // Half day logic implies they might arrive late (2nd Half) or leave early (1st Half)
-            }
+            // Calculate Permission Duration (e.g., 10:00 to 13:00 = 180 mins)
+            const [startH, startM] = approvedLeave.shortLeaveTime.from
+              .split(":")
+              .map(Number);
+            const [endH, endM] = approvedLeave.shortLeaveTime.to
+              .split(":")
+              .map(Number);
+
+            // Convert both to minutes from midnight
+            const startMins = startH * 60 + startM;
+            const endMins = endH * 60 + endM;
+
+            permissionDurationMins = endMins - startMins;
+
+            systemRemarks = `On Permission (${approvedLeave.shortLeaveTime.from} - ${approvedLeave.shortLeaveTime.to})`;
+          }
+        } else if (approvedLeave.requestType === "Full Day") {
+          initialStatus = "Absent";
+          systemRemarks = `Work on Approved Leave (${approvedLeave.leaveType})`;
+        } else if (approvedLeave.requestType.includes("Half")) {
+          systemRemarks = `Half Day Leave (${approvedLeave.requestType})`;
+          // Half day logic implies they might arrive late (2nd Half) or leave early (1st Half)
         }
+      }
 
       // Check Late
       if (!isHolidayWork) {
         const shiftStart = AttendanceService.getTimeOnDate(now, rule.startTime);
-        let lateThreshold = new Date(shiftStart.getTime() + rule.gracePeriodMins * 60000);
+        let lateThreshold = new Date(
+          shiftStart.getTime() + rule.gracePeriodMins * 60000,
+        );
 
         if (isPermissionActive && approvedLeave.shortLeaveTime) {
-                const [endH, endM] = approvedLeave.shortLeaveTime.to.split(':').map(Number);
-                const permissionEnd = new Date(now);
-                permissionEnd.setHours(endH, endM, 0, 0);
+          const [endH, endM] = approvedLeave.shortLeaveTime.to
+            .split(":")
+            .map(Number);
+          const permissionEnd = new Date(now);
+          permissionEnd.setHours(endH, endM, 0, 0);
 
-                // If Permission ends AFTER the grace period, that becomes the new "On Time" limit
-                if (permissionEnd > lateThreshold) {
-                    lateThreshold = permissionEnd;
-                }
-            }
+          // If Permission ends AFTER the grace period, that becomes the new "On Time" limit
+          if (permissionEnd > lateThreshold) {
+            lateThreshold = permissionEnd;
+          }
+        }
 
         if (now > lateThreshold) {
           isLate = true;
@@ -271,10 +288,10 @@ class AttendanceService {
         status: initialStatus,
         workType: isHolidayWork ? "Holiday Work" : "Regular",
         attendanceType,
-       flags: { 
-                isLateEntry: isLate,
-                isPermission: isPermissionActive 
-            },
+        flags: {
+          isLateEntry: isLate,
+          isPermission: isPermissionActive,
+        },
         permissionDurationMins: permissionDurationMins,
         remarks: systemRemarks,
         timeline: [],
@@ -412,13 +429,15 @@ class AttendanceService {
         isCancelled: false,
       });
 
-      const isPermission = attendance.flags.isPermission || (activeLeave && activeLeave.leaveType === "Permission");
+      const isPermission =
+        attendance.flags.isPermission ||
+        (activeLeave && activeLeave.leaveType === "Permission");
 
       let effectiveHours = attendance.netWorkHours;
-        
+
       if (isPermission && attendance.permissionDurationMins > 0) {
-          const permissionHours = attendance.permissionDurationMins / 60;
-          effectiveHours += permissionHours;
+        const permissionHours = attendance.permissionDurationMins / 60;
+        effectiveHours += permissionHours;
       }
 
       const isLate = attendance.flags.isLateEntry;
@@ -470,22 +489,32 @@ class AttendanceService {
     };
   }
 
-static async applyRegularization(employeeId, data) {
-    const { 
-      date, 
+  static async applyRegularization(employeeId, data) {
+    const {
+      date,
       category, // Enum: "Late Entry", "Missed Punch", "Work on Leave", "System Error"
-      reason, 
+      reason,
       correctedInTime, // Optional (for Missed Punch)
-      correctedOutTime // Optional
+      correctedOutTime, // Optional
     } = data;
 
     const targetDate = new Date(date);
-    targetDate.setUTCHours(0,0,0,0);
+    targetDate.setUTCHours(0, 0, 0, 0);
 
-    const attendance = await UserAttendanceModel.findOne({ employeeId, date: targetDate });
-    
-    if (!attendance) throw { statusCode: 404, message: "No attendance record found for this date." };
-    if (attendance.regularization.isApplied && attendance.regularization.status === "Pending") {
+    const attendance = await UserAttendanceModel.findOne({
+      employeeId,
+      date: targetDate,
+    });
+
+    if (!attendance)
+      throw {
+        statusCode: 404,
+        message: "No attendance record found for this date.",
+      };
+    if (
+      attendance.regularization.isApplied &&
+      attendance.regularization.status === "Pending"
+    ) {
       throw { statusCode: 400, message: "Request already pending." };
     }
 
@@ -494,7 +523,7 @@ static async applyRegularization(employeeId, data) {
       status: attendance.status,
       in: attendance.firstIn,
       out: attendance.lastOut,
-      penalty: attendance.payroll.penalty
+      penalty: attendance.payroll.penalty,
     };
 
     // Update Record
@@ -511,139 +540,181 @@ static async applyRegularization(employeeId, data) {
 
     // Specific Handling Logic (Stored in Reason for Manager Context)
     if (category === "Late Entry") {
-       attendance.regularization.userReason = `[Late Penalty Waiver] ${reason}`;
+      attendance.regularization.userReason = `[Late Penalty Waiver] ${reason}`;
     } else if (category === "Work on Leave") {
-       attendance.regularization.userReason = `[Work on Leave Correction] ${reason}`;
+      attendance.regularization.userReason = `[Work on Leave Correction] ${reason}`;
     } else if (category === "Missed Punch") {
-       attendance.regularization.userReason = `[Missed Punch] In: ${correctedInTime}, Out: ${correctedOutTime} | ${reason}`;
+      attendance.regularization.userReason = `[Missed Punch] In: ${correctedInTime}, Out: ${correctedOutTime} | ${reason}`;
     }
 
     await attendance.save();
     return { success: true, message: "Regularization request submitted." };
   }
 
-// Action on Regularization
-static async actionRegularization(adminId, data) {
-  const { employeeId, date, action, managerRemarks } = data; 
-  const targetDate = new Date(date);
-  targetDate.setUTCHours(0, 0, 0, 0);
+  // Action on Regularization
+  static async actionRegularization(adminId, data) {
+    const { employeeId, date, action, managerRemarks } = data;
+    const targetDate = new Date(date);
+    targetDate.setUTCHours(0, 0, 0, 0);
 
-  const attendance = await UserAttendanceModel.findOne({ employeeId, date: targetDate });
-  if (!attendance) throw { statusCode: 404, message: "Record not found." };
+    const attendance = await UserAttendanceModel.findOne({
+      employeeId,
+      date: targetDate,
+    });
+    if (!attendance) throw { statusCode: 404, message: "Record not found." };
 
-  // REJECT FLOW
-  if (action === "Rejected") {
-    attendance.regularization.status = "Rejected";
-    attendance.regularization.managerReason = managerRemarks;
-    await attendance.save();
-    return { success: true, message: "Request Rejected." };
-  }
-
-  // APPROVE FLOW
-  if (action === "Approved") {
-    const category = attendance.regularization.reasonCategory;
-
-    // A. LATE ENTRY (Standard Logic)
-    if (category === "Late Entry") {
-      attendance.status = "Present";
-      attendance.flags.isLateEntry = false;
-      attendance.payroll.penalty = { isApplied: false, deductionAmount: 0 };
-      attendance.remarks += " | Late Entry Regularized";
+    // REJECT FLOW
+    if (action === "Rejected") {
+      attendance.regularization.status = "Rejected";
+      attendance.regularization.managerReason = managerRemarks;
+      await attendance.save();
+      return { success: true, message: "Request Rejected." };
     }
 
-    // =========================================================
-    // B. WORK ON LEAVE (Updated Logic)
-    // =========================================================
-    else if (category === "Work on Leave") {
-      attendance.status = "Present";
-      
-      // 1. Find the specific Leave Request active on this date
-      const leaveRequest = await LeaveRequestModel.findOne({
-        employeeId: employeeId,
-        status: { $in: ["Manager Approved", "HR Approved"] }, // Only look for approved leaves
-        fromDate: { $lte: targetDate },
-        toDate: { $gte: targetDate }
-      });
+    // APPROVE FLOW
+    if (action === "Approved") {
+      const category = attendance.regularization.reasonCategory;
 
-      if (leaveRequest) {
-        const typeToCredit = leaveRequest.leaveType; // e.g., "CL", "SL", "PL"
-        
-        // Calculate days to refund (Handle half-day requests correctly)
-        // If it spans multiple days, we only refund 1 day for this specific attendance regularization
-        // However, usually "Work on Leave" implies the whole request is void for this day.
-        // Safe bet: Default to 1 for Full Day, 0.5 for Half Day.
-        let creditAmount = 1; 
-        if (leaveRequest.requestType.includes("Half") || leaveRequest.totalDays === 0.5) {
-          creditAmount = 0.5;
-        }
+      // A. LATE ENTRY (Standard Logic)
+      if (category === "Late Entry") {
+        attendance.status = "Present";
+        attendance.flags.isLateEntry = false;
+        attendance.payroll.penalty = { isApplied: false, deductionAmount: 0 };
+        attendance.remarks += " | Late Entry Regularized";
+      }
 
-        // 2. Increment the Leave Balance in Employee Model
-        // Assuming EmployeeModel has `leaveBalance` object: { CL: 10, SL: 5, ... }
-        const updateQuery = {};
-        updateQuery[`leaveBalance.${typeToCredit}`] = creditAmount;
+      // =========================================================
+      // B. WORK ON LEAVE (Updated Logic)
+      // =========================================================
+      else if (category === "Work on Leave") {
+        attendance.status = "Present";
 
-        await EmployeeModel.findByIdAndUpdate(employeeId, { 
-          $inc: updateQuery 
+        // 1. Find the specific Leave Request active on this date
+        const leaveRequest = await LeaveRequestModel.findOne({
+          employeeId: employeeId,
+          status: { $in: ["Manager Approved", "HR Approved"] }, // Only look for approved leaves
+          fromDate: { $lte: targetDate },
+          toDate: { $gte: targetDate },
         });
 
-        // 3. Delete the Leave Request (Since they worked, the leave is void)
-        // Note: If a leave request spans 3 days (Mon-Wed) and they work on Tuesday, 
-        // deleting the whole request might be wrong. 
-        // Ideally, we split the leave, but for simplicity/standard use cases:
-        await LeaveRequestModel.findByIdAndDelete(leaveRequest._id);
+        if (leaveRequest) {
+          const typeToCredit = leaveRequest.leaveType; // e.g., "CL", "SL", "PL"
 
-        attendance.remarks += ` | Worked on Leave (Request Deleted, ${creditAmount} ${typeToCredit} Re-credited)`;
-      } else {
-        attendance.remarks += " | Worked on Leave (No active leave found to refund)";
+          // Calculate days to refund (Handle half-day requests correctly)
+          // If it spans multiple days, we only refund 1 day for this specific attendance regularization
+          // However, usually "Work on Leave" implies the whole request is void for this day.
+          // Safe bet: Default to 1 for Full Day, 0.5 for Half Day.
+          let creditAmount = 1;
+          if (
+            leaveRequest.requestType.includes("Half") ||
+            leaveRequest.totalDays === 0.5
+          ) {
+            creditAmount = 0.5;
+          }
+
+          // 2. Increment the Leave Balance in Employee Model
+          // Assuming EmployeeModel has `leaveBalance` object: { CL: 10, SL: 5, ... }
+          const updateQuery = {};
+          updateQuery[`leaveBalance.${typeToCredit}`] = creditAmount;
+
+          await EmployeeModel.findByIdAndUpdate(employeeId, {
+            $inc: updateQuery,
+          });
+
+          // 3. Delete the Leave Request (Since they worked, the leave is void)
+          // Note: If a leave request spans 3 days (Mon-Wed) and they work on Tuesday,
+          // deleting the whole request might be wrong.
+          // Ideally, we split the leave, but for simplicity/standard use cases:
+          await LeaveRequestModel.findByIdAndDelete(leaveRequest._id);
+
+          attendance.remarks += ` | Worked on Leave (Request Deleted, ${creditAmount} ${typeToCredit} Re-credited)`;
+        } else {
+          attendance.remarks +=
+            " | Worked on Leave (No active leave found to refund)";
+        }
       }
+
+      // C. MISSED PUNCH (Standard Logic)
+      else if (category === "Missed Punch") {
+        attendance.status = "Present";
+        attendance.netWorkHours = 9;
+        attendance.remarks += " | Punch Regularized";
+      }
+
+      // Common Final Updates
+      attendance.regularization.status = "Approved";
+      attendance.regularization.correctedBy = adminId;
+      attendance.regularization.managerReason = managerRemarks;
+      attendance.regularization.correctedAt = new Date();
+
+      await attendance.save();
+      return {
+        success: true,
+        message: "Regularization Approved & Balances Updated.",
+      };
     }
-
-    // C. MISSED PUNCH (Standard Logic)
-    else if (category === "Missed Punch") {
-      attendance.status = "Present";
-      attendance.netWorkHours = 9; 
-      attendance.remarks += " | Punch Regularized";
-    }
-
-    // Common Final Updates
-    attendance.regularization.status = "Approved";
-    attendance.regularization.correctedBy = adminId;
-    attendance.regularization.managerReason = managerRemarks;
-    attendance.regularization.correctedAt = new Date();
-
-    await attendance.save();
-    return { success: true, message: "Regularization Approved & Balances Updated." };
   }
-}
 
   // GET SINGLE EMPLOYEE (Smart Data for Calendar)
-  static async getEmployeeMonthlyStats(employeeId, month, year) {
+static async getEmployeeMonthlyStats(employeeId, month, year) {
+    // 1. Precise Date Range (UTC Midnight)
     const startDate = new Date(Date.UTC(year, month - 1, 1));
-    const endDate = new Date(Date.UTC(year, month, 0)); // Last day of month
+    const endDate = new Date(Date.UTC(year, month, 0, 23, 59, 59));
 
+    // 2. Fetch with lean() for max performance
     const records = await UserAttendanceModel.find({
       employeeId,
-      date: { $gte: startDate, $lte: endDate }
-    }).select("date status firstIn lastOut netWorkHours flags regularization permissionDurationMins");
+      date: { $gte: startDate, $lte: endDate },
+    })
+      .select(
+        "date status firstIn lastOut netWorkHours flags regularization permissionDurationMins"
+      )
+      .lean(); // ⚡ Returns plain JS objects (Much faster)
 
-    // Transform for Frontend (Calendar View)
-    const calendarData = records.map(r => ({
-      date: r.date.toISOString().split('T')[0], // "2023-10-25"
-      status: r.status, // "Present", "Absent", "Half-Day", "On Leave"
-      color: r.status === "Present" ? "green" : r.status === "Absent" ? "red" : "orange",
-      hours: r.netWorkHours,
-      isLate: r.flags.isLateEntry,
-      isRegularized: r.regularization.status === "Approved",
-      permissionUsed: r.permissionDurationMins > 0 ? `${r.permissionDurationMins}m` : null
+    // 3. Helper to format time (e.g., "09:30")
+    const formatTime = (isoString) => {
+      if (!isoString) return "--";
+      return new Date(isoString).toLocaleTimeString("en-IN", {
+        timeZone: "Asia/Kolkata",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      });
+    };
+
+    // 4. Transform Data
+    const calendarData = records.map((r) => ({
+      date: r.date.toISOString().split("T")[0], // "2023-10-25"
+      
+      // Status & Core Data
+      status: r.status, // "Present", "Absent", "Half-Day", "Holiday"
+      hours: r.netWorkHours || 0,
+      
+      // Times (Formatted for UI)
+      inTime: formatTime(r.firstIn),
+      outTime: formatTime(r.lastOut),
+      
+      // Flags
+      isLate: r.flags?.isLateEntry || false,
+      isHalfDay: r.status === "Half-Day",
+      
+      // Regularization Info
+      regularizationStatus: r.regularization?.status || "None", // "Pending", "Approved", "Rejected"
+      isRegularized: r.regularization?.status === "Approved",
+      
+      // Permission Info
+      permissionUsed: r.permissionDurationMins > 0 ? `${r.permissionDurationMins}m` : null,
     }));
 
-    // Summary Counters
+    // 5. Calculate Detailed Summary
     const summary = {
-      present: records.filter(r => r.status === "Present").length,
-      absent: records.filter(r => r.status === "Absent").length,
-      late: records.filter(r => r.flags.isLateEntry).length,
-      permissions: records.filter(r => r.permissionDurationMins > 0).length,
-      regularized: records.filter(r => r.regularization.status === "Approved").length
+      present: records.filter((r) => r.status === "Present").length,
+      absent: records.filter((r) => r.status === "Absent").length,
+      halfDay: records.filter((r) => r.status === "Half-Day").length,
+      late: records.filter((r) => r.flags?.isLateEntry).length,
+      permissions: records.filter((r) => r.permissionDurationMins > 0).length,
+      regularized: records.filter((r) => r.regularization?.status === "Approved").length,
+      holidays: records.filter((r) => r.status === "Holiday").length, // Added Holiday count
     };
 
     return { calendarData, summary };
@@ -652,28 +723,31 @@ static async actionRegularization(adminId, data) {
   // GET ALL EMPLOYEES (Daily Report)
   static async getDailyReport(date) {
     const targetDate = new Date(date);
-    targetDate.setUTCHours(0,0,0,0);
+    targetDate.setUTCHours(0, 0, 0, 0);
 
     const records = await UserAttendanceModel.find({ date: targetDate })
       .populate("employeeId", "name employeeID department designation") // Fetch Employee Details
       .sort({ "flags.isLateEntry": -1 }); // Late comers first
 
-    return records.map(r => ({
+    return records.map((r) => ({
       id: r.employeeId?.employeeID || "N/A",
       name: r.employeeId?.name || "Unknown",
       dept: r.employeeId?.department || "-",
-      inTime: r.firstIn ? new Date(r.firstIn).toLocaleTimeString('en-IN') : "-",
-      outTime: r.lastOut ? new Date(r.lastOut).toLocaleTimeString('en-IN') : "-",
+      inTime: r.firstIn ? new Date(r.firstIn).toLocaleTimeString("en-IN") : "-",
+      outTime: r.lastOut
+        ? new Date(r.lastOut).toLocaleTimeString("en-IN")
+        : "-",
       status: r.status,
       late: r.flags.isLateEntry ? "Yes" : "No",
-      permission: r.permissionDurationMins > 0 ? `${r.permissionDurationMins}m` : "-",
-      location: r.timeline[0]?.location?.address || "Unknown"
+      permission:
+        r.permissionDurationMins > 0 ? `${r.permissionDurationMins}m` : "-",
+      location: r.timeline[0]?.location?.address || "Unknown",
     }));
   }
 
   static async getMonthlyAttendanceReport(month, year) {
     const startDate = new Date(Date.UTC(year, month - 1, 1));
-    const endDate = new Date(Date.UTC(year, month, 0)); 
+    const endDate = new Date(Date.UTC(year, month, 0));
 
     // MongoDB Aggregation Pipeline
     const report = await UserAttendanceModel.aggregate([
@@ -686,8 +760,8 @@ static async actionRegularization(adminId, data) {
           from: "employees", // Ensure this matches your collection name
           localField: "employeeId",
           foreignField: "_id",
-          as: "employee"
-        }
+          as: "employee",
+        },
       },
       { $unwind: "$employee" },
 
@@ -698,25 +772,25 @@ static async actionRegularization(adminId, data) {
           employeeName: { $first: "$employee.name" },
           employeeCode: { $first: "$employee.employeeID" },
           department: { $first: "$employee.department" },
-          
+
           // Calculate Counts
-          totalPresent: { 
-            $sum: { $cond: [{ $eq: ["$status", "Present"] }, 1, 0] } 
+          totalPresent: {
+            $sum: { $cond: [{ $eq: ["$status", "Present"] }, 1, 0] },
           },
-          totalAbsent: { 
-            $sum: { $cond: [{ $eq: ["$status", "Absent"] }, 1, 0] } 
+          totalAbsent: {
+            $sum: { $cond: [{ $eq: ["$status", "Absent"] }, 1, 0] },
           },
-          totalHalfDay: { 
-            $sum: { $cond: [{ $eq: ["$status", "Half-Day"] }, 1, 0] } 
+          totalHalfDay: {
+            $sum: { $cond: [{ $eq: ["$status", "Half-Day"] }, 1, 0] },
           },
-          totalLate: { 
-            $sum: { $cond: [{ $eq: ["$flags.isLateEntry", true] }, 1, 0] } 
+          totalLate: {
+            $sum: { $cond: [{ $eq: ["$flags.isLateEntry", true] }, 1, 0] },
           },
-          totalLeaves: { 
-            $sum: { $cond: [{ $eq: ["$status", "On Leave"] }, 1, 0] } 
+          totalLeaves: {
+            $sum: { $cond: [{ $eq: ["$status", "On Leave"] }, 1, 0] },
           },
-          totalPermissions: { 
-            $sum: { $cond: [{ $gt: ["$permissionDurationMins", 0] }, 1, 0] } 
+          totalPermissions: {
+            $sum: { $cond: [{ $gt: ["$permissionDurationMins", 0] }, 1, 0] },
           },
 
           // Create Daily Calendar Array
@@ -724,20 +798,117 @@ static async actionRegularization(adminId, data) {
             $push: {
               date: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
               status: "$status",
-              inTime: { $dateToString: { format: "%H:%M", date: "$firstIn", timezone: "Asia/Kolkata" } },
-              outTime: { $dateToString: { format: "%H:%M", date: "$lastOut", timezone: "Asia/Kolkata" } },
+              inTime: {
+                $dateToString: {
+                  format: "%H:%M",
+                  date: "$firstIn",
+                  timezone: "Asia/Kolkata",
+                },
+              },
+              outTime: {
+                $dateToString: {
+                  format: "%H:%M",
+                  date: "$lastOut",
+                  timezone: "Asia/Kolkata",
+                },
+              },
               isLate: "$flags.isLateEntry",
-              isRegularized: { $eq: ["$regularization.status", "Approved"] }
-            }
-          }
-        }
+              isRegularized: { $eq: ["$regularization.status", "Approved"] },
+            },
+          },
+        },
       },
 
       // 4. Sort by Name
-      { $sort: { employeeName: 1 } }
+      { $sort: { employeeName: 1 } },
     ]);
 
     return report;
+  }
+
+  static async getAttendanceReport(data) {
+    const { employeeId, fromDate, toDate } = data;
+
+    // 1. Parse Dates
+    const startDate = new Date(fromDate);
+    const endDate = new Date(toDate);
+
+    // 2. Fetch Records
+    const attendances = await UserAttendanceModel.find({
+      employeeId: new mongoose.Types.ObjectId(employeeId),
+      date: { $gte: startDate, $lte: endDate },
+    })
+      .sort({ date: 1 })
+      .lean();
+
+    // 3. Calculate Statistics
+    let totalWorkingDays = 0;
+    let totalPresent = 0;
+    let totalAbsent = 0;
+    let totalHalfDay = 0;
+    let totalLate = 0;
+    let totalLeaves = 0;
+    let totalPermissions = 0;
+
+    const dailyLog = attendances.map((att) => {
+      const timeline = att.timeline;
+      const lastPunch = timeline[timeline.length - 1];
+
+      // Determine Status
+      let status = "Absent";
+      if (att.status) {
+        status = att.status;
+      } else if (timeline.length > 0) {
+        // Fallback logic if status field is missing
+        if (lastPunch.punchType === "Out") status = "Present";
+        else if (
+          lastPunch.punchType === "BreakEnd" ||
+          lastPunch.punchType === "LunchEnd"
+        )
+          status = "Present";
+        else status = "Absent";
+      }
+
+      // Count Flags
+      if (status === "Present") totalPresent++;
+      else if (status === "Absent") totalAbsent++;
+      else if (status === "Half-Day") totalHalfDay++;
+
+      if (att.flags?.isLateEntry) totalLate++;
+      if (att.permissionDurationMins > 0) totalPermissions++;
+
+      // Check Leave
+      const isLeave = att.status === "On Leave";
+      if (isLeave) totalLeaves++;
+
+      // Calculate Working Days (Exclude Leaves)
+      if (status !== "Absent" && !isLeave) {
+        totalWorkingDays++;
+      }
+
+      return {
+        date: att.date.toISOString().split("T")[0],
+        status: status,
+        inTime: timeline.length > 0 ? timeline[0].time : "--:--",
+        outTime: lastPunch ? lastPunch.time : "--:--",
+        isLate: att.flags?.isLateEntry || false,
+        isRegularized: att.regularization?.status === "Approved",
+      };
+    });
+
+    return {
+      employeeId,
+      fromDate,
+      toDate,
+      totalWorkingDays,
+      totalPresent,
+      totalAbsent,
+      totalHalfDay,
+      totalLate,
+      totalLeaves,
+      totalPermissions,
+      dailyLog,
+    };
   }
 }
 

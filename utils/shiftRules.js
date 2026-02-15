@@ -46,7 +46,7 @@ export const SHIFT_RULES = {
 
   // 4. Flexible / Startup Mode
   // Logic: No strict "Late". Just finish 9 hours total.
-  Flexi: {
+  Flexible: {
     code: "FLX-01",
     type: "Flexible",
     startTime: "08:00",     // Office opens

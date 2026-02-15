@@ -34,6 +34,11 @@ const employeeSchema = new mongoose.Schema(
       enum: ["Office", "Site"],
       default: "Office"
     },
+    shiftType: {
+      type: String,
+      enum: ["General", "Night", "Morning","Flexible"],
+      default: "General"
+    },
     assignedProject: [
       {
         type: mongoose.Schema.Types.ObjectId,

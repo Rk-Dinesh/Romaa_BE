@@ -65,7 +65,9 @@ export const getMyAttendanceStats = async (req, res) => {
   try {
     const { month, year, userId } = req.query;
     // If Admin passes userId, view that user. Else view self.
-    const targetId = userId || req.user.employeeId; 
+    const targetId = userId || req.user._id;
+    console.log(targetId);
+     
     
     const result = await UserAttendanceService.getEmployeeMonthlyStats(targetId, parseInt(month), parseInt(year));
     res.status(200).json(result);
