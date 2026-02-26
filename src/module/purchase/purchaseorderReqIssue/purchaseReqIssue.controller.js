@@ -183,12 +183,13 @@ export const updateStatus = async (req, res) => {
   try {
     const { requestId } = req.params;
     // Extract status and permittedVendor from body
-    const { status, permittedVendor } = req.body; 
+    const { status, permittedVendor,materialsRequired } = req.body; 
 
     const result = await PurchaseRequestService.updateStatus(
       requestId, 
       status, 
-      permittedVendor
+      permittedVendor,
+      materialsRequired
     );
 
     res.status(200).json({

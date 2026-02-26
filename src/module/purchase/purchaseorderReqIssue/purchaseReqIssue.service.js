@@ -251,7 +251,7 @@ class PurchaseRequestService {
   }
 
   // Update status and optionally set the permitted vendors
-  static async updateStatus(requestId, status, permittedVendor = []) {
+  static async updateStatus(requestId, status, permittedVendor = [],materialsRequired=[]) {
 
     // 1. Create the update object with the new status
     const updateData = { status };
@@ -260,6 +260,10 @@ class PurchaseRequestService {
     // This will overwrite the existing permittedVendor list with the new one
     if (permittedVendor && permittedVendor.length > 0) {
       updateData.permittedVendor = permittedVendor;
+    }
+
+    if (materialsRequired && materialsRequired.length > 0) {
+      updateData.materialsRequired = materialsRequired;
     }
 
     // 3. Perform the update

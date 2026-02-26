@@ -42,6 +42,7 @@ import AttendanceRoute from './src/module/hr/userAttendance/userAttendance.route
 import CalendarRoute from './src/module/hr/holidays/holiday.route.js';
 import LeaveRoute from './src/module/hr/leave/leaverequest.route.js';
 import { startAbsenteeismCron } from './utils/dailyAbsenteeism.js';
+import hsnSacRouter from './src/module/master/hsnmaster/hsnsac.router.js';
 
 
 
@@ -142,6 +143,7 @@ app.use('/machinerylogs', machinerylogrouter);
 app.use('/attendance', AttendanceRoute);
 app.use('/calendar', CalendarRoute);
 app.use('/leave', LeaveRoute);
+app.use('/hsn', hsnSacRouter)
 
 
 

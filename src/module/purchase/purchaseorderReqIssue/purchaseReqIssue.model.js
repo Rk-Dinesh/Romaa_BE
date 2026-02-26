@@ -23,6 +23,15 @@ const PurchaseRequestSchema = new mongoose.Schema(
         materialName: String,
         quantity: Number,
         unit: String,
+        hsnSac: {type: String, default: ""},
+        type: {type: String, default: ""},
+        shortDescription: {type: String, default: ""},
+        taxStructure: {
+          igst: {type: Number, default: 0}, // Integrated GST (e.g., 18)
+          cgst: {type: Number, default: 0}, // Central GST (e.g., 9)
+          sgst: {type: Number, default: 0}, // State GST (e.g., 9)
+          cess: {type: Number, default: 0}, // Additional Cess if applicable
+        },
       },
     ],
 

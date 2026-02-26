@@ -910,6 +910,22 @@ static async getEmployeeMonthlyStats(employeeId, month, year) {
       dailyLog,
     };
   }
+
+  //get attendeance by date and employee id
+  static async getAttendanceByDateAndEmployeeId(date, employeeId) {
+    const attendance = await UserAttendanceModel.findOne({ date, employeeId }).lean();
+    if (attendance === null) {
+      return {
+        date: date,
+       status:"not yet punch in or punch out"
+      };
+    }
+    return {
+      date: attendance.date.toISOString().split("T")[0],
+      status: attendance.status,
+    };
+
+  }
 }
 
 export default AttendanceService;

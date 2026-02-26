@@ -127,7 +127,8 @@ const RoleSchema = new mongoose.Schema(
         user: Actions,
         roles: Actions,
         master: Actions,
-        assets: Actions
+        assets: Actions,
+        hsn_sac: Actions
       }
     },
 

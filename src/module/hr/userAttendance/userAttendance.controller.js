@@ -107,3 +107,13 @@ export const getMonthlyReport = async (req, res) => {
     res.status(err.statusCode || 500).json({ message: err.message });
   }
 };
+
+export const getAttendanceByDateAndEmployeeId = async (req, res) => {
+  try {
+    const { date, employeeId } = req.query;
+    const result = await UserAttendanceService.getAttendanceByDateAndEmployeeId(date, employeeId);
+    res.status(200).json(result);
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ message: err.message });
+  }
+};
