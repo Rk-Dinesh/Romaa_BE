@@ -9,71 +9,100 @@ class MaterialService {
    * Can accept a single item or an array of items.
    */
 static async addMaterialReceived(payload) {
-    const {
-      tender_id,
-      requestId, // The PO Number (e.g., POR011)
-      received_items, // Array: [{ item_description, received_quantity, ... }]
-      received_by,
-      invoice_no, // Common invoice for the batch
-      site_name
-    } = payload;
+  const {
+    tender_id,
+    requestId, 
+    received_items, 
+    received_by,
+    invoice_no,
+    site_name
+  } = payload;
 
-    // 1. Fetch the Material Inventory Document
-    const materialDoc = await MaterialModel.findOne({ tender_id });
-    if (!materialDoc) throw new Error(`Tender ${tender_id} not found in Inventory`);
+  // 1. Fetch the Material Inventory Document
+  const materialDoc = await MaterialModel.findOne({ tender_id });
+  if (!materialDoc) throw new Error(`Tender ${tender_id} not found in Inventory`);
 
-    // 2. Validate Purchase Request
-    
-      const prDoc = await PurchaseRequestModel.findOne({ requestId: requestId });
-      if (!prDoc) throw new Error(`Purchase Request ${requestId} not found`);
-      const vendorName = prDoc.selectedVendor.vendorName;
-      const vendorId = prDoc.selectedVendor.vendorId;
-    
-    const processedItems = [];
+  // 2. Validate Purchase Request and extract Vendor Info
+  const prDoc = await PurchaseRequestModel.findOne({ requestId: requestId });
+  if (!prDoc) throw new Error(`Purchase Request ${requestId} not found`);
+  
+  const vendorName = prDoc.selectedVendor?.vendorName || "";
+  const vendorId = prDoc.selectedVendor?.vendorId || "";
 
-    // 3. Loop through incoming items
-    for (const entry of received_items) {
-      const qty = Number(entry.received_quantity);
+  const processedItems = [];
 
-      // Skip if quantity is 0
-      if (qty <= 0) continue;
+  // 3. Loop through incoming items
+  for (const entry of received_items) {
+    const qty = Number(entry.received_quantity);
+    if (qty <= 0) continue;
 
-      // Find the item in the Inventory (MaterialModel) matching the description
-      const itemSubDoc = materialDoc.items.find(
-        (i) => i.item_description === entry.item_description
-      );
+    // A. Find the item in the Inventory (MaterialModel)
+    const itemSubDoc = materialDoc.items.find(
+      (i) => i.item_description === entry.item_description
+    );
 
-      if (!itemSubDoc) {
-        throw new Error(`Item '${entry.item_description}' not found in Material Inventory. Please add it to the budget first.`);
-      }
-
-      // Create Inward Record
-      const inwardRecord = {
-        date: new Date(entry.ordered_date || Date.now()),
-        quantity: qty,
-        item_description: entry.item_description,
-        purchase_request_ref: requestId, // CRITICAL: Links this receipt to the PO
-        site_name: site_name || "",
-        vendor_name: vendorName || "",
-        vendor_id: vendorId || "",
-        invoice_challan_no: invoice_no || "",
-        received_by: received_by || "Admin",
-        remarks: `Received against ${requestId}`
-      };
-
-      // Push to History
-      itemSubDoc.inward_history.push(inwardRecord);
-      processedItems.push(itemSubDoc.item_description);
+    if (!itemSubDoc) {
+      throw new Error(`Item '${entry.item_description}' not found in Inventory.`);
     }
 
-    // 4. Save (Middleware will auto-calculate total_received and current_stock)
-    await materialDoc.save();
+    // B. HYDRATION LOGIC: Find the item details in the Purchase Request
+    const prMaterial = prDoc.materialsRequired.find(
+      (m) => m.materialName === entry.item_description
+    );
 
-    return {
-      success: true,
-      message: `Stock updated for: ${processedItems.join(", ")}`,
+    if (prMaterial) {
+      // Update HSN if currently empty
+      if (!itemSubDoc.hsnSac || itemSubDoc.hsnSac === "") {
+        itemSubDoc.hsnSac = prMaterial.hsnSac;
+      }
+
+      // Update Type if currently empty
+      if (!itemSubDoc.type || itemSubDoc.type === "") {
+        itemSubDoc.type = prMaterial.type;
+      }
+
+      // Update Short Description if currently empty
+      if (!itemSubDoc.shortDescription || itemSubDoc.shortDescription === "") {
+        itemSubDoc.shortDescription = prMaterial.shortDescription;
+      }
+
+      // Update Tax Structure if currently 0/default
+      const ts = itemSubDoc.taxStructure;
+      const prTs = prMaterial.taxStructure;
+
+      if (ts.igst === 0 && prTs.igst !== 0) ts.igst = prTs.igst;
+      if (ts.cgst === 0 && prTs.cgst !== 0) ts.cgst = prTs.cgst;
+      if (ts.sgst === 0 && prTs.sgst !== 0) ts.sgst = prTs.sgst;
+      if (ts.cess === 0 && prTs.cess !== 0) ts.cess = prTs.cess;
+    }
+
+    // C. Create Inward Record
+    const inwardRecord = {
+      date: new Date(entry.ordered_date || Date.now()),
+      quantity: qty,
+      item_description: entry.item_description,
+      purchase_request_ref: requestId,
+      site_name: site_name || "",
+      vendor_name: vendorName,
+      vendor_id: vendorId,
+      invoice_challan_no: invoice_no || "",
+      received_by: received_by || "Admin",
+      remarks: `Received against ${requestId}`
     };
+
+    // Push to History
+    itemSubDoc.inward_history.push(inwardRecord);
+    processedItems.push(itemSubDoc.item_description);
   }
+
+  // 4. Save (Triggers middleware for stock calculation)
+  await materialDoc.save();
+
+  return {
+    success: true,
+    message: `Stock updated and metadata synced for: ${processedItems.join(", ")}`,
+  };
+}
 
   /**
    * API 2: Issue Materials (Outward Entry)

@@ -770,7 +770,7 @@ static async getEmployeeMonthlyStats(employeeId, month, year) {
         $group: {
           _id: "$employeeId",
           employeeName: { $first: "$employee.name" },
-          employeeCode: { $first: "$employee.employeeID" },
+          employeeCode: { $first: "$employee.employeeId" },
           department: { $first: "$employee.department" },
 
           // Calculate Counts
@@ -917,12 +917,14 @@ static async getEmployeeMonthlyStats(employeeId, month, year) {
     if (attendance === null) {
       return {
         date: date,
-       status:"not yet punch in or punch out"
+       status:"not yet punch in or punch out",
+       punchType:null
       };
     }
     return {
       date: attendance.date.toISOString().split("T")[0],
       status: attendance.status,
+      punchType:attendance.timeline[attendance.timeline.length - 1].punchType
     };
 
   }

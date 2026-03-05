@@ -2,37 +2,47 @@ import mongoose from "mongoose";
 
 // --- 1. RECEIVED HISTORY (Inward Ledger) ---
 // Tracks materials coming INTO the site (from Vendors/Purchase Requests)
-const InwardTransactionSchema = new mongoose.Schema({
-  date: { type: Date, default: Date.now },
-  quantity: { type: Number, required: true, default: 0 },
-  
-  // Traceability
-  purchase_request_ref: { type: String, default: "" }, // Links to PurchaseRequestModel.requestId
-  site_name: { type: String, default: "" },
-  vendor_name: { type: String, default: "" },
-  vendor_id: { type: String, default: "" },
-  invoice_challan_no: { type: String, default: "" }, // For physical proof
-  item_description: { type: String, default: "" },
-  
-  received_by: { type: String, default: "" },
-  remarks: { type: String, default: "" }
-}, { _id: true }); // Enable ID for editing specific logs
+const InwardTransactionSchema = new mongoose.Schema(
+  {
+    date: { type: Date, default: Date.now },
+    quantity: { type: Number, required: true, default: 0 },
+
+    // Traceability
+    purchase_request_ref: { type: String, default: "" }, // Links to PurchaseRequestModel.requestId
+    site_name: { type: String, default: "" },
+    vendor_name: { type: String, default: "" },
+    vendor_id: { type: String, default: "" },
+    invoice_challan_no: { type: String, default: "" }, // For physical proof
+    item_description: { type: String, default: "" },
+
+    received_by: { type: String, default: "" },
+    remarks: { type: String, default: "" },
+  },
+  { _id: true },
+); // Enable ID for editing specific logs
 
 // --- 2. ISSUED HISTORY (Outward Ledger) ---
 // Tracks materials going OUT to the labor/work (Consumption)
-const OutwardTransactionSchema = new mongoose.Schema({
-  date: { type: Date, default: Date.now },
-  quantity: { type: Number, required: true, default: 0 },
-  item_description: { type: String, default: "" },
-  
-  // utilization details
-  issued_to: { type: String, default: "" }, // Contractor or Foreman name
-  site_location: { type: String, default: "" }, // e.g., "Block A, 1st Floor"
-  work_description: { type: String, default: "" }, // e.g., "Plastering work"
-  
-  issued_by: { type: String, default: "" },
-  priority_level: { type: String, enum: ["Normal", "Urgent"], default: "Normal" }
-}, { _id: true });
+const OutwardTransactionSchema = new mongoose.Schema(
+  {
+    date: { type: Date, default: Date.now },
+    quantity: { type: Number, required: true, default: 0 },
+    item_description: { type: String, default: "" },
+
+    // utilization details
+    issued_to: { type: String, default: "" }, // Contractor or Foreman name
+    site_location: { type: String, default: "" }, // e.g., "Block A, 1st Floor"
+    work_description: { type: String, default: "" }, // e.g., "Plastering work"
+
+    issued_by: { type: String, default: "" },
+    priority_level: {
+      type: String,
+      enum: ["Normal", "Urgent"],
+      default: "Normal",
+    },
+  },
+  { _id: true },
+);
 
 // --- 3. MAIN ITEM SCHEMA ---
 const MaterialItemSchema = new mongoose.Schema(
@@ -44,43 +54,46 @@ const MaterialItemSchema = new mongoose.Schema(
     item_description: { type: String, default: "" },
     category: { type: String, default: "" },
     unit: { type: String, default: "" },
-    
+    hsnSac: { type: String, default: "" },
+    type: { type: String, default: "" },
+    shortDescription: { type: String, default: "" },
+    taxStructure: {
+      igst: { type: Number, default: 0 }, // Integrated GST (e.g., 18)
+      cgst: { type: Number, default: 0 }, // Central GST (e.g., 9)
+      sgst: { type: Number, default: 0 }, // State GST (e.g., 9)
+      cess: { type: Number, default: 0 }, // Additional Cess if applicable
+    },
+
     // The breakdown of estimated quantities (e.g., per floor)
-    quantity: [{ type: Number, default: 0 }], 
-    
+    quantity: [{ type: Number, default: 0 }],
+
     // The Total Budgeted Quantity (Sum of 'quantity' array)
-    total_item_quantity: { type: Number, default: 0 }, 
-    
+    total_item_quantity: { type: Number, default: 0 },
+
     unit_rate: { type: Number, default: 0 },
     resouceGroup: { type: String, default: "" },
-    
     // Budgeted Amount (total_item_quantity * unit_rate)
     total_amount: { type: Number, default: 0 },
 
     // ==========================================
     // SECTION B: INVENTORY TRACKING (Dynamic)
     // ==========================================
-    
     // 1. Opening Stock (Carry over from previous project or initial existing stock)
     opening_stock: { type: Number, default: 0 },
-
     // 2. Transaction History Arrays
     inward_history: [InwardTransactionSchema],
     outward_history: [OutwardTransactionSchema],
-
     // 3. Calculated Aggregates (Auto-calculated via Middleware)
     total_received_qty: { type: Number, default: 0 }, // Sum of inward_history
-    total_issued_qty: { type: Number, default: 0 },   // Sum of outward_history
-    
+    total_issued_qty: { type: Number, default: 0 }, // Sum of outward_history
     // 4. The Golden Number: Actual Stock currently physically at site
     // Formula: Opening Stock + Total Received - Total Issued
     current_stock_on_hand: { type: Number, default: 0 },
-
     // 5. Procurement Status
     // Formula: Total Budgeted (total_item_quantity) - (Opening + Total Received)
     pending_procurement_qty: { type: Number, default: 0 },
   },
-  { _id: true } // We need IDs here to update specific items
+  { _id: true }, // We need IDs here to update specific items
 );
 
 const materialSchema = new mongoose.Schema(
@@ -89,7 +102,7 @@ const materialSchema = new mongoose.Schema(
     items: [MaterialItemSchema],
     created_by_user: { type: String, default: "ADMIN" },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 // --- MIDDLEWARE: AUTOMATIC CALCULATIONS ---
@@ -97,29 +110,36 @@ const materialSchema = new mongoose.Schema(
 materialSchema.pre("save", function (next) {
   if (this.items && this.items.length > 0) {
     this.items.forEach((item) => {
-      
       // 1. Ensure Total Item Quantity matches the quantity array (Budget)
       if (item.quantity && item.quantity.length > 0) {
         item.total_item_quantity = item.quantity.reduce((a, b) => a + b, 0);
       }
-      
+
       // 2. Calculate Total Amount (Budget)
       item.total_amount = item.total_item_quantity * item.unit_rate;
 
       // 3. Sum up Inwards (Received)
-      const receivedSum = item.inward_history.reduce((sum, record) => sum + record.quantity, 0);
+      const receivedSum = item.inward_history.reduce(
+        (sum, record) => sum + record.quantity,
+        0,
+      );
       item.total_received_qty = receivedSum;
 
       // 4. Sum up Outwards (Issued)
-      const issuedSum = item.outward_history.reduce((sum, record) => sum + record.quantity, 0);
+      const issuedSum = item.outward_history.reduce(
+        (sum, record) => sum + record.quantity,
+        0,
+      );
       item.total_issued_qty = issuedSum;
 
       // 5. Calculate Current Physical Stock
-      item.current_stock_on_hand = (item.opening_stock || 0) + receivedSum - issuedSum;
+      item.current_stock_on_hand =
+        (item.opening_stock || 0) + receivedSum - issuedSum;
 
       // 6. Calculate Pending Procurement (How much more we need to buy to meet budget)
       // If we have bought more than budget, this stays 0 (or negative to show over-procurement)
-      item.pending_procurement_qty = item.total_item_quantity - ((item.opening_stock || 0) + receivedSum);
+      item.pending_procurement_qty =
+        item.total_item_quantity - ((item.opening_stock || 0) + receivedSum);
     });
   }
   next();

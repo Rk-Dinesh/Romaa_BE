@@ -71,6 +71,7 @@ const PurchaseRequestSchema = new mongoose.Schema(
               quotedUnitRate: Number,
               quantity: Number,
               totalAmount: Number,
+              materialId: String,
             },
           ],
           totalQuotedValue: Number,

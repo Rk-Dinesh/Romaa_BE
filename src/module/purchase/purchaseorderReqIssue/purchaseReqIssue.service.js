@@ -304,49 +304,116 @@ class PurchaseRequestService {
 
 static async getRequestWithApprovedQuotation(requestId) {
   const result = await PurchaseRequestModel.aggregate([
-    // 1. Match the specific document by custom requestId
+    // 1. Match the specific document
     { $match: { requestId: requestId } },
 
-    // 2. Extract the approved quotation details into a temporary field
+    // 2. Isolate the approved quotation
     {
       $addFields: {
-        tempApprovedQuote: {
+        selectedVendor: {
           $arrayElemAt: [
             {
               $filter: {
-                input: "$vendorQuotations", 
+                input: "$vendorQuotations",
                 as: "quote",
-                cond: { 
-                  $eq: ["$$quote._id", "$selectedVendor.approvedQuotationId"] 
-                }
+                cond: { $eq: ["$$quote._id", "$selectedVendor.approvedQuotationId"] }
               }
             },
-            0 
+            0
           ]
         }
       }
     },
 
-    // 3. Merge the existing 'selectedVendor' object with the extracted quote details
+    // 3. Map through the quoteItems and "populate" from materialsRequired
     {
       $addFields: {
-        selectedVendor: {
-          $mergeObjects: ["$selectedVendor", "$tempApprovedQuote"]
+        "selectedVendor.quoteItems": {
+          $map: {
+            input: "$selectedVendor.quoteItems",
+            as: "item",
+            in: {
+              $mergeObjects: [
+                "$$item",
+                {
+                  $arrayElemAt: [
+                    {
+                      $filter: {
+                        input: "$materialsRequired",
+                        as: "req",
+                        // We match by materialName since materialId in quoteItems 
+                        // often refers to the _id of the requirement
+                        cond: { $eq: ["$$req.materialName", "$$item.materialName"] }
+                      }
+                    },
+                    0
+                  ]
+                }
+              ]
+            }
+          }
         }
       }
     },
 
-    // 4. Cleanup: Exclude the big list and the temp field
-    { 
-      $project: { 
+    // 4. Cleanup: Remove the massive vendorQuotations list
+    {
+      $project: {
         vendorQuotations: 0,
-        tempApprovedQuote: 0 
-      } 
+        // We keep materialsRequired if you still need the original list, 
+        // otherwise you can 0 it out here too.
+      }
     }
   ]);
 
   return result[0];
 }
+
+// static async getRequestWithApprovedQuotation(requestId) {
+//   const result = await PurchaseRequestModel.aggregate([
+//     // 1. Match the specific document by custom requestId
+//     { $match: { requestId: requestId } },
+
+//     // 2. Extract the approved quotation details into a temporary field
+//     {
+//       $addFields: {
+//         tempApprovedQuote: {
+//           $arrayElemAt: [
+//             {
+//               $filter: {
+//                 input: "$vendorQuotations", 
+//                 as: "quote",
+//                 cond: { 
+//                   $eq: ["$$quote._id", "$selectedVendor.approvedQuotationId"] 
+//                 }
+//               }
+//             },
+//             0 
+//           ]
+//         }
+//       }
+//     },
+
+//     // 3. Merge the existing 'selectedVendor' object with the extracted quote details
+//     {
+//       $addFields: {
+//         selectedVendor: {
+//           $mergeObjects: ["$selectedVendor", "$tempApprovedQuote"]
+//         }
+//       }
+//     },
+
+//     // 4. Cleanup: Exclude the big list and the temp field
+//     { 
+//       $project: { 
+//         vendorQuotations: 0,
+//         tempApprovedQuote: 0 
+//       } 
+//     }
+//   ]);
+
+//   return result[0];
+// }
 
 }
 

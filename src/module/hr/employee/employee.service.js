@@ -112,7 +112,7 @@ class EmployeeService {
   }
 
   static async getEmployeeById(employeeId) {
-    return await EmployeeModel.findOne({ employeeId }).select("-password").populate("role").populate("assignedProject", "tender_id tender_project_name");
+    return await EmployeeModel.findOne({ employeeId }).select("-password").populate("role").populate("assignedProject", "tender_id tender_project_name site_location");
   }
 
   static async updateEmployee(employeeId, updateData) {
