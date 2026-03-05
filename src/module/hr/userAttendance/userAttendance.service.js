@@ -4,6 +4,7 @@ import LeaveRequestModel from "../leave/leaverequest.model.js";
 import UserAttendanceModel from "./userAttendance.model.js";
 import { SHIFT_RULES } from "../../../../utils/shiftRules.js";
 import EmployeeModel from "../employee/employee.model.js";
+import AppError from "../../../common/AppError.js";
 
 class AttendanceService {
   // --- HELPER: Parse HH:mm to Date Object ---
@@ -72,10 +73,7 @@ class AttendanceService {
     // --- A. VALIDATION CHECKS ---
     if (!attendance) {
       if (punchType !== "In") {
-        throw {
-          statusCode: 400,
-          message: "No attendance record found. You must Check-In first.",
-        };
+        throw new AppError("No attendance record found. You must Check-In first.", 400);
       }
     } else {
       const timeline = attendance.timeline;
@@ -89,57 +87,36 @@ class AttendanceService {
 
       // B. Terminal State: If 'Out' exists, no more actions allowed
       if (punchCounts["Out"] > 0) {
-        throw {
-          statusCode: 400,
-          message: "You have already checked out for the day.",
-        };
+        throw new AppError("You have already checked out for the day.", 400);
       }
 
       // C. Daily Limits & Single-Entry Rules
       if (punchType === "In") {
-        throw { statusCode: 400, message: "You are already checked in." };
+        throw new AppError("You are already checked in.", 400);
       }
       if (punchType === "LunchStart" && punchCounts["LunchStart"] >= 1) {
-        throw {
-          statusCode: 400,
-          message: "Limit Exceeded: Lunch break already taken.",
-        };
+        throw new AppError("Limit Exceeded: Lunch break already taken.", 400);
       }
       if (punchType === "BreakStart" && punchCounts["BreakStart"] >= 2) {
-        throw {
-          statusCode: 400,
-          message: "Limit Exceeded: Max 2 breaks allowed.",
-        };
+        throw new AppError("Limit Exceeded: Max 2 breaks allowed.", 400);
       }
 
       // D. State-Based Flow (Sequential Logic)
 
       // 1. Forced Completion: If on Lunch, must end Lunch. If on Break, must end Break.
       if (lastPunchType === "LunchStart" && punchType !== "LunchEnd") {
-        throw {
-          statusCode: 400,
-          message: "Action blocked: You must end your Lunch break first.",
-        };
+        throw new AppError("Action blocked: You must end your Lunch break first.", 400);
       }
       if (lastPunchType === "BreakStart" && punchType !== "BreakEnd") {
-        throw {
-          statusCode: 400,
-          message: "Action blocked: You must end your Break first.",
-        };
+        throw new AppError("Action blocked: You must end your Break first.", 400);
       }
 
       // 2. Reverse Prevention: Cannot end what hasn't started
       if (punchType === "LunchEnd" && lastPunchType !== "LunchStart") {
-        throw {
-          statusCode: 400,
-          message: "Invalid Action: No active Lunch session to end.",
-        };
+        throw new AppError("Invalid Action: No active Lunch session to end.", 400);
       }
       if (punchType === "BreakEnd" && lastPunchType !== "BreakStart") {
-        throw {
-          statusCode: 400,
-          message: "Invalid Action: No active Break session to end.",
-        };
+        throw new AppError("Invalid Action: No active Break session to end.", 400);
       }
     }
 
@@ -157,10 +134,7 @@ class AttendanceService {
           siteLongitude,
         );
         if (distance > 1000)
-          throw {
-            statusCode: 403,
-            message: `Location mismatch. ${Math.round(distance)}m away.`,
-          };
+          throw new AppError(`Location mismatch. ${Math.round(distance)}m away.`, 403);
         verificationMethod = "Geofence";
       }
     }
@@ -507,15 +481,12 @@ class AttendanceService {
     });
 
     if (!attendance)
-      throw {
-        statusCode: 404,
-        message: "No attendance record found for this date.",
-      };
+      throw new AppError("No attendance record found for this date.", 404);
     if (
       attendance.regularization.isApplied &&
       attendance.regularization.status === "Pending"
     ) {
-      throw { statusCode: 400, message: "Request already pending." };
+      throw new AppError("Request already pending.", 400);
     }
 
     // Backup current state
@@ -561,7 +532,7 @@ class AttendanceService {
       employeeId,
       date: targetDate,
     });
-    if (!attendance) throw { statusCode: 404, message: "Record not found." };
+    if (!attendance) throw new AppError("Record not found.", 404);
 
     // REJECT FLOW
     if (action === "Rejected") {

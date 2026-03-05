@@ -3,6 +3,7 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import cookieParser from "cookie-parser";
 import bodyParser from 'body-parser';
+import mongoSanitize from 'express-mongo-sanitize';
 import connectDB from './src/config/db.js';
 import roleRoute from './src/module/role/role.route.js';
 import morgan from 'morgan';
@@ -92,6 +93,7 @@ app.use(
 app.use(cookieParser(process.env.ACCESS_TOKEN_SECRET)); //Secure Cookie Parser
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(mongoSanitize()); // Strip $ and . from req.body, req.params, req.query to prevent NoSQL injection
 
 
 

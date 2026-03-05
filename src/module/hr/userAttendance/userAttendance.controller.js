@@ -1,5 +1,6 @@
 import { uploadFileToS3 } from "../../../../utils/awsBucket.js";
 import UserAttendanceService from "./userAttendance.service.js";
+import AppError from "../../../common/AppError.js";
 
 export const performPunch = async (req, res) => {
   try {
@@ -91,7 +92,7 @@ export const getMonthlyReport = async (req, res) => {
   try {
     const { month, year } = req.query; // e.g., month=10, year=2023
     
-    if(!month || !year) throw { statusCode: 400, message: "Month and Year required" };
+    if(!month || !year) throw new AppError("Month and Year required", 400);
 
     const result = await UserAttendanceService.getMonthlyAttendanceReport(month, year);
     res.status(200).json({

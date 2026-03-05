@@ -131,10 +131,12 @@ class EmployeeService {
   static async getEmployeesPaginated(page, limit, search) {
     const query = {};
     if (search) {
+      // Escape special regex characters to prevent ReDoS attacks
+      const safeSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
       query.$or = [
-        { name: { $regex: search, $options: "i" } },
-        { email: { $regex: search, $options: "i" } },
-        { employeeId: { $regex: search, $options: "i" } }
+        { name: { $regex: safeSearch, $options: "i" } },
+        { email: { $regex: safeSearch, $options: "i" } },
+        { employeeId: { $regex: safeSearch, $options: "i" } }
       ];
     }
 
