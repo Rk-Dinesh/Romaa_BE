@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import MaterialModel from "./material.model.js";
 import PurchaseRequestModel from "../../purchase/purchaseorderReqIssue/purchaseReqIssue.model.js";
 
@@ -11,97 +12,109 @@ class MaterialService {
 static async addMaterialReceived(payload) {
   const {
     tender_id,
-    requestId, 
-    received_items, 
+    requestId,
+    received_items,
     received_by,
     invoice_no,
     site_name
   } = payload;
 
-  // 1. Fetch the Material Inventory Document
-  const materialDoc = await MaterialModel.findOne({ tender_id });
-  if (!materialDoc) throw new Error(`Tender ${tender_id} not found in Inventory`);
+  const session = await mongoose.startSession();
+  session.startTransaction();
 
-  // 2. Validate Purchase Request and extract Vendor Info
-  const prDoc = await PurchaseRequestModel.findOne({ requestId: requestId });
-  if (!prDoc) throw new Error(`Purchase Request ${requestId} not found`);
-  
-  const vendorName = prDoc.selectedVendor?.vendorName || "";
-  const vendorId = prDoc.selectedVendor?.vendorId || "";
+  try {
+    // 1. Fetch the Material Inventory Document (inside session for consistent read)
+    const materialDoc = await MaterialModel.findOne({ tender_id }).session(session);
+    if (!materialDoc) throw new Error(`Tender ${tender_id} not found in Inventory`);
 
-  const processedItems = [];
+    // 2. Validate Purchase Request and extract Vendor Info
+    const prDoc = await PurchaseRequestModel.findOne({ requestId }).session(session);
+    if (!prDoc) throw new Error(`Purchase Request ${requestId} not found`);
 
-  // 3. Loop through incoming items
-  for (const entry of received_items) {
-    const qty = Number(entry.received_quantity);
-    if (qty <= 0) continue;
+    const vendorName = prDoc.selectedVendor?.vendorName || "";
+    const vendorId = prDoc.selectedVendor?.vendorId || "";
 
-    // A. Find the item in the Inventory (MaterialModel)
-    const itemSubDoc = materialDoc.items.find(
-      (i) => i.item_description === entry.item_description
-    );
+    const processedItems = [];
 
-    if (!itemSubDoc) {
-      throw new Error(`Item '${entry.item_description}' not found in Inventory.`);
+    // 3. Loop through incoming items
+    for (const entry of received_items) {
+      const qty = Number(entry.received_quantity);
+      if (qty <= 0) continue;
+
+      // A. Find the item in the Inventory (MaterialModel)
+      const itemSubDoc = materialDoc.items.find(
+        (i) => i.item_description === entry.item_description
+      );
+
+      if (!itemSubDoc) {
+        throw new Error(`Item '${entry.item_description}' not found in Inventory.`);
+      }
+
+      // B. HYDRATION LOGIC: Find the item details in the Purchase Request
+      const prMaterial = prDoc.materialsRequired.find(
+        (m) => m.materialName === entry.item_description
+      );
+
+      if (prMaterial) {
+        // Update HSN if currently empty
+        if (!itemSubDoc.hsnSac || itemSubDoc.hsnSac === "") {
+          itemSubDoc.hsnSac = prMaterial.hsnSac;
+        }
+
+        // Update Type if currently empty
+        if (!itemSubDoc.type || itemSubDoc.type === "") {
+          itemSubDoc.type = prMaterial.type;
+        }
+
+        // Update Short Description if currently empty
+        if (!itemSubDoc.shortDescription || itemSubDoc.shortDescription === "") {
+          itemSubDoc.shortDescription = prMaterial.shortDescription;
+        }
+
+        // Update Tax Structure if currently 0/default
+        const ts = itemSubDoc.taxStructure;
+        const prTs = prMaterial.taxStructure;
+
+        if (ts.igst === 0 && prTs.igst !== 0) ts.igst = prTs.igst;
+        if (ts.cgst === 0 && prTs.cgst !== 0) ts.cgst = prTs.cgst;
+        if (ts.sgst === 0 && prTs.sgst !== 0) ts.sgst = prTs.sgst;
+        if (ts.cess === 0 && prTs.cess !== 0) ts.cess = prTs.cess;
+      }
+
+      // C. Create Inward Record
+      const inwardRecord = {
+        date: new Date(entry.ordered_date || Date.now()),
+        quantity: qty,
+        item_description: entry.item_description,
+        purchase_request_ref: requestId,
+        site_name: site_name || "",
+        vendor_name: vendorName,
+        vendor_id: vendorId,
+        invoice_challan_no: invoice_no || "",
+        received_by: received_by || "Admin",
+        remarks: `Received against ${requestId}`
+      };
+
+      // Push to History
+      itemSubDoc.inward_history.push(inwardRecord);
+      processedItems.push(itemSubDoc.item_description);
     }
 
-    // B. HYDRATION LOGIC: Find the item details in the Purchase Request
-    const prMaterial = prDoc.materialsRequired.find(
-      (m) => m.materialName === entry.item_description
-    );
+    // 4. Save inside session — rolls back automatically if this throws
+    await materialDoc.save({ session });
 
-    if (prMaterial) {
-      // Update HSN if currently empty
-      if (!itemSubDoc.hsnSac || itemSubDoc.hsnSac === "") {
-        itemSubDoc.hsnSac = prMaterial.hsnSac;
-      }
+    await session.commitTransaction();
 
-      // Update Type if currently empty
-      if (!itemSubDoc.type || itemSubDoc.type === "") {
-        itemSubDoc.type = prMaterial.type;
-      }
-
-      // Update Short Description if currently empty
-      if (!itemSubDoc.shortDescription || itemSubDoc.shortDescription === "") {
-        itemSubDoc.shortDescription = prMaterial.shortDescription;
-      }
-
-      // Update Tax Structure if currently 0/default
-      const ts = itemSubDoc.taxStructure;
-      const prTs = prMaterial.taxStructure;
-
-      if (ts.igst === 0 && prTs.igst !== 0) ts.igst = prTs.igst;
-      if (ts.cgst === 0 && prTs.cgst !== 0) ts.cgst = prTs.cgst;
-      if (ts.sgst === 0 && prTs.sgst !== 0) ts.sgst = prTs.sgst;
-      if (ts.cess === 0 && prTs.cess !== 0) ts.cess = prTs.cess;
-    }
-
-    // C. Create Inward Record
-    const inwardRecord = {
-      date: new Date(entry.ordered_date || Date.now()),
-      quantity: qty,
-      item_description: entry.item_description,
-      purchase_request_ref: requestId,
-      site_name: site_name || "",
-      vendor_name: vendorName,
-      vendor_id: vendorId,
-      invoice_challan_no: invoice_no || "",
-      received_by: received_by || "Admin",
-      remarks: `Received against ${requestId}`
+    return {
+      success: true,
+      message: `Stock updated and metadata synced for: ${processedItems.join(", ")}`,
     };
-
-    // Push to History
-    itemSubDoc.inward_history.push(inwardRecord);
-    processedItems.push(itemSubDoc.item_description);
+  } catch (error) {
+    await session.abortTransaction();
+    throw error;
+  } finally {
+    session.endSession();
   }
-
-  // 4. Save (Triggers middleware for stock calculation)
-  await materialDoc.save();
-
-  return {
-    success: true,
-    message: `Stock updated and metadata synced for: ${processedItems.join(", ")}`,
-  };
 }
 
   /**
@@ -116,56 +129,71 @@ static async addMaterialReceived(payload) {
       issued_by
     } = payload;
 
-    const materialDoc = await MaterialModel.findOne({ tender_id });
-    if (!materialDoc) throw new Error(`Tender ${tender_id} not found`);
+    const session = await mongoose.startSession();
+    session.startTransaction();
 
-    const issuedLog = [];
+    try {
+      // Read inside session — holds a consistent snapshot.
+      // A concurrent request's in-flight write will cause a write conflict on commit,
+      // preventing the lost-update race that allowed negative stock.
+      const materialDoc = await MaterialModel.findOne({ tender_id }).session(session);
+      if (!materialDoc) throw new Error(`Tender ${tender_id} not found`);
 
-    for (const entry of issued_items) {
-      const itemSubDoc = materialDoc.items.find(
-        (i) => i._id.toString() === entry.item_id || i.item_description === entry.item_description
-      );
+      const issuedLog = [];
 
-      if (!itemSubDoc) {
-        throw new Error(`Item '${entry.item_description}' not found`);
-      }
-
-      const qtyToIssue = Number(entry.issued_quantity);
-
-      // --- CRITICAL STOCK CHECK ---
-      // We must calculate current stock manually here because 'save' hasn't run yet
-      const currentStock = itemSubDoc.current_stock_on_hand;
-
-      if (currentStock < qtyToIssue) {
-        throw new Error(
-          `Insufficient Stock for ${itemSubDoc.item_description}. Available: ${currentStock}, Requested: ${qtyToIssue}`
+      for (const entry of issued_items) {
+        const itemSubDoc = materialDoc.items.find(
+          (i) => i._id.toString() === entry.item_id || i.item_description === entry.item_description
         );
+
+        if (!itemSubDoc) {
+          throw new Error(`Item '${entry.item_description}' not found`);
+        }
+
+        const qtyToIssue = Number(entry.issued_quantity);
+
+        // --- CRITICAL STOCK CHECK ---
+        // We must calculate current stock manually here because 'save' hasn't run yet
+        const currentStock = itemSubDoc.current_stock_on_hand;
+
+        if (currentStock < qtyToIssue) {
+          throw new Error(
+            `Insufficient Stock for ${itemSubDoc.item_description}. Available: ${currentStock}, Requested: ${qtyToIssue}`
+          );
+        }
+
+        // Create Outward Record
+        const outwardRecord = {
+          date: new Date(),
+          quantity: qtyToIssue,
+          issued_to: entry.issued_to || "",
+          item_description: entry.item_description || "",
+          site_location: entry.work_location || "", // Specific block/floor
+          work_description: entry.purpose || "",
+          issued_by: issued_by || "Admin",
+          priority_level: entry.priority || "Normal"
+        };
+
+        itemSubDoc.outward_history.push(outwardRecord);
+        issuedLog.push(`${itemSubDoc.item_description}: -${qtyToIssue}`);
       }
 
-      // Create Outward Record
-      const outwardRecord = {
-        date: new Date(),
-        quantity: qtyToIssue,
-        issued_to: entry.issued_to || "",
-        item_description: entry.item_description || "",
-        site_location: entry.work_location || "", // Specific block/floor
-        work_description: entry.purpose || "",
-        issued_by: issued_by || "Admin",
-        priority_level: entry.priority || "Normal"
+      // Save inside session — rolls back if this throws
+      await materialDoc.save({ session });
+
+      await session.commitTransaction();
+
+      return {
+        success: true,
+        message: "Materials issued successfully",
+        details: issuedLog
       };
-
-      itemSubDoc.outward_history.push(outwardRecord);
-      issuedLog.push(`${itemSubDoc.item_description}: -${qtyToIssue}`);
+    } catch (error) {
+      await session.abortTransaction();
+      throw error;
+    } finally {
+      session.endSession();
     }
-
-    // Save (Middleware updates total_issued_qty & current_stock_on_hand)
-    await materialDoc.save();
-
-    return {
-      success: true,
-      message: "Materials issued successfully",
-      details: issuedLog
-    };
   }
 
   /**
