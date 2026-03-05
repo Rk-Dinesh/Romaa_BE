@@ -2,11 +2,11 @@ import mongoose, { Schema } from "mongoose";
 
 const MachineDailyLogSchema = new mongoose.Schema(
   {
-    assetId: { type: String, required: true, index: true, ref: 'MachineryAsset' },
+    assetId: { type: String, required: true, index: true }, // custom business ID (e.g. "EX-01"), not ObjectId
     projectId: { type: String, required: true, index: true },
-    bid_id: { type: String, required: true, index: true, ref: 'Bids' },
+    bid_id: { type: String, required: true, index: true }, // custom business ID
     item_id: { type: String },
-    operatorId: { type: String, ref: "User",default: null },
+    operatorId: { type: String, default: null }, // stores employeeId string
     logDate: { type: Date, required: true, index: true }, 
     startReading: { type: Number, required: true }, 
     endReading: { type: Number, required: true },   

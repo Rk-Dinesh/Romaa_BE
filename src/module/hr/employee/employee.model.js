@@ -76,6 +76,7 @@ const employeeSchema = new mongoose.Schema(
       type: Date,
       default: null
     },
+    isDeleted: { type: Boolean, default: false },
 
     // -----------------------------------------------------
     // --- 2. NEW HRMS FIELDS ADDED BELOW ---
@@ -163,6 +164,9 @@ employeeSchema.methods.generateRefreshToken = function () {
     { expiresIn: process.env.REFRESH_TOKEN_EXPIRY }
   );
 };
+
+employeeSchema.index({ isDeleted: 1, status: 1 });
+employeeSchema.index({ isDeleted: 1, role: 1 });
 
 const EmployeeModel = mongoose.model("Employee", employeeSchema);
 

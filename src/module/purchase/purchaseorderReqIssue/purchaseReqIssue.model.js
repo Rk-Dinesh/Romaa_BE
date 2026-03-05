@@ -133,6 +133,10 @@ const PurchaseRequestSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+PurchaseRequestSchema.index({ requestId: 1 });
+PurchaseRequestSchema.index({ projectId: 1 });
+PurchaseRequestSchema.index({ projectId: 1, status: 1 });
+
 const PurchaseRequestModel = mongoose.model(
   "PurchaseRequest",
   PurchaseRequestSchema

@@ -98,38 +98,43 @@ class EmployeeService {
 
   // Get Users by Specific Role (e.g., Get all "Site Engineers")
   static async getUsersByRole(roleName) {
-    // First find the Role ID by name
     const role = await RoleModel.findOne({ roleName: roleName.toUpperCase() });
     if (!role) throw new Error("Role not found");
 
-    return await EmployeeModel.find({ role: role._id }).select("-password");
+    return await EmployeeModel.find({ role: role._id, isDeleted: { $ne: true } }).select("-password");
   }
 
   // --- 4. Standard CRUD ---
 
   static async getAllEmployees() {
-    return await EmployeeModel.find().select("-password").populate("role");
+    return await EmployeeModel.find({ isDeleted: { $ne: true } }).select("-password").populate("role");
   }
 
   static async getEmployeeById(employeeId) {
-    return await EmployeeModel.findOne({ employeeId }).select("-password").populate("role").populate("assignedProject", "tender_id tender_project_name site_location");
+    return await EmployeeModel.findOne({ employeeId, isDeleted: { $ne: true } }).select("-password").populate("role").populate("assignedProject", "tender_id tender_project_name site_location");
   }
 
   static async updateEmployee(employeeId, updateData) {
     return await EmployeeModel.findOneAndUpdate(
-      { employeeId },
+      { employeeId, isDeleted: { $ne: true } },
       { $set: updateData },
       { new: true }
     ).select("-password");
   }
 
   static async deleteEmployee(employeeId) {
-    return await EmployeeModel.findOneAndDelete({ employeeId });
+    const employee = await EmployeeModel.findOneAndUpdate(
+      { employeeId, isDeleted: { $ne: true } },
+      { $set: { isDeleted: true, status: "Inactive" } },
+      { new: true }
+    );
+    if (!employee) throw new Error("Employee not found");
+    return employee;
   }
 
   // --- 5. Pagination & Search ---
   static async getEmployeesPaginated(page, limit, search) {
-    const query = {};
+    const query = { isDeleted: { $ne: true } };
     if (search) {
       // Escape special regex characters to prevent ReDoS attacks
       const safeSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -152,24 +157,19 @@ class EmployeeService {
   }
 
   static async getEmployeesWithRoles() {
-    // Filter where role is NOT null
-    return await EmployeeModel.find({ role: { $ne: null } })
+    return await EmployeeModel.find({ role: { $ne: null }, isDeleted: { $ne: true } })
       .populate("role", "role_id roleName")
       .sort({ createdAt: -1 });
   }
 
   static async getUnassignedEmployees() {
-    // Filter where role IS null
-    // Select only specific fields: _id, employeeId, name
-    return await EmployeeModel.find({ role: null })
+    return await EmployeeModel.find({ role: null, isDeleted: { $ne: true } })
       .select("employeeId name email")
       .lean();
   }
 
   static async getAssignedEmployees() {
-    // Filter where role IS NOT null
-    // Select only specific fields: _id, employeeId, name
-    return await EmployeeModel.find({ role: { $ne: null } })
+    return await EmployeeModel.find({ role: { $ne: null }, isDeleted: { $ne: true } })
       .select("employeeId name email")
       .lean();
   }
@@ -186,7 +186,7 @@ class EmployeeService {
     }
 
     const updatedEmployee = await EmployeeModel.findOneAndUpdate(
-      { employeeId },
+      { employeeId, isDeleted: { $ne: true } },
       { $set: updateData },
       { new: true, runValidators: true }
     ).populate("role");
@@ -270,8 +270,8 @@ class EmployeeService {
     // 3. Set Expiration (5 Minutes from now)
     const expiryTime = new Date(Date.now() + 5 * 60 * 1000);
 
-    // 4. Save to Database
-    employee.resetOTP = otp;
+    // 4. Hash OTP before storing (prevents plaintext exposure if DB is compromised)
+    employee.resetOTP = await bcrypt.hash(otp, 10);
     employee.resetOTPExpires = expiryTime;
     await employee.save();
 
@@ -304,8 +304,9 @@ class EmployeeService {
       throw new Error("No password reset requested.");
     }
 
-    // 3. Check if OTP matches
-    if (employee.resetOTP !== otp) {
+    // 3. Check if OTP matches (compare against bcrypt hash)
+    const isOTPValid = await bcrypt.compare(otp, employee.resetOTP);
+    if (!isOTPValid) {
       throw new Error("Invalid OTP.");
     }
 

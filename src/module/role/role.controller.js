@@ -9,7 +9,6 @@ export const createRole = async (req, res) => {
       return res.status(400).json({ status: false, message: "Role Name is required" });
     }
 
-console.log(req.user, "req.user");
     // Pass the payload to service
     const data = await RoleService.createRole({ 
       roleName, 

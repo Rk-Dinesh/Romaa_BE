@@ -3,7 +3,6 @@ import cors from 'cors';
 import dotenv from 'dotenv';
 import cookieParser from "cookie-parser";
 import bodyParser from 'body-parser';
-import mongoSanitize from 'express-mongo-sanitize';
 import connectDB from './src/config/db.js';
 import roleRoute from './src/module/role/role.route.js';
 import morgan from 'morgan';
@@ -93,7 +92,25 @@ app.use(
 app.use(cookieParser(process.env.ACCESS_TOKEN_SECRET)); //Secure Cookie Parser
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(mongoSanitize()); // Strip $ and . from req.body, req.params, req.query to prevent NoSQL injection
+
+// NoSQL injection sanitizer — Express v5 compatible (req.query is a read-only getter in v5)
+// Strips keys starting with '$' or containing '.' from req.body and req.params.
+function stripDollarKeys(val) {
+  if (Array.isArray(val)) return val.map(stripDollarKeys);
+  if (val && typeof val === 'object') {
+    return Object.fromEntries(
+      Object.entries(val)
+        .filter(([k]) => !k.startsWith('$') && !k.includes('.'))
+        .map(([k, v]) => [k, stripDollarKeys(v)])
+    );
+  }
+  return val;
+}
+app.use((req, _res, next) => {
+  if (req.body)   req.body   = stripDollarKeys(req.body);
+  if (req.params) req.params = stripDollarKeys(req.params);
+  next();
+});
 
 
 

@@ -1,55 +1,15 @@
 import mongoose from "mongoose";
 
-// --- 1. RECEIVED HISTORY (Inward Ledger) ---
-// Tracks materials coming INTO the site (from Vendors/Purchase Requests)
-const InwardTransactionSchema = new mongoose.Schema(
-  {
-    date: { type: Date, default: Date.now },
-    quantity: { type: Number, required: true, default: 0 },
-
-    // Traceability
-    purchase_request_ref: { type: String, default: "" }, // Links to PurchaseRequestModel.requestId
-    site_name: { type: String, default: "" },
-    vendor_name: { type: String, default: "" },
-    vendor_id: { type: String, default: "" },
-    invoice_challan_no: { type: String, default: "" }, // For physical proof
-    item_description: { type: String, default: "" },
-
-    received_by: { type: String, default: "" },
-    remarks: { type: String, default: "" },
-  },
-  { _id: true },
-); // Enable ID for editing specific logs
-
-// --- 2. ISSUED HISTORY (Outward Ledger) ---
-// Tracks materials going OUT to the labor/work (Consumption)
-const OutwardTransactionSchema = new mongoose.Schema(
-  {
-    date: { type: Date, default: Date.now },
-    quantity: { type: Number, required: true, default: 0 },
-    item_description: { type: String, default: "" },
-
-    // utilization details
-    issued_to: { type: String, default: "" }, // Contractor or Foreman name
-    site_location: { type: String, default: "" }, // e.g., "Block A, 1st Floor"
-    work_description: { type: String, default: "" }, // e.g., "Plastering work"
-
-    issued_by: { type: String, default: "" },
-    priority_level: {
-      type: String,
-      enum: ["Normal", "Urgent"],
-      default: "Normal",
-    },
-  },
-  { _id: true },
-);
-
-// --- 3. MAIN ITEM SCHEMA ---
+// --- MAIN ITEM SCHEMA ---
+// NOTE: inward_history and outward_history arrays were removed.
+// Transactions now live in the separate MaterialTransaction collection to prevent
+// the parent document from growing past MongoDB's 16 MB BSON limit on active projects.
+// Stock counters (total_received_qty, total_issued_qty, current_stock_on_hand,
+// pending_procurement_qty) are maintained atomically via $inc in material.service.js.
 const MaterialItemSchema = new mongoose.Schema(
   {
     // ==========================================
     // SECTION A: REAL QUANTITIES (Budget/Estimates)
-    // These fields are preserved EXACTLY as requested
     // ==========================================
     item_description: { type: String, default: "" },
     category: { type: String, default: "" },
@@ -58,42 +18,34 @@ const MaterialItemSchema = new mongoose.Schema(
     type: { type: String, default: "" },
     shortDescription: { type: String, default: "" },
     taxStructure: {
-      igst: { type: Number, default: 0 }, // Integrated GST (e.g., 18)
-      cgst: { type: Number, default: 0 }, // Central GST (e.g., 9)
-      sgst: { type: Number, default: 0 }, // State GST (e.g., 9)
-      cess: { type: Number, default: 0 }, // Additional Cess if applicable
+      igst: { type: Number, default: 0 },
+      cgst: { type: Number, default: 0 },
+      sgst: { type: Number, default: 0 },
+      cess: { type: Number, default: 0 },
     },
 
     // The breakdown of estimated quantities (e.g., per floor)
     quantity: [{ type: Number, default: 0 }],
 
-    // The Total Budgeted Quantity (Sum of 'quantity' array)
+    // The Total Budgeted Quantity (Sum of 'quantity' array) — recomputed by pre-save
     total_item_quantity: { type: Number, default: 0 },
 
     unit_rate: { type: Number, default: 0 },
     resouceGroup: { type: String, default: "" },
-    // Budgeted Amount (total_item_quantity * unit_rate)
+    // Budgeted Amount — recomputed by pre-save
     total_amount: { type: Number, default: 0 },
 
     // ==========================================
     // SECTION B: INVENTORY TRACKING (Dynamic)
+    // Managed exclusively via $inc — NOT recomputed in pre-save
     // ==========================================
-    // 1. Opening Stock (Carry over from previous project or initial existing stock)
-    opening_stock: { type: Number, default: 0 },
-    // 2. Transaction History Arrays
-    inward_history: [InwardTransactionSchema],
-    outward_history: [OutwardTransactionSchema],
-    // 3. Calculated Aggregates (Auto-calculated via Middleware)
-    total_received_qty: { type: Number, default: 0 }, // Sum of inward_history
-    total_issued_qty: { type: Number, default: 0 }, // Sum of outward_history
-    // 4. The Golden Number: Actual Stock currently physically at site
-    // Formula: Opening Stock + Total Received - Total Issued
-    current_stock_on_hand: { type: Number, default: 0 },
-    // 5. Procurement Status
-    // Formula: Total Budgeted (total_item_quantity) - (Opening + Total Received)
+    opening_stock:           { type: Number, default: 0 },
+    total_received_qty:      { type: Number, default: 0 },
+    total_issued_qty:        { type: Number, default: 0 },
+    current_stock_on_hand:   { type: Number, default: 0 },
     pending_procurement_qty: { type: Number, default: 0 },
   },
-  { _id: true }, // We need IDs here to update specific items
+  { _id: true },
 );
 
 const materialSchema = new mongoose.Schema(
@@ -105,45 +57,27 @@ const materialSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// --- MIDDLEWARE: AUTOMATIC CALCULATIONS ---
-// This ensures that whenever you save, the totals are mathematically correct.
+// --- MIDDLEWARE: BUDGET CALCULATIONS ONLY ---
+// Only recomputes budget-derived fields (total_item_quantity, total_amount).
+// Stock counters (total_received_qty, total_issued_qty, current_stock_on_hand,
+// pending_procurement_qty) are managed atomically via $inc in material.service.js
+// and must NOT be touched here — overwriting them would corrupt live stock data.
 materialSchema.pre("save", function (next) {
   if (this.items && this.items.length > 0) {
     this.items.forEach((item) => {
-      // 1. Ensure Total Item Quantity matches the quantity array (Budget)
+      // 1. Recompute budgeted total from the quantity breakdown array
       if (item.quantity && item.quantity.length > 0) {
         item.total_item_quantity = item.quantity.reduce((a, b) => a + b, 0);
       }
 
-      // 2. Calculate Total Amount (Budget)
+      // 2. Recompute budgeted amount
       item.total_amount = item.total_item_quantity * item.unit_rate;
-
-      // 3. Sum up Inwards (Received)
-      const receivedSum = item.inward_history.reduce(
-        (sum, record) => sum + record.quantity,
-        0,
-      );
-      item.total_received_qty = receivedSum;
-
-      // 4. Sum up Outwards (Issued)
-      const issuedSum = item.outward_history.reduce(
-        (sum, record) => sum + record.quantity,
-        0,
-      );
-      item.total_issued_qty = issuedSum;
-
-      // 5. Calculate Current Physical Stock
-      item.current_stock_on_hand =
-        (item.opening_stock || 0) + receivedSum - issuedSum;
-
-      // 6. Calculate Pending Procurement (How much more we need to buy to meet budget)
-      // If we have bought more than budget, this stays 0 (or negative to show over-procurement)
-      item.pending_procurement_qty =
-        item.total_item_quantity - ((item.opening_stock || 0) + receivedSum);
     });
   }
   next();
 });
+
+materialSchema.index({ tender_id: 1 });
 
 const MaterialModel = mongoose.model("materials", materialSchema);
 

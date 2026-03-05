@@ -20,16 +20,17 @@ import {
   getAssignedEmployees
 } from "./employee.controller.js";
 import { verifyJWT } from "../../../common/Auth.middlware.js";
-
-
-// Optional: Import your Auth Middleware here
-// import { verifyJWT } from "../../middleware/auth.middleware.js"; 
+import { createRateLimiter } from "../../../common/rateLimiter.js";
 
 const employeeRoute = Router();
 
+// Rate limiters: 10 login attempts per 15 min, 5 OTP attempts per hour
+const loginLimiter = createRateLimiter({ windowMs: 15 * 60 * 1000, max: 10, message: "Too many login attempts. Try again in 15 minutes." });
+const otpLimiter  = createRateLimiter({ windowMs: 60 * 60 * 1000, max: 5,  message: "Too many OTP requests. Try again in 1 hour." });
+
 // --- Auth Routes ---
-employeeRoute.post("/login", login);
-employeeRoute.post("/mobile-login", mobileLogin);
+employeeRoute.post("/login", loginLimiter, login);
+employeeRoute.post("/mobile-login", loginLimiter, mobileLogin);
 employeeRoute.post("/logout", logout);
 employeeRoute.post("/register", createEmployee); // Creating a new user is essentially registration
 
@@ -53,7 +54,7 @@ employeeRoute.put("/update-access/:employeeId", updateEmployeeAccess); // 3. Upd
 employeeRoute.put("/role/re-assign", assignRole); // Body: { employeeId, roleId }
 employeeRoute.put("/assign-projects", assignProjects); // Body: { employeeId, assignedProject: [projectId] }
 employeeRoute.post("/reset-password",verifyJWT, resetPassword);
-employeeRoute.post("/forgot-password", forgotPassword);
-employeeRoute.post("/reset-password-with-otp", resetPasswordWithOTP);
+employeeRoute.post("/forgot-password", otpLimiter, forgotPassword);
+employeeRoute.post("/reset-password-with-otp", otpLimiter, resetPasswordWithOTP);
 
 export default employeeRoute;

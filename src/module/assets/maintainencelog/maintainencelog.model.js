@@ -2,7 +2,7 @@ import mongoose, { Schema } from "mongoose";
 
 const MaintenanceLogSchema = new mongoose.Schema(
     {
-        assetId: { type: String, required: true, index: true, ref: 'MachineryAsset' },
+        assetId: { type: String, required: true, index: true }, // custom business ID (e.g. "EX-01"), not ObjectId
         projectId: { type: String, required: true }, // To track which site incurred the cost
         date: { type: Date, default: Date.now },
 
