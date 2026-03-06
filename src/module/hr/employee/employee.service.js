@@ -4,6 +4,7 @@ import RoleModel from "../../role/role.model.js";
 import bcrypt from "bcrypt";
 import TenderModel from "../../tender/tender/tender.model.js";
 import { sendOTPEmail } from "../../../../utils/emailSender.js";
+import NotificationService from "../../notifications/notification.service.js";
 
 class EmployeeService {
 
@@ -92,6 +93,31 @@ class EmployeeService {
     ).populate("role");
 
     if (!updatedEmployee) throw new Error("Employee not found");
+
+    // Notify employee about role change
+    if (roleId) {
+      NotificationService.notify({
+        title: "Role Assigned",
+        message: `You have been assigned the role: ${updatedEmployee.role?.roleName || "New Role"}`,
+        audienceType: "user",
+        users: [updatedEmployee._id],
+        category: "task",
+        priority: "high",
+        module: "hr",
+        actionUrl: `/dashboard/profile`,
+        actionLabel: "View Profile",
+      });
+    } else {
+      NotificationService.notify({
+        title: "Access Revoked",
+        message: `Your system access has been revoked. Contact HR for details.`,
+        audienceType: "user",
+        users: [updatedEmployee._id],
+        category: "alert",
+        priority: "high",
+        module: "hr",
+      });
+    }
 
     return updatedEmployee;
   }
@@ -243,6 +269,24 @@ class EmployeeService {
 
     if (!updatedEmployee) {
       throw new Error("Employee not found");
+    }
+
+    // Notify employee about project assignment
+    if (projectIds.length > 0) {
+      const projectNames = updatedEmployee.assignedProject
+        ?.map((p) => p.tender_project_name)
+        .join(", ");
+      NotificationService.notify({
+        title: "Projects Assigned",
+        message: `You have been assigned to: ${projectNames || "new projects"}`,
+        audienceType: "user",
+        users: [updatedEmployee._id],
+        category: "task",
+        priority: "medium",
+        module: "project",
+        actionUrl: `/dashboard/profile`,
+        actionLabel: "View Profile",
+      });
     }
 
     return updatedEmployee;

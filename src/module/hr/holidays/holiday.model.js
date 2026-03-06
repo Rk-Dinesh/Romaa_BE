@@ -17,8 +17,6 @@ const holidaySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-// Index for fast lookups by date
-holidaySchema.index({ date: 1 });
 
 const HolidayModel = mongoose.model("Holiday", holidaySchema);
 export default HolidayModel;

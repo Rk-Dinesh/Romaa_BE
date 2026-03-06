@@ -4,6 +4,7 @@ import RAQuantityModel from "../../tender/rateanalyisquantites/rateanalysisquant
 import TenderModel from "../../tender/tender/tender.model.js";
 import VendorPermittedModel from "../../tender/vendorpermitted/vendorpermitted.mode.js";
 import WorkOrderRequestModel from "./workorderReqIssue.model.js";
+import NotificationService from "../../notifications/notification.service.js";
 
 class WorkOrderRequestService {
 
@@ -164,10 +165,25 @@ class WorkOrderRequestService {
     // 6. Update overall workflow status
     workOrderRequest.status = "Work Order Issued";
 
-
-
     // 7. Save changes
     await workOrderRequest.save();
+
+    // Notify project team about WO approval
+    const tender = await TenderModel.findOne({ tender_id: workOrderRequest.projectId }).select("_id").lean();
+    if (tender) {
+      NotificationService.notify({
+        title: "Work Order Quotation Approved",
+        message: `WO ${workOrderId} approved — Vendor: ${vendorQuotation.vendorName}, Amount: ${vendorQuotation.totalQuotedValue}`,
+        audienceType: "project",
+        projects: [tender._id],
+        category: "approval",
+        priority: "critical",
+        module: "project",
+        reference: { model: "WorkOrderRequest", documentId: workOrderRequest._id },
+        actionUrl: `/projects/woissuance`,
+        actionLabel: "View Work Order",
+      });
+    }
 
     return workOrderRequest;
   }

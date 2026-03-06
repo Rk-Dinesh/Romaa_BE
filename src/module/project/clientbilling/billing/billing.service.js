@@ -1,6 +1,7 @@
 import BillingModel from "./billing.model.js";
 import BidModel from "../../../tender/bid/bid.model.js";
 import mongoose from "mongoose";
+import NotificationService from "../../../notifications/notification.service.js";
 
 class BillingService {
 
@@ -126,6 +127,23 @@ static async createBill({ tender_id, bill_sequence, bill_id, items, abstract_nam
 
         await session.commitTransaction();
         session.endSession();
+
+        // Notify Finance about new/updated bill
+        const financeRoles = await NotificationService.getRoleIdsByPermission("finance", "client_billing", "read");
+        if (financeRoles.length > 0) {
+          NotificationService.notify({
+            title: `Client Bill ${existingBill ? "Updated" : "Created"}`,
+            message: `RA Bill sequence #${bill_sequence} for tender ${tender_id} has been ${existingBill ? "updated" : "created"}`,
+            audienceType: "role",
+            roles: financeRoles,
+            category: "announcement",
+            priority: "critical",
+            module: "finance",
+            reference: { model: "Billing", documentId: savedBill._id },
+            actionUrl: `/billing/${tender_id}/${bill_sequence}`,
+            actionLabel: "View Bill",
+          });
+        }
 
         return savedBill;
 

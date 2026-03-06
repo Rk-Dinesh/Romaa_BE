@@ -2,6 +2,7 @@ import LeaveRequestModel from "./leaverequest.model.js";
 import EmployeeModel from "../employee/employee.model.js";
 import UserAttendanceModel from "../userAttendance/userAttendance.model.js";
 import CalendarService from "../holidays/holiday.service.js";
+import NotificationService from "../../notifications/notification.service.js";
 
 class LeaveService {
   // --- HELPER: Auto-Fill Attendance on Approval ---
@@ -243,6 +244,24 @@ class LeaveService {
     });
 
     await newLeave.save();
+
+    // Notify manager about new leave request
+    if (employee.reportsTo) {
+      NotificationService.notify({
+        title: "New Leave Request",
+        message: `${employee.name} has applied for ${leaveType} leave from ${start.toLocaleDateString("en-GB")} to ${end.toLocaleDateString("en-GB")}`,
+        audienceType: "user",
+        users: [employee.reportsTo],
+        category: "approval",
+        priority: "high",
+        module: "hr",
+        reference: { model: "LeaveRequest", documentId: newLeave._id },
+        actionUrl: `/dashboard/profile`,
+        actionLabel: "Review Request",
+        createdBy: employeeId,
+      });
+    }
+
     return newLeave;
   }
 
@@ -352,6 +371,24 @@ class LeaveService {
     });
 
     await leaveRequest.save();
+
+    // Notify employee about leave decision
+    NotificationService.notify({
+      title: action === "Approve" ? "Leave Approved" : "Leave Rejected",
+      message: action === "Approve"
+        ? `Your ${leaveRequest.leaveType} leave from ${new Date(leaveRequest.fromDate).toLocaleDateString("en-GB")} to ${new Date(leaveRequest.toDate).toLocaleDateString("en-GB")} has been approved.`
+        : `Your ${leaveRequest.leaveType} leave request has been rejected.${remarks ? " Reason: " + remarks : ""}`,
+      audienceType: "user",
+      users: [leaveRequest.employeeId],
+      category: action === "Approve" ? "approval" : "alert",
+      priority: action === "Approve" ? "medium" : "high",
+      module: "hr",
+      reference: { model: "LeaveRequest", documentId: leaveRequest._id },
+      actionUrl: `/dashboard/profile`,
+      actionLabel: "View Leave",
+      createdBy: actionBy,
+    });
+
     return leaveRequest;
   }
 

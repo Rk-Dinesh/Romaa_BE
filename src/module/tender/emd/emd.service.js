@@ -1,6 +1,7 @@
 import IdcodeServices from "../../idcode/idcode.service.js";
 import TenderModel from "../tender/tender.model.js";
 import EmdModel from "./emd.model.js";
+import NotificationService from "../../notifications/notification.service.js";
 
 class EmdService {
   // Create new EMD record for a tender
@@ -300,6 +301,26 @@ class EmdService {
           },
         }
       );
+
+      // Notify Finance + Tender team about EMD approval
+      const [financeRoles, tenderRoles] = await Promise.all([
+        NotificationService.getRoleIdsByPermission("finance", "purchase_bill", "read"),
+        NotificationService.getRoleIdsByPermission("tender", "emd", "read"),
+      ]);
+      const notifyRoles = [...new Set([...financeRoles, ...tenderRoles].map(String))];
+      if (notifyRoles.length > 0) {
+        NotificationService.notify({
+          title: "EMD Proposal Approved",
+          message: `EMD proposal ${proposal_id} approved for tender ${tender_id} — Company: ${proposalToUpdate.company_name}, Amount: ${proposalToUpdate.proposed_amount}`,
+          audienceType: "role",
+          roles: notifyRoles,
+          category: "approval",
+          priority: "critical",
+          module: "tender",
+          actionUrl: `/tender/tenders/viewtender/${tender_id}?tab=7`,
+          actionLabel: "View EMD",
+        });
+      }
     }
 
     return emd;

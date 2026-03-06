@@ -3,6 +3,7 @@ import TenderModel from "../../tender/tender/tender.model.js";
 import VendorPermittedModel from "../../tender/vendorpermitted/vendorpermitted.mode.js";
 import VendorModel from "../vendor/vendor.model.js";
 import PurchaseRequestModel from "./purchaseReqIssue.model.js";
+import NotificationService from "../../notifications/notification.service.js";
 
 
 class PurchaseRequestService {
@@ -21,7 +22,26 @@ class PurchaseRequestService {
       tender_project_name: tenderName.tender_project_name,
     });
 
-    return await purchaseRequest.save(); // Returns the created document
+    const saved = await purchaseRequest.save();
+
+    // Notify Purchase team about new request
+    const purchaseRoles = await NotificationService.getRoleIdsByPermission("purchase", "request", "read");
+    if (purchaseRoles.length > 0) {
+      NotificationService.notify({
+        title: "New Purchase Request",
+        message: `Purchase request ${requestId} — ${purchaseData.title || "New request"} has been raised for project ${tenderName.tender_project_name}`,
+        audienceType: "role",
+        roles: purchaseRoles,
+        category: "task",
+        priority: "high",
+        module: "purchase",
+        reference: { model: "PurchaseRequest", documentId: saved._id },
+        actionUrl: `/purchase/request`,
+        actionLabel: "View Request",
+      });
+    }
+
+    return saved;
   }
 
   static async getByProjectAndRequestId(projectId, requestId) {
@@ -132,6 +152,7 @@ class PurchaseRequestService {
 
     result.status = "Quotation Received";
     await result.save();
+    
     if (!result) throw new Error('PurchaseRequest not found');
     return result;
   }
@@ -191,6 +212,27 @@ class PurchaseRequestService {
 
     // 7. Save changes
     await purchaseRequest.save();
+
+    // Notify Finance + Purchase team about quotation approval
+    const [financeRoles, purchaseRoles] = await Promise.all([
+      NotificationService.getRoleIdsByPermission("finance", "purchase_bill", "read"),
+      NotificationService.getRoleIdsByPermission("purchase", "order", "read"),
+    ]);
+    const notifyRoles = [...new Set([...financeRoles, ...purchaseRoles].map(String))];
+    if (notifyRoles.length > 0) {
+      NotificationService.notify({
+        title: "Purchase Quotation Approved",
+        message: `Quotation approved for ${purchaseRequestId} — Vendor: ${vendorQuotation.vendorName}, Amount: ${vendorQuotation.totalQuotedValue}`,
+        audienceType: "role",
+        roles: notifyRoles,
+        category: "approval",
+        priority: "critical",
+        module: "purchase",
+        reference: { model: "PurchaseRequest", documentId: purchaseRequest._id },
+        actionUrl: `/purchase/enquiry`,
+        actionLabel: "View PO",
+      });
+    }
 
     return purchaseRequest;
   }

@@ -3,6 +3,7 @@ import IdcodeServices from "../../idcode/idcode.service.js";
 import ClientModel from "../../clients/client.model.js";
 import DetailedEstimateModel from "../detailedestimate/detailedestimate.model.js";
 import SiteOverheads from "../siteoverheads/siteoverhead.model.js";
+import NotificationService from "../../notifications/notification.service.js";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -56,7 +57,26 @@ class TenderService {
     
     await siteOverheads.save();
 
-    return await tender.save();
+    const savedTender = await tender.save();
+
+    // Notify tender team about new tender
+    const tenderRoles = await NotificationService.getRoleIdsByPermission("tender", "tenders", "read");
+    if (tenderRoles.length > 0) {
+      NotificationService.notify({
+        title: "New Tender Created",
+        message: `Tender ${tender_id} — ${tenderData.tender_name || tender_project_name} has been created`,
+        audienceType: "role",
+        roles: tenderRoles,
+        category: "announcement",
+        priority: "critical",
+        module: "tender",
+        reference: { model: "Tenders", documentId: savedTender._id },
+        actionUrl: `/tender/tenders`,
+        actionLabel: "View Tender",
+      });
+    }
+
+    return savedTender;
   }
 
   // Get all tenders
@@ -249,6 +269,20 @@ class TenderService {
     tender.workOrder_issued_date = workOrder_issued_date;
 
     await tender.save();
+
+    // Notify project team about work order issuance
+    NotificationService.notify({
+      title: "Work Order Issued",
+      message: `Work order ${workOrder_id} issued for tender ${tender_id} — ${tender.tender_name}`,
+      audienceType: "project",
+      projects: [tender._id],
+      category: "approval",
+      priority: "critical",
+      module: "project",
+      reference: { model: "Tenders", documentId: tender._id },
+      actionUrl: `/projects`,
+      actionLabel: "View Project",
+    });
 
     return tender;
   }

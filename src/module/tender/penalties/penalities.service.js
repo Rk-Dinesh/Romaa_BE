@@ -1,6 +1,7 @@
 import IdcodeServices from "../../idcode/idcode.service.js";
 import TenderModel from "../tender/tender.model.js";
 import PenaltyModel from "./penalities.model.js";
+import NotificationService from "../../notifications/notification.service.js";
 
 
 
@@ -39,6 +40,37 @@ static async addPenalty(penaltyData) {
     { tender_id: penaltyData.tender_id },
     { $set: { penalty_final_value: totalPenalty } }
   );
+
+  // Notify project team + finance about penalty
+  const tender = await TenderModel.findOne({ tender_id: penaltyData.tender_id }).select("_id").lean();
+  const financeRoles = await NotificationService.getRoleIdsByPermission("finance", "purchase_bill", "read");
+  if (financeRoles.length > 0) {
+    NotificationService.notify({
+      title: "Penalty Added",
+      message: `Penalty ${penalty_id} added to tender ${penaltyData.tender_id} — Amount: ${penaltyDetails.penalty_amount || 0}. Total: ${totalPenalty}`,
+      audienceType: "role",
+      roles: financeRoles,
+      category: "alert",
+      priority: "high",
+      module: "tender",
+      actionUrl: `/tender/${penaltyData.tender_id}/penalties`,
+      actionLabel: "View Penalties",
+    });
+  }
+  if (tender) {
+    NotificationService.notify({
+      title: "Penalty Added",
+      message: `Penalty of amount ${penaltyDetails.penalty_amount || 0} has been added. Total: ${totalPenalty}`,
+      audienceType: "project",
+      projects: [tender._id],
+      category: "alert",
+      priority: "high",
+      module: "tender",
+      reference: { model: "Tenders", documentId: tender._id },
+      actionUrl: `/tender/tenders/viewtender/${penaltyData.tender_id}?tab=10`,
+      actionLabel: "View Penalties",
+    });
+  }
 
   return record;
 }

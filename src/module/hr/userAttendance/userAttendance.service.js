@@ -5,6 +5,7 @@ import UserAttendanceModel from "./userAttendance.model.js";
 import { SHIFT_RULES } from "../../../../utils/shiftRules.js";
 import EmployeeModel from "../employee/employee.model.js";
 import AppError from "../../../common/AppError.js";
+import NotificationService from "../../notifications/notification.service.js";
 
 class AttendanceService {
   // --- HELPER: Parse HH:mm to Date Object ---
@@ -519,6 +520,24 @@ class AttendanceService {
     }
 
     await attendance.save();
+
+    // Notify HR roles about new regularization request
+    const hrRoles = await NotificationService.getRoleIdsByPermission("hr", "attendance", "edit");
+    if (hrRoles.length > 0) {
+      NotificationService.notify({
+        title: "Regularization Request",
+        message: `${category} regularization requested for ${new Date(date).toLocaleDateString("en-GB")}`,
+        audienceType: "role",
+        roles: hrRoles,
+        category: "approval",
+        priority: "medium",
+        module: "hr",
+        actionUrl: `/hr/attendance/regularization`,
+        actionLabel: "Review Request",
+        createdBy: employeeId,
+      });
+    }
+
     return { success: true, message: "Regularization request submitted." };
   }
 
@@ -539,6 +558,20 @@ class AttendanceService {
       attendance.regularization.status = "Rejected";
       attendance.regularization.managerReason = managerRemarks;
       await attendance.save();
+
+      NotificationService.notify({
+        title: "Regularization Rejected",
+        message: `Your regularization request for ${new Date(date).toLocaleDateString("en-GB")} has been rejected.${managerRemarks ? " Reason: " + managerRemarks : ""}`,
+        audienceType: "user",
+        users: [employeeId],
+        category: "alert",
+        priority: "low",
+        module: "hr",
+        actionUrl: `/hr/attendance/regularization`,
+        actionLabel: "View Attendance",
+        createdBy: adminId,
+      });
+
       return { success: true, message: "Request Rejected." };
     }
 
@@ -619,6 +652,20 @@ class AttendanceService {
       attendance.regularization.correctedAt = new Date();
 
       await attendance.save();
+
+      NotificationService.notify({
+        title: "Regularization Approved",
+        message: `Your regularization request for ${new Date(date).toLocaleDateString("en-GB")} has been approved.`,
+        audienceType: "user",
+        users: [employeeId],
+        category: "approval",
+        priority: "medium",
+        module: "hr",
+        actionUrl: `/hr/attendance/regularization`,
+        actionLabel: "View Attendance",
+        createdBy: adminId,
+      });
+
       return {
         success: true,
         message: "Regularization Approved & Balances Updated.",

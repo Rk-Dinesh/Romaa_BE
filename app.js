@@ -43,6 +43,8 @@ import CalendarRoute from './src/module/hr/holidays/holiday.route.js';
 import LeaveRoute from './src/module/hr/leave/leaverequest.route.js';
 import { startAbsenteeismCron } from './utils/dailyAbsenteeism.js';
 import hsnSacRouter from './src/module/master/hsnmaster/hsnsac.router.js';
+import notificationRoute from './src/module/notifications/notification.route.js';
+import dashboardRoute from './src/module/dashboard/dashboard.route.js';
 
 
 
@@ -163,6 +165,8 @@ app.use('/attendance', AttendanceRoute);
 app.use('/calendar', CalendarRoute);
 app.use('/leave', LeaveRoute);
 app.use('/hsn', hsnSacRouter)
+app.use('/notification', notificationRoute)
+app.use('/dashboard', dashboardRoute)
 
 
 

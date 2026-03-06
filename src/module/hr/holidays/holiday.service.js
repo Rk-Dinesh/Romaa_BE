@@ -1,4 +1,5 @@
 import HolidayModel from "./holiday.model.js";
+import NotificationService from "../../notifications/notification.service.js";
 
 class CalendarService {
   
@@ -22,6 +23,19 @@ class CalendarService {
     });
 
     await holiday.save();
+
+    // Notify all employees about new holiday
+    NotificationService.notify({
+      title: "Holiday Added",
+      message: `${name} on ${targetDate.toLocaleDateString("en-GB")} — ${type || "Holiday"}`,
+      audienceType: "common",
+      category: "announcement",
+      priority: "low",
+      module: "hr",
+      actionUrl: `/hr/leave`,
+      actionLabel: "View Calendar",
+    });
+
     return holiday;
   }
 
