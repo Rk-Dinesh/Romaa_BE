@@ -20,10 +20,11 @@ export const getAllWorkers = async (req, res) => {
   }
 };
 
+// Dropdown (id + name)
 export const getAllEmployeeNameId = async (req, res) => {
   try {
-    const clients = await ContractWorkerService.getAllEmployeeIDNAME();
-    res.status(200).json({ status: true, data: clients });
+    const data = await ContractWorkerService.getAllEmployeeIDNAME();
+    res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -32,8 +33,13 @@ export const getAllEmployeeNameId = async (req, res) => {
 // Get worker by ID
 export const getWorkerById = async (req, res) => {
   try {
-    const data = await ContractWorkerService.getWorkerById(req.params.worker_id);
-    if (!data) return res.status(404).json({ status: false, message: "Worker not found" });
+    const data = await ContractWorkerService.getWorkerById(
+      req.params.worker_id
+    );
+    if (!data)
+      return res
+        .status(404)
+        .json({ status: false, message: "Worker not found" });
     res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -50,7 +56,7 @@ export const getActiveWorkers = async (req, res) => {
   }
 };
 
-// Search
+// Search workers
 export const searchWorkers = async (req, res) => {
   try {
     const data = await ContractWorkerService.searchWorkers(req.query.q || "");
@@ -63,61 +69,37 @@ export const searchWorkers = async (req, res) => {
 // Update worker
 export const updateWorker = async (req, res) => {
   try {
-    const data = await ContractWorkerService.updateWorker(req.params.worker_id, req.body);
-    if (!data) return res.status(404).json({ status: false, message: "Worker not found" });
+    const data = await ContractWorkerService.updateWorker(
+      req.params.worker_id,
+      req.body
+    );
+    if (!data)
+      return res
+        .status(404)
+        .json({ status: false, message: "Worker not found" });
     res.status(200).json({ status: true, message: "Worker updated", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// Delete worker
+// Soft delete worker
 export const deleteWorker = async (req, res) => {
   try {
-    const data = await ContractWorkerService.deleteWorker(req.params.worker_id);
-    if (!data) return res.status(404).json({ status: false, message: "Worker not found" });
+    const data = await ContractWorkerService.deleteWorker(
+      req.params.worker_id
+    );
+    if (!data)
+      return res
+        .status(404)
+        .json({ status: false, message: "Worker not found" });
     res.status(200).json({ status: true, message: "Worker deleted" });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// Mark attendance
-export const markAttendance = async (req, res) => {
-  try {
-    const { worker_id } = req.params;
-    const { date, present, remarks } = req.body;
-    const result = await ContractWorkerService.markAttendance(worker_id, new Date(date), present, remarks);
-    res.status(200).json({ status: true, message: "Attendance marked", result });
-  } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
-  }
-};
-
-// Update attendance
-export const updateAttendance = async (req, res) => {
-  try {
-    const { worker_id } = req.params;
-    const { date, present, remarks } = req.body;
-    const result = await ContractWorkerService.updateAttendance(worker_id, new Date(date), present, remarks);
-    res.status(200).json({ status: true, message: "Attendance updated", result });
-  } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
-  }
-};
-
-// Get attendance range
-export const getAttendance = async (req, res) => {
-  try {
-    const { worker_id } = req.params;
-    const { startDate, endDate } = req.query;
-    const data = await ContractWorkerService.getAttendance(worker_id, startDate, endDate);
-    res.status(200).json({ status: true, data });
-  } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
-  }
-};
-
+// Paginated workers list
 export const getContractWorkersPaginated = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
@@ -141,6 +123,66 @@ export const getContractWorkersPaginated = async (req, res) => {
       totalRecords: data.total,
       data: data.contractWorkers,
     });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// =============================================
+// NEW APIs
+// =============================================
+
+// Get all workers by contractor
+export const getWorkersByContractor = async (req, res) => {
+  try {
+    const data = await ContractWorkerService.getWorkersByContractor(
+      req.params.contractor_id
+    );
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// Transfer worker to different contractor
+export const transferWorker = async (req, res) => {
+  try {
+    const { new_contractor_id } = req.body;
+    if (!new_contractor_id)
+      return res
+        .status(400)
+        .json({ status: false, message: "new_contractor_id is required" });
+
+    const data = await ContractWorkerService.transferWorker(
+      req.params.worker_id,
+      new_contractor_id
+    );
+    res
+      .status(200)
+      .json({ status: true, message: "Worker transferred", data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// Assign/change site
+export const assignSite = async (req, res) => {
+  try {
+    const { site_assigned } = req.body;
+    if (!site_assigned)
+      return res
+        .status(400)
+        .json({ status: false, message: "site_assigned is required" });
+
+    const data = await ContractWorkerService.assignSite(
+      req.params.worker_id,
+      site_assigned
+    );
+    if (!data)
+      return res
+        .status(404)
+        .json({ status: false, message: "Worker not found" });
+    res.status(200).json({ status: true, message: "Site assigned", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

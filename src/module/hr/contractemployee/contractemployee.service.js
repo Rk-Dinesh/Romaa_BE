@@ -1,8 +1,9 @@
 import ContractWorkerModel from "./contractemployee.model.js";
+import ContractorModel from "../contractors/contractor.model.js";
 import IdcodeServices from "../../idcode/idcode.service.js";
 
 class ContractWorkerService {
-  // Create worker
+  // Create worker — auto-links to contractor
   static async addWorker(workerData) {
     const idname = "CONTRACTWORKER";
     const idcode = "CW";
@@ -10,103 +11,117 @@ class ContractWorkerService {
     const worker_id = await IdcodeServices.generateCode(idname);
     if (!worker_id) throw new Error("Failed to generate worker ID");
 
-    const worker = new ContractWorkerModel({
-      worker_id,
-      ...workerData
+    if (!workerData.contractor_id) {
+      throw new Error("contractor_id is required");
+    }
+
+    // Verify contractor exists
+    const contractor = await ContractorModel.findOne({
+      contractor_id: workerData.contractor_id,
+      isDeleted: { $ne: true },
     });
-    return await worker.save();
+    if (!contractor) throw new Error("Contractor not found");
+
+    const worker = new ContractWorkerModel({ worker_id, ...workerData });
+    const saved = await worker.save();
+
+    // Add to contractor's employees array
+    await ContractorModel.findOneAndUpdate(
+      { contractor_id: workerData.contractor_id },
+      { $addToSet: { employees: worker_id }, $inc: { total_employees: 1 } }
+    );
+
+    return saved;
   }
 
   // Get all workers
   static async getAllWorkers() {
-    return await ContractWorkerModel.find();
+    return await ContractWorkerModel.find({ isDeleted: { $ne: true } });
   }
 
-    static async getAllEmployeeIDNAME() {
-      return ContractWorkerModel.find().select("worker_id employee_name");
-    }
+  // Dropdown (id + name)
+  static async getAllEmployeeIDNAME() {
+    return await ContractWorkerModel.find({ isDeleted: { $ne: true } }).select(
+      "worker_id employee_name contractor_id"
+    );
+  }
 
-  // Get worker by worker_id
+  // Get single worker
   static async getWorkerById(worker_id) {
-    return await ContractWorkerModel.findOne({ worker_id });
+    return await ContractWorkerModel.findOne({
+      worker_id,
+      isDeleted: { $ne: true },
+    });
   }
 
   // Get active workers
   static async getActiveWorkers() {
-    return await ContractWorkerModel.find({ status: "ACTIVE" });
-  }
-
-  // Search
-  static async searchWorkers(keyword) {
     return await ContractWorkerModel.find({
-      $or: [
-        { employee_name: { $regex: keyword, $options: "i" } },
-        { contractor_name: { $regex: keyword, $options: "i" } },
-        { contact_phone: { $regex: keyword, $options: "i" } },
-      ]
+      status: "ACTIVE",
+      isDeleted: { $ne: true },
     });
   }
 
-  // Update worker info
+  // Search workers
+  static async searchWorkers(keyword) {
+    const escapedKeyword = keyword.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    return await ContractWorkerModel.find({
+      isDeleted: { $ne: true },
+      $or: [
+        { employee_name: { $regex: escapedKeyword, $options: "i" } },
+        { contact_phone: { $regex: escapedKeyword, $options: "i" } },
+        { role: { $regex: escapedKeyword, $options: "i" } },
+      ],
+    });
+  }
+
+  // Update worker
   static async updateWorker(worker_id, updateData) {
     return await ContractWorkerModel.findOneAndUpdate(
-      { worker_id },
+      { worker_id, isDeleted: { $ne: true } },
       { $set: updateData },
       { new: true }
     );
   }
 
-  // Delete worker
+  // Soft delete worker — removes from contractor too
   static async deleteWorker(worker_id) {
-    return await ContractWorkerModel.findOneAndDelete({ worker_id });
-  }
-
-  // Mark attendance (push if not exists for today)
-  static async markAttendance(worker_id, date, present, remarks = "") {
-    return await ContractWorkerModel.updateOne(
-      { worker_id, "daily_attendance.date": { $ne: date } },
-      { $push: { daily_attendance: { date, present, remarks } } }
-    );
-  }
-
-  // Update attendance for a given date
-  static async updateAttendance(worker_id, date, present, remarks = "") {
-    return await ContractWorkerModel.updateOne(
-      { worker_id, "daily_attendance.date": date },
-      { $set: { "daily_attendance.$.present": present, "daily_attendance.$.remarks": remarks } }
-    );
-  }
-
-  // Get attendance records for date range
-  static async getAttendance(worker_id, startDate, endDate) {
-    const worker = await ContractWorkerModel.findOne(
-      { worker_id },
-      { daily_attendance: 1, _id: 0 }
+    const worker = await ContractWorkerModel.findOneAndUpdate(
+      { worker_id, isDeleted: { $ne: true } },
+      { $set: { isDeleted: true, status: "LEFT" } },
+      { new: true }
     );
 
-    if (!worker) return null;
+    if (worker) {
+      await ContractorModel.findOneAndUpdate(
+        { contractor_id: worker.contractor_id },
+        { $pull: { employees: worker_id }, $inc: { total_employees: -1 } }
+      );
+    }
 
-    const filtered = worker.daily_attendance.filter(
-      att => att.date >= new Date(startDate) && att.date <= new Date(endDate)
-    );
-
-    return filtered;
+    return worker;
   }
 
-    static async getContractWorkersPaginated(page, limit, search, fromdate, todate) {
-    const query = {};
+  // Paginated workers list
+  static async getContractWorkersPaginated(
+    page,
+    limit,
+    search,
+    fromdate,
+    todate
+  ) {
+    const query = { isDeleted: { $ne: true } };
 
-    // Keyword Search on multiple fields
     if (search) {
+      const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       query.$or = [
-        { employee_name: { $regex: search, $options: "i" } },
-        { contractor_name: { $regex: search, $options: "i" } },
-        { contact_phone: { $regex: search, $options: "i" } },
-        { site_assigned: { $regex: search, $options: "i" } },
+        { employee_name: { $regex: escapedSearch, $options: "i" } },
+        { contractor_id: { $regex: escapedSearch, $options: "i" } },
+        { contact_phone: { $regex: escapedSearch, $options: "i" } },
+        { site_assigned: { $regex: escapedSearch, $options: "i" } },
       ];
     }
 
-    // Date Filtering on createdAt
     if (fromdate || todate) {
       query.createdAt = {};
       if (fromdate) query.createdAt.$gte = new Date(fromdate);
@@ -125,9 +140,59 @@ class ContractWorkerService {
 
     return { total, contractWorkers };
   }
+
+  // NEW: Get all workers by contractor_id
+  static async getWorkersByContractor(contractor_id) {
+    return await ContractWorkerModel.find({
+      contractor_id,
+      isDeleted: { $ne: true },
+    });
+  }
+
+  // NEW: Transfer worker to a different contractor
+  static async transferWorker(worker_id, new_contractor_id) {
+    const worker = await ContractWorkerModel.findOne({
+      worker_id,
+      isDeleted: { $ne: true },
+    });
+    if (!worker) throw new Error("Worker not found");
+
+    // Verify new contractor exists
+    const newContractor = await ContractorModel.findOne({
+      contractor_id: new_contractor_id,
+      isDeleted: { $ne: true },
+    });
+    if (!newContractor) throw new Error("Target contractor not found");
+
+    const old_contractor_id = worker.contractor_id;
+
+    // Update worker's contractor_id
+    worker.contractor_id = new_contractor_id;
+    await worker.save();
+
+    // Remove from old contractor, add to new
+    await Promise.all([
+      ContractorModel.findOneAndUpdate(
+        { contractor_id: old_contractor_id },
+        { $pull: { employees: worker_id }, $inc: { total_employees: -1 } }
+      ),
+      ContractorModel.findOneAndUpdate(
+        { contractor_id: new_contractor_id },
+        { $addToSet: { employees: worker_id }, $inc: { total_employees: 1 } }
+      ),
+    ]);
+
+    return worker;
+  }
+
+  // NEW: Assign/change site for a worker
+  static async assignSite(worker_id, site_assigned) {
+    return await ContractWorkerModel.findOneAndUpdate(
+      { worker_id, isDeleted: { $ne: true } },
+      { $set: { site_assigned } },
+      { new: true }
+    );
+  }
 }
 
 export default ContractWorkerService;
-
-
-

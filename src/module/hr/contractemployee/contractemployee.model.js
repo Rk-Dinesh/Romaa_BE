@@ -1,28 +1,15 @@
 import mongoose from "mongoose";
 
-const dailyAttendanceSchema = new mongoose.Schema(
-  {
-    date: { type: Date, required: true },       // Attendance date
-    present: { type: Boolean, required: true }, // True=Present, False=Absent
-    remarks: String                             // Optional: half-day, overtime, etc.
-  },
-  { _id: false }
-);
-
 const contractWorkerSchema = new mongoose.Schema(
   {
-    worker_id: { type: String, unique: true },
+    worker_id: { type: String, unique: true, required: true },
+    contractor_id: { type: String, required: true, index: true }, // FK → Contractor
+
+    // --- Basic Info ---
     employee_name: { type: String, required: true },
-    contractor_name: String,
-    site_assigned: String,
-    department: String,                       // e.g., Civil, Electrical, Plumbing
-    role: String,                             // e.g., Mason, Helper, Fitter
-    nmr_number: String,                       // Nominal Muster Roll No.
-    daily_wage: String,
-    status: String,                           // ACTIVE, INACTIVE, LEFT, etc.
-    contact_phone: String,
-    gender: String,
-    age: Number,
+    contact_phone: { type: String },
+    gender: { type: String },
+    age: { type: Number },
     address: {
       street: String,
       city: String,
@@ -30,21 +17,34 @@ const contractWorkerSchema = new mongoose.Schema(
       country: String,
       pincode: String,
     },
-    id_proof_type: String,
-    id_proof_number: String,
-    daily_attendance: [dailyAttendanceSchema],
-    created_by_user: String,
+
+    // --- ID Proof ---
+    id_proof_type: { type: String },
+    id_proof_number: { type: String },
+    photo: { type: String }, // S3 key
+
+    // --- Assignment ---
+    site_assigned: { type: String },
+    role: { type: String }, // Mason, Helper, Fitter
+    daily_wage: { type: Number, default: 0 },
+
+    status: {
+      type: String,
+      enum: ["ACTIVE", "INACTIVE", "LEFT"],
+      default: "ACTIVE",
+    },
+    created_by_user: { type: String },
+    isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );
 
-const ContractWorkerModel = mongoose.model("ContractWorkers", contractWorkerSchema);
+contractWorkerSchema.index({ isDeleted: 1, contractor_id: 1 });
+contractWorkerSchema.index({ isDeleted: 1, status: 1 });
+
+const ContractWorkerModel = mongoose.model(
+  "ContractWorkers",
+  contractWorkerSchema
+);
 
 export default ContractWorkerModel;
-
-
-// await ContractWorkerModel.updateOne(
-//   { worker_id: "CW123", "daily_attendance.date": { $ne: new Date("2025-08-04") } },
-//   { $push: { daily_attendance: { date: "2025-08-04", present: true } } }
-// );
-
