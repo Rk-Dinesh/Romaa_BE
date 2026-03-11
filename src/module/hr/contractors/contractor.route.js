@@ -16,6 +16,8 @@ import {
   getAssignedProjects,
   updateAccountDetails,
   getDashboardStats,
+  getAllContractorsSelectbyProject,
+  getContractorWithEmployeesbyProject,
 } from "./contractor.controller.js";
 
 const contractorRoute = Router();
@@ -29,6 +31,7 @@ contractorRoute.post("/add", createContractor);
 // Read
 contractorRoute.get("/getall", getAllContractors);
 contractorRoute.get("/getallselect", getAllContractorsSelect);
+contractorRoute.get("/getallselectbyproject/:tender_id", getAllContractorsSelectbyProject);
 contractorRoute.get("/getactive", getActiveContractors);
 contractorRoute.get("/contractorlist", getContractorsPaginated);
 contractorRoute.get("/search", searchContractors);
@@ -36,6 +39,7 @@ contractorRoute.get("/get/:contractor_id", getContractorById);
 
 // Contractor → Employees
 contractorRoute.get("/get/:contractor_id/employees", getContractorWithEmployees);
+contractorRoute.get("/get/:contractor_id/employees/:tender_id", getContractorWithEmployeesbyProject);
 contractorRoute.get("/get/:contractor_id/employees/paginated", getContractorEmployeesPaginated);
 
 // Contractor → Projects

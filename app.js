@@ -45,6 +45,8 @@ import { startAbsenteeismCron } from './utils/dailyAbsenteeism.js';
 import hsnSacRouter from './src/module/master/hsnmaster/hsnsac.router.js';
 import notificationRoute from './src/module/notifications/notification.route.js';
 import dashboardRoute from './src/module/dashboard/dashboard.route.js';
+import dlpRouter from './src/module/site/dlp/dlp.route.js';
+import nmrAttendanceRouter from './src/module/hr/nmrAttendance/nmrAttendance.route.js';
 
 
 
@@ -167,6 +169,8 @@ app.use('/leave', LeaveRoute);
 app.use('/hsn', hsnSacRouter)
 app.use('/notification', notificationRoute)
 app.use('/dashboard', dashboardRoute)
+app.use('/dlp', dlpRouter)
+app.use('/nmrattendance', nmrAttendanceRouter)
 
 
 

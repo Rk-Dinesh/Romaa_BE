@@ -298,7 +298,7 @@ static async freezeBid(tender_id) {
   static async getBidItemsLite(tender_id) {
     const bid = await BidModel.findOne({ tender_id })
       .sort({ revision: -1 }) 
-      .select("_id items.item_id items.item_name ")
+      .select("_id items.item_id items.item_name items.unit")
       .lean(); 
 
     return bid ? bid : [];

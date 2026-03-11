@@ -30,6 +30,15 @@ export const getAllContractorsSelect = async (req, res) => {
   }
 };
 
+export const getAllContractorsSelectbyProject = async (req, res) => {
+  try {
+    const data = await ContractorService.getAllContractorsSelectbyProject(req.params.tender_id);
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // Get contractor by ID
 export const getContractorById = async (req, res) => {
   try {
@@ -139,6 +148,22 @@ export const getContractorWithEmployees = async (req, res) => {
   try {
     const data = await ContractorService.getContractorWithEmployees(
       req.params.contractor_id
+    );
+    if (!data)
+      return res
+        .status(404)
+        .json({ status: false, message: "Contractor not found" });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const getContractorWithEmployeesbyProject = async (req, res) => {
+  try {
+    const data = await ContractorService.getContractorWithEmployeesbyProject(
+      req.params.contractor_id,
+      req.params.tender_id
     );
     if (!data)
       return res

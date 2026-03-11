@@ -30,6 +30,15 @@ class ContractorService {
     );
   }
 
+  static async getAllContractorsSelectbyProject(tender_id) {
+    return await ContractorModel.find({
+      isDeleted: { $ne: true },
+      "assigned_projects.tender_id": tender_id  ,
+    }).select(
+      "contractor_id contractor_name wage_fixing assigned_projects"
+    );
+  }
+
   // Get single contractor
   static async getContractorById(contractor_id) {
     return await ContractorModel.findOne({
@@ -122,6 +131,24 @@ class ContractorService {
 
     const employees = await ContractWorkerModel.find({
       contractor_id,
+      isDeleted: { $ne: true },
+    })
+      .select("-__v")
+      .lean();
+
+    return { ...contractor, employees };
+  }
+
+    static async getContractorWithEmployeesbyProject(contractor_id,tender_id) {
+    const contractor = await ContractorModel.findOne({
+      contractor_id,
+      isDeleted: { $ne: true },
+    }).lean();
+    if (!contractor) return null;
+
+    const employees = await ContractWorkerModel.find({
+      contractor_id,
+      site_assigned:tender_id,
       isDeleted: { $ne: true },
     })
       .select("-__v")
