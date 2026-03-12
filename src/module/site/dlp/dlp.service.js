@@ -1,28 +1,43 @@
 import DLRModel from "./dlp.model.js";
 import NMRAttendanceModel from "../../hr/nmrAttendance/nmrattendance.model.js";
 
+// Helpers to map incoming payload arrays to schema shapes
+function mapWorkEntries(entries = []) {
+  return entries.map((e) => ({
+    description: e.description,
+    category: e.category,
+    l: Number(e.l) || 0,
+    b: Number(e.b) || 0,
+    h: Number(e.h) || 0,
+    quantity: Number(e.quantity) || 0,
+    unit: e.unit || "CUM",
+    remark: e.remark || "No Remark",
+    totalHeads: Number(e.totalHeads) || 0,
+    totalAmount: Number(e.totalAmount) || 0,
+  }));
+}
+
+function mapAttendanceEntries(entries = []) {
+  return entries.map((e) => ({
+    worker_id: e.worker_id,
+    worker_name: e.worker_name || "",
+    category: e.category || "",
+    status: e.status || "PRESENT",
+    daily_wage: Number(e.daily_wage) || 0,
+    remark: e.remark || "",
+  }));
+}
+
 class DLPService {
-  // Create a new Daily Labour Report
+  // Create a single Daily Labour Report
   static async createReport(payload) {
     const report = new DLRModel({
       report_date: payload.report_date ? new Date(payload.report_date) : new Date(),
       project_id: payload.project_id,
       contractor_id: payload.contractor_id,
-      work_entries: (payload.work_entries || []).map((e) => ({
-        description: e.description,
-        category: e.category,
-        l: Number(e.l) || 0,
-        b: Number(e.b) || 0,
-        h: Number(e.h) || 0,
-        quantity: Number(e.quantity) || 0,
-        unit: e.unit || "CUM",
-        worker_id: e.worker_id,
-        worker_name: e.worker_name || "",
-        status: e.status || "PRESENT",
-        daily_wage: Number(e.daily_wage) || 0,
-        remark: e.remark || "",
-      })),
-      remark: payload.remark || "",
+      work_entries: mapWorkEntries(payload.work_entries),
+      attendance_entries: mapAttendanceEntries(payload.attendance_entries),
+      remark: payload.remark || "No Remark",
       created_by: payload.created_by || "",
     });
 
@@ -39,33 +54,23 @@ class DLPService {
       report_date: payload.report_date ? new Date(payload.report_date) : new Date(),
       project_id: payload.project_id,
       contractor_id: payload.contractor_id,
-      work_entries: (payload.work_entries || []).map((e) => ({
-        description: e.description,
-        category: e.category,
-        l: Number(e.l) || 0,
-        b: Number(e.b) || 0,
-        h: Number(e.h) || 0,
-        quantity: Number(e.quantity) || 0,
-        unit: e.unit || "CUM",
-        worker_id: e.worker_id,
-        worker_name: e.worker_name || "",
-        status: e.status || "PRESENT",
-        daily_wage: Number(e.daily_wage) || 0,
-        remark: e.remark || "",
-      })),
-      remark: payload.remark || "",
+      work_entries: mapWorkEntries(payload.work_entries),
+      attendance_entries: mapAttendanceEntries(payload.attendance_entries),
+      remark: payload.remark || "No Remark",
       created_by: payload.created_by || "",
     }));
 
-    // insertMany skips pre-save middleware; use save() on each doc so totals are computed
+    // insertMany skips pre-save middleware; use save() so totals are computed
     const saved = await Promise.all(
       docs.map((doc) => new DLRModel(doc).save())
     );
 
-    // Auto-mark NMR attendance from each saved DLP report.
+    // Auto-mark NMR attendance from attendance_entries of each saved DLP report.
     // Skip silently if a record already exists for that project+contractor+date.
     await Promise.all(
       saved.map(async (dlr) => {
+        if (!dlr.attendance_entries || dlr.attendance_entries.length === 0) return;
+
         const exists = await NMRAttendanceModel.findOne({
           project_id: dlr.project_id,
           contractor_id: dlr.contractor_id,
@@ -77,7 +82,7 @@ class DLPService {
           attendance_date: dlr.report_date,
           project_id: dlr.project_id,
           contractor_id: dlr.contractor_id,
-          attendance_list: dlr.work_entries.map((e) => ({
+          attendance_list: dlr.attendance_entries.map((e) => ({
             worker_id: e.worker_id,
             worker_name: e.worker_name || "",
             category: e.category || "",
@@ -94,7 +99,7 @@ class DLPService {
     return saved;
   }
 
-  // Get all reports for a project (list view, no entries)
+  // Get all reports for a project (list view, no sub-arrays)
   static async getReportsByProject(project_id, { from, to } = {}) {
     const filter = { project_id };
     if (from || to) {
@@ -103,7 +108,7 @@ class DLPService {
       if (to) filter.report_date.$lte = new Date(to);
     }
     return await DLRModel.find(filter)
-      .select("-work_entries")
+      .select("-work_entries -attendance_entries")
       .sort({ report_date: -1 });
   }
 
@@ -116,18 +121,18 @@ class DLPService {
       if (to) filter.report_date.$lte = new Date(to);
     }
     return await DLRModel.find(filter)
-      .select("-work_entries")
+      .select("-work_entries -attendance_entries")
       .sort({ report_date: -1 });
   }
 
-  // Get a single report with full work_entries
+  // Get a single report with full work_entries + attendance_entries
   static async getReportById(id) {
     const report = await DLRModel.findById(id);
     if (!report) throw new Error("Daily Labour Report not found");
     return report;
   }
 
-  // Replace work_entries on a PENDING report
+  // Update work_entries and/or attendance_entries on a PENDING report
   static async updateReport(id, payload) {
     const report = await DLRModel.findById(id);
     if (!report) throw new Error("Daily Labour Report not found");
@@ -136,25 +141,15 @@ class DLPService {
     }
 
     if (payload.work_entries !== undefined) {
-      report.work_entries = payload.work_entries.map((e) => ({
-        description: e.description,
-        category: e.category,
-        l: Number(e.l) || 0,
-        b: Number(e.b) || 0,
-        h: Number(e.h) || 0,
-        quantity: Number(e.quantity) || 0,
-        unit: e.unit || "CUM",
-        worker_id: e.worker_id,
-        worker_name: e.worker_name || "",
-        status: e.status || "PRESENT",
-        daily_wage: Number(e.daily_wage) || 0,
-        remark: e.remark || "",
-      }));
+      report.work_entries = mapWorkEntries(payload.work_entries);
+    }
+    if (payload.attendance_entries !== undefined) {
+      report.attendance_entries = mapAttendanceEntries(payload.attendance_entries);
     }
     if (payload.remark !== undefined) report.remark = payload.remark;
     if (payload.report_date !== undefined) report.report_date = new Date(payload.report_date);
 
-    return await report.save(); // triggers pre-save middleware for totals
+    return await report.save(); // triggers pre-save: recalculates all grand totals
   }
 
   // Approve or Reject a report
