@@ -5,6 +5,8 @@ import {
   getReportsByProject,
   getReportsByContractor,
   getReportById,
+  getSummaryByDate,
+  getReportsByDate,
   updateReport,
   updateStatus,
   deleteReport,
@@ -23,6 +25,12 @@ dlpRouter.get("/api/list/:project_id", getReportsByProject);
 
 // GET    /dlp/api/list/:project_id/:contractor_id     ?from=&to=
 dlpRouter.get("/api/list/:project_id/:contractor_id", getReportsByContractor);
+
+// GET    /dlp/api/summary/:project_id
+dlpRouter.get("/api/summary/:project_id", getSummaryByDate);
+
+// GET    /dlp/api/report-date/:project_id/:report_date
+dlpRouter.get("/api/report-date/:project_id/:report_date", getReportsByDate);
 
 // GET    /dlp/api/details/:id
 dlpRouter.get("/api/details/:id", getReportById);

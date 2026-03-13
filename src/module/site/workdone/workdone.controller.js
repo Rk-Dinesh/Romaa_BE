@@ -12,6 +12,21 @@ export const createWorkDone = async (req, res) => {
   }
 };
 
+export const bulkCreateWorkDone = async (req, res) => {
+  try {
+    const payloads = req.body;
+
+    if (!Array.isArray(payloads)) {
+      return res.status(400).json({ success: false, error: "Request body must be an array of work done payloads" });
+    }
+
+    const result = await WorkDoneService.bulkCreateWorkDone(payloads);
+    res.status(201).json({ success: true, count: result.length, data: result });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
 export const getAllWorkDoneByTender = async (req, res) => {
   try {
     const { tender_id } = req.params;
@@ -46,3 +61,29 @@ export const getWorkDoneSpecific = async (req, res) => {
     res.status(404).json({ success: false, error: error.message });
   }
 };
+
+export const getWorkDoneSummaryByDate = async (req, res) => {
+  try {
+    const { tender_id } = req.params;
+    const summary = await WorkDoneService.getWorkDoneSummaryByDate(tender_id);
+    res.status(200).json({ success: true, count: summary.length, data: summary });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+};
+
+export const getWorkDoneReportDate = async (req, res) => {
+  try {
+    const { tender_id, report_date } = req.params;
+    
+    const report = await WorkDoneService.getWorkDoneReportDate(tender_id, report_date);
+    
+    res.status(200).json({ 
+      success: true, 
+      data: report 
+    });
+  } catch (error) {
+    res.status(404).json({ success: false, error: error.message });
+  }
+};
+

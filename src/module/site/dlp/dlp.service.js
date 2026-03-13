@@ -164,6 +164,60 @@ class DLPService {
     return await report.save();
   }
 
+  // Summary of reports per day for a project (date-wise count + project name)
+  static async getSummaryByDate(project_id) {
+    const summary = await DLRModel.aggregate([
+      { $match: { project_id } },
+      {
+        $group: {
+          _id: { $dateToString: { format: "%Y-%m-%d", date: "$report_date" } },
+          project_id: { $first: "$project_id" },
+          total_reports: { $sum: 1 },
+          total_man_days: { $sum: "$grand_total_man_days" },
+          total_amount: { $sum: "$grand_total_amount" },
+        }
+      },
+      { $sort: { _id: -1 } },
+      {
+        $lookup: {
+          from: "tenders",
+          localField: "project_id",
+          foreignField: "tender_id",
+          as: "tenderInfo",
+        }
+      },
+      {
+        $project: {
+          _id: 0,
+          report_date: "$_id",
+          project_id: 1,
+          project_name: { $arrayElemAt: ["$tenderInfo.tender_project_name", 0] },
+          total_reports: 1,
+          total_man_days: 1,
+          total_amount: 1,
+        }
+      }
+    ]);
+
+    return summary;
+  }
+
+  // Get all reports for a project on a specific date
+  static async getReportsByDate(project_id, report_date) {
+    const start = new Date(report_date);
+    start.setUTCHours(0, 0, 0, 0);
+    const end = new Date(report_date);
+    end.setUTCHours(23, 59, 59, 999);
+
+    const reports = await DLRModel.find({
+      project_id,
+      report_date: { $gte: start, $lte: end },
+    });
+
+    if (!reports.length) throw new Error("No reports found for this date");
+    return reports;
+  }
+
   // Delete a PENDING report
   static async deleteReport(id) {
     const report = await DLRModel.findById(id);

@@ -47,6 +47,7 @@ import notificationRoute from './src/module/notifications/notification.route.js'
 import dashboardRoute from './src/module/dashboard/dashboard.route.js';
 import dlpRouter from './src/module/site/dlp/dlp.route.js';
 import nmrAttendanceRouter from './src/module/hr/nmrAttendance/nmrAttendance.route.js';
+import drawingVsBOQDERouter from './src/module/project/drawingvboqDE/drawingvsboqDE.route.js';
 
 
 
@@ -171,6 +172,7 @@ app.use('/notification', notificationRoute)
 app.use('/dashboard', dashboardRoute)
 app.use('/dlp', dlpRouter)
 app.use('/nmrattendance', nmrAttendanceRouter)
+app.use('/drawingvboqde', drawingVsBOQDERouter)
 
 
 

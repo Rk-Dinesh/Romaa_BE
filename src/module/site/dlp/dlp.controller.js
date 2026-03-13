@@ -75,6 +75,26 @@ export const updateStatus = async (req, res) => {
   }
 };
 
+export const getSummaryByDate = async (req, res) => {
+  try {
+    const { project_id } = req.params;
+    const summary = await DLPService.getSummaryByDate(project_id);
+    res.status(200).json({ status: true, count: summary.length, data: summary });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const getReportsByDate = async (req, res) => {
+  try {
+    const { project_id, report_date } = req.params;
+    const reports = await DLPService.getReportsByDate(project_id, report_date);
+    res.status(200).json({ status: true, count: reports.length, data: reports });
+  } catch (error) {
+    res.status(404).json({ status: false, message: error.message });
+  }
+};
+
 export const deleteReport = async (req, res) => {
   try {
     const { id } = req.params;

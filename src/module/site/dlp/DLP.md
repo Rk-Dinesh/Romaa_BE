@@ -75,6 +75,8 @@ The schema has **two separate sub-arrays** inside one document:
 | `POST` | `/dlp/api/bulk-create` | Create multiple reports in one call |
 | `GET` | `/dlp/api/list/:project_id` | All reports for a project (no sub-arrays) |
 | `GET` | `/dlp/api/list/:project_id/:contractor_id` | Reports filtered by contractor |
+| `GET` | `/dlp/api/summary/:project_id` | Date-wise summary with totals and project name |
+| `GET` | `/dlp/api/report-date/:project_id/:report_date` | All reports for a project on a specific date |
 | `GET` | `/dlp/api/details/:id` | Full report with both entry arrays |
 | `PUT` | `/dlp/api/update/:id` | Update entries (PENDING only) |
 | `PATCH` | `/dlp/api/status/:id` | Approve or Reject |
@@ -182,6 +184,48 @@ Accepts an array of reports **or** `{ "reports": [...] }`:
 ```
 
 > **Side effect:** automatically creates an NMR Attendance record for each report (skips if one already exists for that `project_id + contractor_id + date`).
+
+### GET `/dlp/api/summary/:project_id`
+
+Date-wise aggregated summary, sorted latest date first. Project name looked up from `tenders` collection via `project_id` → `tender_id`.
+
+**Response `200`:**
+```json
+{
+  "status": true,
+  "count": 3,
+  "data": [
+    {
+      "report_date": "2026-03-13",
+      "project_id": "TND-001",
+      "project_name": "Highway Construction Phase 1",
+      "total_reports": 4,
+      "total_man_days": 12.5,
+      "total_amount": 8750
+    }
+  ]
+}
+```
+
+---
+
+### GET `/dlp/api/report-date/:project_id/:report_date`
+
+Returns all reports for a project on a specific date. Uses a UTC day range (`00:00:00` → `23:59:59`) to match stored `Date` objects correctly.
+
+**Params**
+- `report_date` — ISO date string e.g. `2026-03-13`
+
+**Response `200`:**
+```json
+{
+  "status": true,
+  "count": 2,
+  "data": [ ...fullReports ]
+}
+```
+
+---
 
 ### PUT `/dlp/api/update/:id`
 ```json
