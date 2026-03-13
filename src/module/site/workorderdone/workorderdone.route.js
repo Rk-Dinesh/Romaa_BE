@@ -8,13 +8,13 @@ import {
   getWorkDoneSummaryByDate
 } from "./workorderdone.controller.js";
 
-const workDoneRouter = Router();
+const workOrderDoneRouter = Router();
 
-workDoneRouter.post('/api/create', createWorkDone);
-workDoneRouter.post('/api/bulk-create', bulkCreateWorkDone);
-workDoneRouter.get('/api/list/:tender_id', getAllWorkDoneByTender);
-workDoneRouter.get('/api/summary/:tender_id', getWorkDoneSummaryByDate);
-workDoneRouter.get('/api/details/:tender_id/:workDoneId', getWorkDoneSpecific);
-workDoneRouter.get('/api/report-date/:tender_id/:report_date', getWorkDoneReportDate);
+workOrderDoneRouter.post('/api/create', createWorkDone);
+workOrderDoneRouter.post('/api/bulk-create', bulkCreateWorkDone);
+workOrderDoneRouter.get('/api/list/:tender_id', getAllWorkDoneByTender);
+workOrderDoneRouter.get('/api/summary/:tender_id', getWorkDoneSummaryByDate);
+workOrderDoneRouter.get('/api/details/:tender_id/:workDoneId', getWorkDoneSpecific);
+workOrderDoneRouter.get('/api/report-date/:tender_id/:report_date', getWorkDoneReportDate);
 
-export default workDoneRouter;
+export default workOrderDoneRouter;

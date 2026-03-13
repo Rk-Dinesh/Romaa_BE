@@ -33,7 +33,7 @@ import machineryrouter from './src/module/assets/machinery/machineryasset.route.
 import siteoverheadrouter from './src/module/tender/siteoverheads/siteoverhead.route.js';
 import rateanalysisquantitesrouter from './src/module/tender/rateanalyisquantites/rateanalysisquantites.route.js';
 import scheduleLiteRouter from './src/module/project/scheduleNew/schedulelite/schedulelite.route.js';
-import workDoneRouter from './src/module/site/workorderdone/workorderdone.route.js';
+import workOrderDoneRouter from './src/module/site/workorderdone/workorderdone.route.js';
 import billingEstimateRouter from './src/module/project/clientbilling/estimate/billingestimate.route.js';
 import billingRouter from './src/module/project/clientbilling/billing/billing.router.js';
 import steelestimaterouter from './src/module/project/clientbilling/steelestimate/steelestimate.route.js';
@@ -159,7 +159,7 @@ app.use('/machineryasset', machineryrouter);
 app.use('/siteoverhead', siteoverheadrouter);
 app.use('/raquantities', rateanalysisquantitesrouter);
 app.use('/schedulelite', scheduleLiteRouter);
-app.use('/workdone', workDoneRouter);
+app.use('/workorderdone', workOrderDoneRouter);
 app.use('/billing', billingEstimateRouter);
 app.use('/clientbilling', billingRouter);
 app.use('/steelestimate', steelestimaterouter);

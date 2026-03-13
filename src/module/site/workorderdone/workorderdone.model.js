@@ -24,7 +24,7 @@ const WorkItemSchema = new mongoose.Schema({
 
 
 // --- Main Schema: The Daily Report (The Container) ---
-const WorkDoneSchema = new mongoose.Schema(
+const WorkOrderDoneSchema = new mongoose.Schema(
   {
     // The Readable Report ID (e.g., WD-2024-001)
     workDoneId: { 
@@ -67,5 +67,5 @@ const WorkDoneSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-const WorkDoneModel = mongoose.model("WorkDone", WorkDoneSchema);
-export default WorkDoneModel;
+const WorkOrderDoneModel = mongoose.model("WorkOrderDone", WorkOrderDoneSchema);
+export default WorkOrderDoneModel;

@@ -1,8 +1,8 @@
 import IdcodeServices from "../../idcode/idcode.service.js";
 import WorkOrderRequestModel from "../../project/workorderReqIssue/workorderReqIssue.model.js";
-import WorkDoneModel from "./workorderdone.model.js";
+import WorkOrderDoneModel from "./workorderdone.model.js";
 
-class WorkDoneService {
+class WorkOrderDoneService {
 
 
     static async createWorkDone(payload) {
@@ -61,7 +61,7 @@ class WorkDoneService {
     }
     const totalQty = processedItems.length;
 
-    const workDoneEntry = new WorkDoneModel({
+    const workDoneEntry = new WorkOrderDoneModel({
       workDoneId: generatedWorkDoneId,
       tender_id: payload.tender_id,
       workOrder_id: payload.work_order_id,
@@ -160,12 +160,12 @@ class WorkDoneService {
         await Promise.all(workOrderDocs.map(doc => doc.save()));
 
         // Bulk insert all work done records
-        const inserted = await WorkDoneModel.insertMany(documents, { ordered: true });
+        const inserted = await WorkOrderDoneModel.insertMany(documents, { ordered: true });
         return inserted;
     }
 
     static async getAllWorkDoneByTender(tender_id) {
-        const reports = await WorkDoneModel.find({ tender_id })
+        const reports = await WorkOrderDoneModel.find({ tender_id })
             .select("-dailyWorkDone")
             .sort({ workDoneId: -1 });
 
@@ -173,7 +173,7 @@ class WorkDoneService {
     }
 
     static async getWorkDoneSpecific(tender_id, workDoneId) {
-        const report = await WorkDoneModel.findOne({ tender_id, workDoneId });
+        const report = await WorkOrderDoneModel.findOne({ tender_id, workDoneId });
 
         if (!report) {
             throw new Error("Work Done Report not found");
@@ -183,7 +183,7 @@ class WorkDoneService {
     }
 
     static async getWorkDoneSummaryByDate(tender_id) {
-        const summary = await WorkDoneModel.aggregate([
+        const summary = await WorkOrderDoneModel.aggregate([
             { $match: { tender_id } },
             {
                 $group: {
@@ -221,7 +221,7 @@ class WorkDoneService {
         const end = new Date(report_date);
         end.setUTCHours(23, 59, 59, 999);
 
-        const reports = await WorkDoneModel.find({
+        const reports = await WorkOrderDoneModel.find({
             tender_id,
             report_date: { $gte: start, $lte: end }
         });
@@ -234,4 +234,4 @@ class WorkDoneService {
     }
 }
 
-export default WorkDoneService;
+export default WorkOrderDoneService;
