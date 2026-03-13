@@ -17,7 +17,7 @@ const WorkItemSchema = new mongoose.Schema({
   quantity: { type: Number, required: true, default: 0 },
   unit: { type: String, required: true, default: "Nos" },
   
-  remarks: { type: String, default: "" },
+  remarks: { type: String, default: "No Remarks" },
   contractor_details: { type: String, default: "NMR" },
 
 }, { _id: true }); // Keep _id so you can edit/delete specific rows later
