@@ -7,18 +7,20 @@ class DrawingVsBOQDEService {
     { tender_id },
     { heading, abstract = [], detailed = [] },
   ) {
-    const detailedEstimate = await DrawingVsBOQDEModel.findOne({ tender_id });
     const bid = await BidModel.findOne({ tender_id });
+    if (!bid) throw new Error("Bid not found for this tender_id");
     if (bid.freezed === false) {
       throw new Error("🔒 Freeze Bid and try again 🔄");
     }
-    if (!detailedEstimate) {
-      throw new Error("Detailed estimate not found for this tender_id");
-    }
 
-    if (detailedEstimate.detailed_estimate.length === 0) {
-      detailedEstimate.detailed_estimate.push({ customheadings: [] });
-    }
+    const billOfQtyFromBid = bid.items.map((item) => ({
+      item_id: item.item_id,
+      item_name: item.item_name,
+      unit: item.unit,
+      n_rate: Number(Number(item.n_rate || 0).toFixed(2)),
+    }));
+
+    let detailedEstimate = await DrawingVsBOQDEModel.findOne({ tender_id });
 
     const headingKeyPrefix = heading.toLowerCase();
     const newHeading = {
@@ -27,7 +29,30 @@ class DrawingVsBOQDEService {
       [`${headingKeyPrefix}detailed`]: detailed,
     };
 
-    detailedEstimate.detailed_estimate[0].customheadings.push(newHeading);
+    if (!detailedEstimate) {
+      detailedEstimate = await DrawingVsBOQDEModel.create({
+        tender_id,
+        detailed_estimate: [{
+          customheadings: [newHeading],
+          generalabstract: [],
+          billofqty: billOfQtyFromBid,
+          total_spent: {},
+        }],
+      });
+      return detailedEstimate;
+    }
+
+    if (detailedEstimate.detailed_estimate.length === 0) {
+      detailedEstimate.detailed_estimate.push({
+        customheadings: [newHeading],
+        generalabstract: [],
+        billofqty: billOfQtyFromBid,
+        total_spent: {},
+      });
+    } else {
+      detailedEstimate.detailed_estimate[0].customheadings.push(newHeading);
+    }
+
     await detailedEstimate.save();
     return detailedEstimate;
   }

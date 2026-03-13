@@ -33,7 +33,7 @@ import machineryrouter from './src/module/assets/machinery/machineryasset.route.
 import siteoverheadrouter from './src/module/tender/siteoverheads/siteoverhead.route.js';
 import rateanalysisquantitesrouter from './src/module/tender/rateanalyisquantites/rateanalysisquantites.route.js';
 import scheduleLiteRouter from './src/module/project/scheduleNew/schedulelite/schedulelite.route.js';
-import workDoneRouter from './src/module/site/workdone/workdone.route.js';
+import workDoneRouter from './src/module/site/workorderdone/workorderdone.route.js';
 import billingEstimateRouter from './src/module/project/clientbilling/estimate/billingestimate.route.js';
 import billingRouter from './src/module/project/clientbilling/billing/billing.router.js';
 import steelestimaterouter from './src/module/project/clientbilling/steelestimate/steelestimate.route.js';

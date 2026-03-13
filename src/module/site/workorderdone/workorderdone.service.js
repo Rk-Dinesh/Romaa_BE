@@ -1,6 +1,6 @@
 import IdcodeServices from "../../idcode/idcode.service.js";
 import WorkOrderRequestModel from "../../project/workorderReqIssue/workorderReqIssue.model.js";
-import WorkDoneModel from "./workdone.model.js";
+import WorkDoneModel from "./workorderdone.model.js";
 
 class WorkDoneService {
 

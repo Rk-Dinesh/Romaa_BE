@@ -66,6 +66,7 @@ const RoleSchema = new mongoose.Schema(
         material_received: Actions,
         material_issued: Actions,
         stock_register: Actions,
+        workorder_done: Actions,
         work_done: Actions,
         daily_labour_report: Actions,
         machinery_entry: Actions,

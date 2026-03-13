@@ -6,7 +6,7 @@ import {
   getWorkDoneSpecific,
   getWorkDoneReportDate,
   getWorkDoneSummaryByDate
-} from "./workdone.controller.js";
+} from "./workorderdone.controller.js";
 
 const workDoneRouter = Router();
 
