@@ -34,6 +34,7 @@ const vendorSchema = new mongoose.Schema(
         uploaded_at: Date
       }
     ],
+    place_of_supply: {type:String, enum: ['InState',  'Others']},
     created_by_user: String,         // For admin log/audit
   },
   { timestamps: true }

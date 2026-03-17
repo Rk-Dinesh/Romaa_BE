@@ -137,6 +137,7 @@ class PurchaseRequestService {
       ...quoteData,
       vendorId,
       vendorName: vendor.contact_person,
+      place_of_supply: vendor.place_of_supply,
       contact: vendor.contact_phone, // ensure your VendorModel has 'contact'
       address: `${vendor.address.street}, ${vendor.address.city}, ${vendor.address.state}, ${vendor.address.country} - ${vendor.address.pincode}`,
       totalQuotedValue,
@@ -195,6 +196,7 @@ class PurchaseRequestService {
     purchaseRequest.selectedVendor = {
       vendorId: vendorQuotation.vendorId,
       vendorName: vendorQuotation.vendorName,
+      place_of_supply: vendorQuotation.place_of_supply,
       approvedQuotationId: vendorQuotation._id,
     };
 
