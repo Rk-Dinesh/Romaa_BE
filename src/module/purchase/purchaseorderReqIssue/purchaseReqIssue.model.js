@@ -63,6 +63,7 @@ const PurchaseRequestSchema = new mongoose.Schema(
           vendorName: String,
           contact: String,
           address: String,
+          place_of_supply: String,
           quotationDate: { type: Date, default: Date.now },
           quoteItems: [
             {

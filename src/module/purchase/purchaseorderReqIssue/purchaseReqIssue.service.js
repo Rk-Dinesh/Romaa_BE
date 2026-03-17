@@ -196,7 +196,6 @@ class PurchaseRequestService {
     purchaseRequest.selectedVendor = {
       vendorId: vendorQuotation.vendorId,
       vendorName: vendorQuotation.vendorName,
-      place_of_supply: vendorQuotation.place_of_supply,
       approvedQuotationId: vendorQuotation._id,
     };
 

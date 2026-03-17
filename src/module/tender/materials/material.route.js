@@ -1,13 +1,15 @@
 import { Router } from "express";
-import { 
-  addMaterialReceived, 
-  addMaterialIssued, 
-  getStockStatus, 
-  getItemLedger, 
+import {
+  addMaterialReceived,
+  addMaterialIssued,
+  getStockStatus,
+  getItemLedger,
   getMaterialList,
   getPOReceivedHistory,
   getMaterialInwardHistory,
-  getMaterialOutwardHistory
+  getMaterialOutwardHistory,
+  getAllProjectsWithGRNSummary,
+  getGRNEntriesByTender,
 } from "./material.controller.js";
 
 const materialRouter = Router();
@@ -20,5 +22,7 @@ materialRouter.get("/list/:tender_id", getMaterialList);
 materialRouter.get("/getPOReceivedHistory/:tender_id/:requestId", getPOReceivedHistory);
 materialRouter.get("/getMaterialInwardHistory/:tender_id/:item_id", getMaterialInwardHistory);
 materialRouter.get("/getMaterialOutwardHistory/:tender_id/:item_id", getMaterialOutwardHistory);
+materialRouter.get("/grn/projects", getAllProjectsWithGRNSummary);
+materialRouter.get("/grn/entries/:tender_id", getGRNEntriesByTender);
 
 export default materialRouter;

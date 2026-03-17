@@ -21,6 +21,7 @@ const WorkOrderRequestSchema = new mongoose.Schema(
     materialsRequired: [
       {
         materialName: String,
+        detailedDescription: String,
         quantity: Number,
         unit: String,
         ex_quantity: Number,
@@ -59,6 +60,7 @@ const WorkOrderRequestSchema = new mongoose.Schema(
           quoteItems: [
             {
               materialName: String,
+              detailedDescription: String,
               unit: String,
               quotedUnitRate: Number,
               quantity: Number,

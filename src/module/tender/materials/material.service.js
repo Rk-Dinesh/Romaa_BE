@@ -28,6 +28,49 @@ class MaterialService {
       const vendorName = prDoc.selectedVendor?.vendorName || "";
       const vendorId   = prDoc.selectedVendor?.vendorId   || "";
 
+      // Resolve approved quotation for quoted_rate lookup
+      const approvedQuotation = prDoc.vendorQuotations?.find(
+        (q) =>
+          String(q._id) === String(prDoc.selectedVendor?.approvedQuotationId) ||
+          (q.vendorId === vendorId && q.approvalStatus === "Approved")
+      ) || null;
+
+      // --- GRN BILL NO: TND023/26-27/0001 ---
+      const now = new Date();
+      const month = now.getMonth() + 1; // 1-12
+      const year  = now.getFullYear();
+      const fyStart = month >= 4 ? year : year - 1;
+      const fyEnd   = (fyStart + 1).toString().slice(-2);
+      const financialYear = `${fyStart.toString().slice(-2)}-${fyEnd}`;
+
+      const fyStartDate = new Date(`${fyStart}-04-01T00:00:00.000Z`);
+      const fyEndDate   = new Date(`${fyStart + 1}-03-31T23:59:59.999Z`);
+
+      // Find last GRN bill for this tender in current FY and last party bill for this vendor+tender
+      const [lastGrnDoc, lastPartyDoc] = await Promise.all([
+        MaterialTransactionModel.findOne({
+          tender_id,
+          type: "IN",
+          grn_bill_no: { $regex: `^${tender_id}/${financialYear}/` },
+        }, { grn_bill_no: 1 }).sort({ createdAt: -1 }).session(session),
+        MaterialTransactionModel.findOne({
+          tender_id,
+          vendor_id: vendorId,
+          type: "IN",
+          party_bill_no: { $regex: `^${vendorId}/${tender_id}/` },
+        }, { party_bill_no: 1 }).sort({ createdAt: -1 }).session(session),
+      ]);
+
+      const lastGrnSeq   = lastGrnDoc
+        ? parseInt(lastGrnDoc.grn_bill_no.split("/").pop(), 10)
+        : 0;
+      const lastPartySeq = lastPartyDoc
+        ? parseInt(lastPartyDoc.party_bill_no.split("/").pop(), 10)
+        : 0;
+
+      const grnBillNo   = `${tender_id}/${financialYear}/${String(lastGrnSeq + 1).padStart(4, "0")}`;
+      const partyBillNo = `${vendorId}/${tender_id}/${String(lastPartySeq + 1).padStart(3, "0")}`;
+
       const counterOps    = []; // $inc operations on stock counters (via bulkWrite)
       const hydrationOps  = []; // $set operations for empty metadata fields (via bulkWrite)
       const transactions  = []; // docs to insert into MaterialTransactionModel
@@ -88,6 +131,14 @@ class MaterialService {
           },
         });
 
+        // --- QUOTED RATE: match per item — by materialId first, then materialName ---
+        const quoteItem = approvedQuotation?.quoteItems?.find(
+          (qi) =>
+            (entry.materialId && qi.materialId === entry.materialId) ||
+            qi.materialName === entry.item_description
+        );
+        const quotedRate = quoteItem?.quotedUnitRate || 0;
+
         // --- TRANSACTION RECORD ---
         transactions.push({
           tender_id,
@@ -100,6 +151,9 @@ class MaterialService {
           site_name:            site_name  || "",
           vendor_name:          vendorName,
           vendor_id:            vendorId,
+          quoted_rate:          quotedRate,
+          grn_bill_no:          grnBillNo,
+          party_bill_no:        partyBillNo,
           invoice_challan_no:   invoice_no || "",
           received_by:          received_by || "Admin",
           remarks:              `Received against ${requestId}`,
@@ -118,6 +172,8 @@ class MaterialService {
       return {
         success: true,
         message: `Stock updated and metadata synced for: ${processedItems.join(", ")}`,
+        grn_bill_no:   grnBillNo,
+        party_bill_no: partyBillNo,
       };
     } catch (error) {
       await session.abortTransaction();
@@ -393,6 +449,83 @@ class MaterialService {
       total_issued:  item.total_issued_qty,
       current_stock: item.current_stock_on_hand,
       history,
+    };
+  }
+  /**
+   * API: Get all projects that have GRN entries
+   * Returns tender_id, project_name, total_grn_entries per tender
+   */
+  static async getAllProjectsWithGRNSummary() {
+    const summary = await MaterialTransactionModel.aggregate([
+      { $match: { type: "IN" } },
+      {
+        $group: {
+          _id: "$tender_id",
+          total_grn_entries: { $sum: 1 },
+          last_grn_date:     { $max: "$date" },
+          vendors:           { $addToSet: "$vendor_name" },
+        },
+      },
+      {
+        $lookup: {
+          from:         "tenders",
+          localField:   "_id",
+          foreignField: "tender_id",
+          as:           "tenderInfo",
+        },
+      },
+      {
+        $project: {
+          _id:               0,
+          tender_id:         "$_id",
+          project_name:      { $arrayElemAt: ["$tenderInfo.tender_project_name", 0] },
+          tender_name:       { $arrayElemAt: ["$tenderInfo.tender_name", 0] },
+          total_grn_entries: 1,
+          last_grn_date:     1,
+          vendors:           1,
+        },
+      },
+      { $sort: { last_grn_date: -1 } },
+    ]);
+
+    return summary;
+  }
+
+  /**
+   * API: Get all GRN (IN) entries for a tender with optional filters
+   * Filters: from, to, vendor_id, vendor_name, grn_bill_no, party_bill_no,
+   *          item_description, purchase_request_ref, invoice_challan_no
+   */
+  static async getGRNEntriesByTender(tender_id, filters = {}) {
+    if (!tender_id) throw new Error("tender_id is required");
+
+    const match = { tender_id, type: "IN" };
+
+    // Date range
+    if (filters.from || filters.to) {
+      match.date = {};
+      if (filters.from) match.date.$gte = new Date(filters.from);
+      if (filters.to) {
+        const end = new Date(filters.to);
+        end.setUTCHours(23, 59, 59, 999);
+        match.date.$lte = end;
+      }
+    }
+
+    if (filters.vendor_id)            match.vendor_id            = filters.vendor_id;
+    if (filters.vendor_name)          match.vendor_name          = { $regex: filters.vendor_name, $options: "i" };
+    if (filters.grn_bill_no)          match.grn_bill_no          = { $regex: filters.grn_bill_no, $options: "i" };
+    if (filters.party_bill_no)        match.party_bill_no        = { $regex: filters.party_bill_no, $options: "i" };
+    if (filters.item_description)     match.item_description     = { $regex: filters.item_description, $options: "i" };
+    if (filters.purchase_request_ref) match.purchase_request_ref = filters.purchase_request_ref;
+    if (filters.invoice_challan_no)   match.invoice_challan_no   = { $regex: filters.invoice_challan_no, $options: "i" };
+
+    const entries = await MaterialTransactionModel.find(match).sort({ date: -1 }).lean();
+
+    return {
+      tender_id,
+      total: entries.length,
+      entries,
     };
   }
 }

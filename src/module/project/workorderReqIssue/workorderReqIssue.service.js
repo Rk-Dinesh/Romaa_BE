@@ -54,6 +54,7 @@ class WorkOrderRequestService {
       ...workOrderData,
       materialsRequired: workOrderData.materialsRequired.map(m => ({
         materialName: m.materialName,
+        detailedDescription: m.detailedDescription,
         quantity: m.quantity,
         unit: m.unit,
         ex_quantity: m.quantity,

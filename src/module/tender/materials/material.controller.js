@@ -139,6 +139,42 @@ export const getMaterialInwardHistory = async (req, res) => {
     }
 }
 
+export const getAllProjectsWithGRNSummary = async (req, res) => {
+  try {
+    const data = await materialService.getAllProjectsWithGRNSummary();
+    res.status(200).json({ success: true, count: data.length, data });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+export const getGRNEntriesByTender = async (req, res) => {
+  try {
+    const { tender_id } = req.params;
+    const {
+      from, to,
+      vendor_id, vendor_name,
+      grn_bill_no, party_bill_no,
+      item_description,
+      purchase_request_ref,
+      invoice_challan_no,
+    } = req.query;
+
+    const result = await materialService.getGRNEntriesByTender(tender_id, {
+      from, to,
+      vendor_id, vendor_name,
+      grn_bill_no, party_bill_no,
+      item_description,
+      purchase_request_ref,
+      invoice_challan_no,
+    });
+
+    res.status(200).json({ success: true, total: result.total, data: result.entries });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const getMaterialOutwardHistory = async (req, res) => {
     try { 
       const { tender_id, item_id } = req.params;
