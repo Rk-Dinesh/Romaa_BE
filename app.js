@@ -49,6 +49,7 @@ import dlpRouter from './src/module/site/dlp/dlp.route.js';
 import nmrAttendanceRouter from './src/module/hr/nmrAttendance/nmrAttendance.route.js';
 import drawingVsBOQDERouter from './src/module/project/drawingvboqDE/drawingvsboqDE.route.js';
 import workdoneRouter from './src/module/site/workdone/workdone.route.js';
+import purchaseBillRouter from './src/module/finance/purchasebill/purchasebill.route.js';
 
 
 
@@ -175,6 +176,7 @@ app.use('/dlp', dlpRouter)
 app.use('/nmrattendance', nmrAttendanceRouter)
 app.use('/drawingvboqde', drawingVsBOQDERouter)
 app.use('/workdone', workdoneRouter)
+app.use('/purchasebill', purchaseBillRouter)
 
 
 

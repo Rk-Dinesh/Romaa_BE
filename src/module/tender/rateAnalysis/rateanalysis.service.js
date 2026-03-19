@@ -471,7 +471,7 @@ class WorkItemService {
           rate,
           amount,
           total_rate,
-          resouceGroup: rawRow.RESOURCE_GROUP || "",
+          resourceGroup: rawRow.RESOURCE_GROUP || "",
         };
 
         lines.push(line);
@@ -508,7 +508,7 @@ class WorkItemService {
               total_amount: 0,
               escalation_amount: 0,
               percentage_value_of_material: 0,
-              resouceGroup: line.resouceGroup || "",
+              resourceGroup: line.resourceGroup || "",
             };
             bucket.set(key, itemAgg);
           }
@@ -530,7 +530,7 @@ class WorkItemService {
                 quantity: [], // Array of numbers
                 total_item_quantity: 0,
                 unit_rate: rate,
-                resouceGroup: line.resouceGroup || "",
+                resourceGroup: line.resourceGroup || "",
                 total_amount: 0,
                 
                 // Initialize default fields required by schema
@@ -999,7 +999,7 @@ static async updateRateAnalysis(payload, tender_id) {
           rate,
           amount,
           total_rate,
-          resouceGroup: rawRow.resouceGroup || "",
+          resourceGroup: rawRow.resourceGroup || "",
         };
 
         lines.push(line);
@@ -1029,7 +1029,7 @@ static async updateRateAnalysis(payload, tender_id) {
                         quantity: [],
                         total_item_quantity: 0,
                         unit_rate: rate,
-                        resouceGroup: line.resouceGroup || "",
+                        resourceGroup: line.resourceGroup || "",
                         tax_percent: 0,
                         escalation_percent: 0,
                         tax_amount: 0,
@@ -1057,7 +1057,7 @@ static async updateRateAnalysis(payload, tender_id) {
                     quantity: [], 
                     total_item_quantity: 0,
                     unit_rate: rate,
-                    resouceGroup: line.resouceGroup || "",
+                    resourceGroup: line.resourceGroup || "",
                     total_amount: 0,
                     
                     // Initialize default fields required by schema

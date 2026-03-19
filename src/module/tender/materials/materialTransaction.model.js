@@ -25,8 +25,11 @@ const materialTransactionSchema = new mongoose.Schema(
     grn_bill_no:          { type: String, default: "" },
     party_bill_no:        { type: String, default: "" },
     invoice_challan_no:   { type: String, default: "" },
+    dc_no:                { type: String, default: "" },
     received_by:          { type: String, default: "" },
     remarks:              { type: String, default: "" },
+    is_bill_generated:    { type: Boolean, default: false },
+    purchase_bill_id:     { type: String, default: "" },
 
     // --- OUT-specific fields ---
     issued_to:        { type: String, default: "" },

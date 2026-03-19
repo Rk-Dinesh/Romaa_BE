@@ -25,6 +25,8 @@ function mapAttendanceEntries(entries = []) {
     status: e.status || "PRESENT",
     daily_wage: Number(e.daily_wage) || 0,
     remark: e.remark || "",
+    in_time: e.in_time || "",
+    out_time: e.out_time || "",
   }));
 }
 
@@ -87,8 +89,8 @@ class DLPService {
             worker_name: e.worker_name || "",
             category: e.category || "",
             status: e.status || "PRESENT",
-            in_time: "",
-            out_time: "",
+            in_time: e.in_time || "",
+            out_time: e.out_time || "",
             daily_wage: e.daily_wage || 0,
           })),
         });

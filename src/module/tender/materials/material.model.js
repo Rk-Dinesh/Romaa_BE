@@ -31,7 +31,7 @@ const MaterialItemSchema = new mongoose.Schema(
     total_item_quantity: { type: Number, default: 0 },
 
     unit_rate: { type: Number, default: 0 },
-    resouceGroup: { type: String, default: "" },
+    resourceGroup: { type: String, default: "" },
     // Budgeted Amount — recomputed by pre-save
     total_amount: { type: Number, default: 0 },
 

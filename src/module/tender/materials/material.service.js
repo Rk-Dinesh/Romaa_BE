@@ -345,7 +345,7 @@ class MaterialService {
       .select(
         "items._id items.item_description items.category items.unit items.unit_rate " +
         "items.quantity items.total_item_quantity items.total_received_qty " +
-        "items.total_issued_qty items.current_stock_on_hand items.pending_procurement_qty"
+        "items.total_issued_qty items.current_stock_on_hand items.pending_procurement_qty items.resourceGroup"
       )
       .lean();
 
@@ -362,6 +362,7 @@ class MaterialService {
       total_issued_qty:       item.total_issued_qty,
       current_stock_on_hand:  item.current_stock_on_hand,
       pending_procurement_qty: item.pending_procurement_qty,
+      resourceGroup:          item.resourceGroup,
     }));
 
     return { tender_id, count: simplifiedList.length, materials: simplifiedList };

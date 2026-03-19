@@ -16,7 +16,7 @@ const LineSchema = new Schema(
     rate: { type: Number, default: null },
     amount: { type: Number, default: null },
     total_rate: { type: Number, default: null },
-    resouceGroup: { type: String, default: "" },
+    resourceGroup: { type: String, default: "" },
   },
   { _id: false } 
 );

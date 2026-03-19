@@ -13,7 +13,7 @@ const NMRSchema = new mongoose.Schema(
         category: { type: String }, // Mason, Helper, etc.
         status: {
           type: String,
-          enum: ["PRESENT", "ABSENT", "HALF_DAY"],
+          enum: ["PRESENT", "ABSENT", "HALF_DAY","QUARTER_DAY"],
           default: "PRESENT",
         },
         in_time: String,
@@ -43,6 +43,9 @@ NMRSchema.pre("save", function (next) {
     } else if (w.status === "HALF_DAY") {
       presentCount += 0.5;
       amount += w.daily_wage / 2;
+    } else if (w.status === "QUARTER_DAY") {
+      presentCount += 0.25;
+      amount += w.daily_wage / 4;
     }
   });
 

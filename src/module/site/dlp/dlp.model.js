@@ -21,11 +21,13 @@ const attendanceEntrySchema = new mongoose.Schema({
   category: { type: String }, 
   status: { 
     type: String, 
-    enum: ["PRESENT", "ABSENT", "HALF_DAY"], 
+    enum: ["PRESENT", "ABSENT", "HALF_DAY","QUARTER_DAY"], 
     default: "PRESENT" 
   },
   daily_wage: { type: Number, default: 0 }, // Captured from Contractor's wage_fixing
   remark: { type: String, default: "" },
+  in_time: String,
+  out_time: String,
 }, { _id: false });
 
 const DailyLabourReportSchema = new mongoose.Schema(
@@ -72,6 +74,9 @@ DailyLabourReportSchema.pre("save", function (next) {
     } else if (att.status === "HALF_DAY") {
       totalHeads += 0.5;
       totalAmt += (att.daily_wage || 0) / 2;
+    } else if (att.status === "QUARTER_DAY") {
+      totalHeads += 0.25;
+      totalAmt += (att.daily_wage || 0) / 4;
     }
     // ABSENT counts as 0
   });
