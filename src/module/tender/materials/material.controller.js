@@ -175,6 +175,16 @@ export const getGRNEntriesByTender = async (req, res) => {
   }
 };
 
+export const getGRNForBilling = async (req, res) => {
+  try {
+    const { tender_id, vendor_id } = req.params;
+    const result = await materialService.getGRNForBilling(tender_id, vendor_id);
+    res.status(200).json({ success: true, total: result.total, data: result.entries });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
 export const getMaterialOutwardHistory = async (req, res) => {
     try { 
       const { tender_id, item_id } = req.params;

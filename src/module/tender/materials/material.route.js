@@ -10,6 +10,7 @@ import {
   getMaterialOutwardHistory,
   getAllProjectsWithGRNSummary,
   getGRNEntriesByTender,
+  getGRNForBilling,
 } from "./material.controller.js";
 
 const materialRouter = Router();
@@ -24,5 +25,6 @@ materialRouter.get("/getMaterialInwardHistory/:tender_id/:item_id", getMaterialI
 materialRouter.get("/getMaterialOutwardHistory/:tender_id/:item_id", getMaterialOutwardHistory);
 materialRouter.get("/grn/projects", getAllProjectsWithGRNSummary);
 materialRouter.get("/grn/entries/:tender_id", getGRNEntriesByTender);
+materialRouter.get("/grn/billing/:tender_id/:vendor_id", getGRNForBilling);
 
 export default materialRouter;

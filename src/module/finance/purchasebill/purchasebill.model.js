@@ -38,6 +38,7 @@ const PurchaseBillSchema = new mongoose.Schema(
     type:                 { type: String, default: "" }, // HSN / SAC
 
     tax_structure:        { type: TaxStructureSchema, default: () => ({}) },
+    
 
     amount:               { type: Number, default: 0 },
   },

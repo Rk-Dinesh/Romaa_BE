@@ -46,6 +46,8 @@ class VendorPermittedService {
          contact_phone: vendorDetails.contact_phone,
          contact_email: vendorDetails.email,
          contact_person: vendorDetails.contact_person,
+         credit_day: vendorDetails.credit_day,
+         place_of_supply: vendorDetails.place_of_supply,
          
         };
       })

@@ -9,6 +9,13 @@ const materialTransactionSchema = new mongoose.Schema(
     tender_id: { type: String, required: true, index: true },
     item_id:   { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
     item_description: { type: String, default: "" },
+    unit:             { type: String, default: "" },
+    taxStructure: {
+      igst: { type: Number, default: 0 },
+      cgst: { type: Number, default: 0 },
+      sgst: { type: Number, default: 0 },
+      cess: { type: Number, default: 0 },
+    },
 
     // "IN" = received from vendor, "OUT" = issued to site/labour
     type: { type: String, enum: ["IN", "OUT"], required: true },

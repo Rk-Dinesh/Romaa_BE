@@ -35,6 +35,7 @@ const vendorSchema = new mongoose.Schema(
       }
     ],
     place_of_supply: {type:String, enum: ['InState',  'Others']},
+    credit_day: { type: Number },                // Payment credit period in days
     created_by_user: String,         // For admin log/audit
   },
   { timestamps: true }

@@ -144,6 +144,13 @@ class MaterialService {
           tender_id,
           item_id:              itemSubDoc._id,
           item_description:     itemSubDoc.item_description,
+          unit:                 itemSubDoc.unit || "",
+          taxStructure: {
+            igst: itemSubDoc.taxStructure?.igst || 0,
+            cgst: itemSubDoc.taxStructure?.cgst || 0,
+            sgst: itemSubDoc.taxStructure?.sgst || 0,
+            cess: itemSubDoc.taxStructure?.cess || 0,
+          },
           type:                 "IN",
           quantity:             qty,
           date:                 new Date(entry.ordered_date || Date.now()),
@@ -528,6 +535,25 @@ class MaterialService {
       total: entries.length,
       entries,
     };
+  }
+  /**
+   * API: Get GRN entries for billing — filtered by tender_id + vendor_id,
+   * only type:IN and is_bill_generated:false
+   */
+  static async getGRNForBilling(tender_id, vendor_id) {
+    if (!tender_id) throw new Error("tender_id is required");
+    if (!vendor_id) throw new Error("vendor_id is required");
+
+    const entries = await MaterialTransactionModel.find({
+      tender_id,
+      vendor_id,
+      type: "IN",
+      is_bill_generated: false,
+    })
+      .sort({ date: -1 })
+      .lean();
+
+    return { tender_id, vendor_id, total: entries.length, entries };
   }
 }
 
