@@ -50,6 +50,7 @@ import nmrAttendanceRouter from './src/module/hr/nmrAttendance/nmrAttendance.rou
 import drawingVsBOQDERouter from './src/module/project/drawingvboqDE/drawingvsboqDE.route.js';
 import workdoneRouter from './src/module/site/workdone/workdone.route.js';
 import purchaseBillRouter from './src/module/finance/purchasebill/purchasebill.route.js';
+import weeklyBillingRouter from './src/module/finance/weeklyBilling/weeklyBilling.route.js';
 
 
 
@@ -177,6 +178,7 @@ app.use('/nmrattendance', nmrAttendanceRouter)
 app.use('/drawingvboqde', drawingVsBOQDERouter)
 app.use('/workdone', workdoneRouter)
 app.use('/purchasebill', purchaseBillRouter)
+app.use('/weeklybilling', weeklyBillingRouter)
 
 
 

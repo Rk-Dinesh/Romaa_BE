@@ -1,21 +1,22 @@
 import PurchaseBillService from "./purchasebill.service.js";
 
-export const createPurchaseBill = async (req, res) => {
+// GET /purchasebill/next-id
+export const getNextDocId = async (_req, res) => {
   try {
-    const body = req.body;
-
-    // Bulk: array body or { bills: [...] }
-    const isBulk = Array.isArray(body) || Array.isArray(body.bills);
-    const items  = isBulk ? (Array.isArray(body) ? body : body.bills) : null;
-
-    if (isBulk) {
-      const data = await PurchaseBillService.createPurchaseBillBulk(items);
-      return res.status(201).json({ status: true, message: `${data.length} purchase bill(s) created`, count: data.length, data });
-    }
-
-    const data = await PurchaseBillService.createPurchaseBill(body);
-    return res.status(201).json({ status: true, message: "Purchase bill created", data });
+    const data = await PurchaseBillService.getNextDocId();
+    res.status(200).json({ status: true, ...data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// POST /purchasebill/create
+export const createPurchaseBill = async (req, res) => {
+  try {
+    const data = await PurchaseBillService.createPurchaseBill(req.body);
+    res.status(201).json({ status: true, message: "Purchase bill created", data });
+  } catch (error) {
+    const code = error.message.includes("required") || error.message.includes("already exists") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
   }
 };

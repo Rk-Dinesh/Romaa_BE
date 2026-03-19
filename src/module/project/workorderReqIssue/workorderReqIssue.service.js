@@ -248,7 +248,7 @@ class WorkOrderRequestService {
     const vendorQuotation = {
       ...quoteData,
       vendorId,
-      vendorName: vendor.contact_person,
+      vendorName: vendor.company_name,
       contact: vendor.contact_phone, // ensure your VendorModel has 'contact'
       address: `${vendor.address.street}, ${vendor.address.city}, ${vendor.address.state}, ${vendor.address.country} - ${vendor.address.pincode}`,
       totalQuotedValue,

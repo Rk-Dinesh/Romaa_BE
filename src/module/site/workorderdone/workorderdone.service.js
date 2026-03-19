@@ -22,20 +22,25 @@ class WorkOrderDoneService {
 
     const processedItems = (payload.dailyWorkDone || []).map((item) => ({
       item_description: item.item_description,
+      description: item.description,
       
       dimensions: {
+        no1: Number(item.dimensions?.no1) || Number(item.no1) || 0,
+        no2: Number(item.dimensions?.no2) || Number(item.no2) || 0,
         length: Number(item.dimensions?.length) || Number(item.length) || 0,
         breadth: Number(item.dimensions?.breadth) || Number(item.breadth) || 0,
         height: Number(item.dimensions?.height) || Number(item.height) || 0,
       },
 
       quantity: Number(item.quantity) || 0,
+      quoted_rate: Number(item.quoted_rate) || Number(item.quoted_rate) || 0,
       unit: item.unit || "Nos",
       remarks: item.remarks || "",
       contractor_details: item.contractor_details || "NMR",
       
       workDoneId: generatedWorkDoneId, 
       tender_id: payload.tender_id,
+      vendor_name: payload.vendor_name,
       report_date: payload.report_date ? new Date(payload.report_date) : new Date(),
       status: "Submitted",
     }));
@@ -65,6 +70,7 @@ class WorkOrderDoneService {
       workDoneId: generatedWorkDoneId,
       tender_id: payload.tender_id,
       workOrder_id: payload.work_order_id,
+      vendor_name: payload.vendor_name,
       report_date: payload.report_date ? new Date(payload.report_date) : new Date(),
       status: "Submitted",
       dailyWorkDone: processedItems,
@@ -115,12 +121,16 @@ class WorkOrderDoneService {
 
             const processedItems = (payload.dailyWorkDone || []).map(item => ({
                 item_description: item.item_description,
+                description: item.description,
                 dimensions: {
+                    no1: Number(item.dimensions?.no1) || Number(item.no1) || 0,
+                    no2: Number(item.dimensions?.no2) || Number(item.no2) || 0,
                     length: Number(item.dimensions?.length) || Number(item.length) || 0,
                     breadth: Number(item.dimensions?.breadth) || Number(item.breadth) || 0,
                     height: Number(item.dimensions?.height) || Number(item.height) || 0,
                 },
                 quantity: Number(item.quantity) || 0,
+                quoted_rate: Number(item.quoted_rate) || 0,
                 unit: item.unit || "Nos",
                 remarks: item.remarks || "",
                 contractor_details: item.contractor_details || "NMR",
@@ -148,6 +158,7 @@ class WorkOrderDoneService {
                 workDoneId: generatedWorkDoneId,
                 tender_id: payload.tender_id,
                 workOrder_id: payload.work_order_id,
+                vendor_name: payload.vendor_name,
                 report_date: payload.report_date ? new Date(payload.report_date) : new Date(),
                 status: "Submitted",
                 dailyWorkDone: processedItems,
