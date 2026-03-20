@@ -1,14 +1,12 @@
 import service from "./weeklyBilling.service.js";
 
-// ── Helper ─────────────────────────────────────────────────────────────────────
- const ok  = (res, data, msg = "Success", code = 200) =>
+const ok   = (res, data, msg = "Success", code = 200) =>
   res.status(code).json({ status: true, message: msg, data });
 
 const fail = (res, msg = "Error", code = 500) =>
-  res.status(code).json({ status: false, error: msg });
+  res.status(code).json({ status: false, message: msg });
 
-// ── GET /weeklyBilling/api/list/:tenderId ──────────────────────────────────────
-// Returns all generated bills for the given tender, newest first
+// ── GET /weeklyBilling/api/list/:tenderId ─────────────────────────────────────
 export const getBillingList = async (req, res) => {
   try {
     const { tenderId } = req.params;
@@ -17,14 +15,43 @@ export const getBillingList = async (req, res) => {
     const data = await service.getBillingList(tenderId);
     return ok(res, data);
   } catch (err) {
-    console.error("[WeeklyBilling] getBillingList:", err.message);
+    return fail(res, err.message, err.statusCode || 500);
+  }
+};
+
+// ── GET /weeklyBilling/api/detail/:billNo ─────────────────────────────────────
+// Returns the bill header + all line-item transactions
+export const getBillDetail = async (req, res) => {
+  try {
+    const { billNo } = req.params;
+    if (!billNo) return fail(res, "billNo is required", 400);
+
+    const data = await service.getBillDetail(decodeURIComponent(billNo));
+    if (!data) return fail(res, "Bill not found", 404);
+
+    return ok(res, data);
+  } catch (err) {
+    return fail(res, err.message, err.statusCode || 500);
+  }
+};
+
+// ── GET /weeklyBilling/api/sub-bill/:subBillNo ────────────────────────────────
+// Returns all line-item transactions for a single sub-bill
+export const getSubBillTransactions = async (req, res) => {
+  try {
+    const { subBillNo } = req.params;
+    if (!subBillNo) return fail(res, "subBillNo is required", 400);
+
+    const data = await service.getSubBillTransactions(decodeURIComponent(subBillNo));
+    return ok(res, data);
+  } catch (err) {
     return fail(res, err.message, err.statusCode || 500);
   }
 };
 
 // ── GET /weeklyBilling/api/vendor-summary/:tenderId?fromDate=&toDate= ──────────
-// Returns work-done records grouped by vendor with totals for the date range.
-// Used to populate the "Generate Bill" modal.
+// Returns work-done records grouped by vendor → work_order, ready for the
+// "Generate Bill" modal.
 export const getVendorSummary = async (req, res) => {
   try {
     const { tenderId }         = req.params;
@@ -38,73 +65,66 @@ export const getVendorSummary = async (req, res) => {
     const data = await service.getVendorSummary(tenderId, fromDate, toDate);
     return ok(res, data);
   } catch (err) {
-    console.error("[WeeklyBilling] getVendorSummary:", err.message);
     return fail(res, err.message, err.statusCode || 500);
   }
 };
 
 // ── POST /weeklyBilling/api/generate ──────────────────────────────────────────
-// Validates payload, checks for duplicates, saves the bill.
+// Body:
+// {
+//   tender_id, vendor_id, vendor_name, from_date, to_date, gst_pct,
+//   sub_bills: [
+//     {
+//       work_order_id,
+//       work_done_ids: [],
+//       items: [{ work_order_id, work_done_id, item_description, description,
+//                 quantity, unit, quoted_rate, amount }],
+//       sub_base_amount  // optional
+//     }
+//   ],
+//   created_by
+// }
 export const generateBill = async (req, res) => {
   try {
     const {
       tender_id,
+      vendor_id,
       vendor_name,
       from_date,
       to_date,
-      base_amount,
       gst_pct,
-      gst_amount,
-      total_amount,
-      work_order_ids,
-      work_done_ids,
-      items,
+      sub_bills,
       created_by,
     } = req.body;
 
-    // Required field validation
     if (!tender_id)   return fail(res, "tender_id is required",   400);
+    if (!vendor_id)   return fail(res, "vendor_id is required",   400);
     if (!vendor_name) return fail(res, "vendor_name is required", 400);
     if (!from_date)   return fail(res, "from_date is required",   400);
     if (!to_date)     return fail(res, "to_date is required",     400);
-
     if (new Date(from_date) > new Date(to_date))
       return fail(res, "from_date must be before to_date", 400);
-
-    if (!items || items.length === 0)
-      return fail(res, "Bill must have at least one item", 400);
-
-    if (gst_pct < 0 || gst_pct > 100)
-      return fail(res, "gst_pct must be between 0 and 100", 400);
+    if (!Array.isArray(sub_bills) || sub_bills.length === 0)
+      return fail(res, "sub_bills must be a non-empty array", 400);
 
     const bill = await service.generateBill({
-      tender_id,
-      vendor_name,
-      from_date,
-      to_date,
-      base_amount,
-      gst_pct,
-      gst_amount,
-      total_amount,
-      work_order_ids,
-      work_done_ids,
-      items,
-      created_by,
+      tender_id, vendor_id, vendor_name,
+      from_date, to_date, gst_pct,
+      sub_bills, created_by,
     });
 
     return ok(res, bill, "Bill generated successfully", 201);
   } catch (err) {
-    console.error("[WeeklyBilling] generateBill:", err.message);
     return fail(res, err.message, err.statusCode || 500);
   }
 };
 
-// ── PATCH /weeklyBilling/api/status/:billId ────────────────────────────────────
-// Update status: Generated → Pending → Paid | Cancelled
+// ── PATCH /weeklyBilling/api/status/:billId ───────────────────────────────────
+// Updates bill status and syncs all child transactions.
 export const updateStatus = async (req, res) => {
   try {
-    const { billId }  = req.params;
-    const { status }  = req.body;
+    const { billId } = req.params;
+    const { status } = req.body;
 
     if (!status) return fail(res, "status is required", 400);
 
@@ -113,9 +133,6 @@ export const updateStatus = async (req, res) => {
 
     return ok(res, updated, `Bill status updated to ${status}`);
   } catch (err) {
-    console.error("[WeeklyBilling] updateStatus:", err.message);
     return fail(res, err.message, err.statusCode || 500);
   }
 };
-
-

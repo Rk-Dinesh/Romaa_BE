@@ -71,6 +71,23 @@ const WorkOrderDoneSchema = new mongoose.Schema(
       enum: ["Draft", "Submitted", "Approved", "Rejected"],
       default: "Submitted",
     },
+    is_bill_generated: {
+      type: Boolean,
+      default: false,
+    },
+    is_sub_bill_generated: {
+      type: Boolean,
+      default: false,
+    },
+   bill_no: {
+    type: String,
+    default: "",
+   },
+   sub_bill_no: {
+    type: String,
+    default: "",
+   },
+
   },
   { timestamps: true },
 );
