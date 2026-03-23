@@ -9,24 +9,16 @@ const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
 // ── Embedded sub-schemas ──────────────────────────────────────────────────────
 
-// One row per GRN linked to this bill
-const GrnRowSchema = new mongoose.Schema(
-  {
-    grn_no:   { type: String, default: "" },  // grn_bill_no from MaterialTransaction
-    grn_ref:  { type: mongoose.Schema.Types.ObjectId, ref: "MaterialTransaction", default: null },
-    ref_date: { type: Date,   default: null },
-    grn_qty:  { type: Number, default: 0 },
-  },
-  { _id: false }
-);
-
-// One row per material item — tax amounts are derived by pre-save from the pct fields
+// One row per line item — includes GRN reference and material detail
 const LineItemSchema = new mongoose.Schema(
   {
+    grn_no:           { type: String, default: "" },  // grn_bill_no from MaterialTransaction
+    grn_ref:          { type: mongoose.Schema.Types.ObjectId, ref: "MaterialTransaction", default: null },
+    ref_date:         { type: Date,   default: null },
     item_id:          { type: mongoose.Schema.Types.ObjectId, ref: "Material", default: null },
     item_description: { type: String, default: "" },
     unit:             { type: String, default: "" },
-    accepted_qty:     { type: Number, default: 0 },
+    accepted_qty:     { type: Number, default: 0 },  // same as grn_qty
     unit_price:       { type: Number, default: 0 }, // quoted_rate from GRN
     gross_amt:        { type: Number, default: 0 }, // accepted_qty × unit_price
     cgst_pct:         { type: Number, default: 0 },
@@ -106,8 +98,6 @@ const PurchaseBillSchema = new mongoose.Schema(
     tax_mode:        { type: String, enum: ["instate", "otherstate"],    default: "instate" },
 
     // ── Bill detail arrays (bounded, sealed at creation) ──────────────────────
-    grn_rows: { type: [GrnRowSchema], default: [] },
-
     // Validator: a bill must have at least one line item
     line_items: {
       type: [LineItemSchema],

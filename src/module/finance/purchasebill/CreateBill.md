@@ -34,8 +34,7 @@ Once GRN is picked, the Tender, Vendor, and Credit Days fields are **locked** (r
 
 | State | Type | Description |
 |-------|------|-------------|
-| `grnRows` | `GrnRow[]` | Linked GRN entries (populated from picker) |
-| `itemRows` | `ItemRow[]` | Line items (populated from picker) |
+| `itemRows` | `ItemRow[]` | Line items — includes GRN reference fields (`grn_no`, `grn_ref`, `ref_date`) merged with material detail |
 | `selectedTenderId` | `string` | Currently selected tender ID |
 | `selectedVendorId` | `string` | Currently selected vendor ID |
 | `selectedPlaceOfSupply` | `string` | `"InState"` or `"Others"` — drives tax mode |
@@ -47,7 +46,7 @@ Once GRN is picked, the Tender, Vendor, and Credit Days fields are **locked** (r
 | Derived | Logic | Effect |
 |---------|-------|--------|
 | `isInState` | `selectedPlaceOfSupply === "InState"` | `true` → CGST + SGST; `false` → IGST |
-| `grnLocked` | `grnRows[0].grn_no !== ""` | Locks Tender, Vendor, Credit Days fields after GRN pick |
+| `grnLocked` | `itemRows[0].grn_no !== ""` | Locks Tender, Vendor, Credit Days fields after GRN pick |
 
 ---
 
@@ -103,8 +102,7 @@ Triggers via:
 - Press **Enter** (when entries selected) or click **Link GRNs** to confirm
 
 On confirm (`handleGrnPickerConfirm`):
-- Populates `grnRows` from `grn_bill_no`, `party_bill_no`, `date`, `quantity`
-- Populates `itemRows` from `item_description`, `unit`, `quantity`, `quoted_rate`
+- Populates `itemRows` with GRN fields (`grn_no` ← `grn_bill_no`, `grn_ref` ← `_id`, `ref_date` ← `date`) merged with material fields (`item_description`, `unit`, `accepted_qty` ← `quantity`, `unit_price` ← `quoted_rate`)
 - Tax rates read from GRN entry with fallback chain:
   ```
   e.tax_structure?.cgst ?? e.taxStructure?.cgst ?? e.cgst_pct ?? e.cgst ?? 0
@@ -191,8 +189,7 @@ After GRN is confirmed:
   "place_of_supply": "InState",
   "tax_mode": "instate",
   "due_date": "2026-04-18",
-  "grn_rows": [{ "grn_no": "", "grn_ref_no": "", "ref_date": "", "grn_qty": "" }],
-  "line_items": [{ "item_id": "", "unit": "", "accepted_qty": "", "unit_price": "", "gross_amt": "", "net_amt": "", "cgst_pct": 9, "sgst_pct": 9, "igst_pct": 0 }],
+  "line_items": [{ "grn_no": "", "grn_ref": "", "ref_date": "", "item_id": "", "unit": "", "accepted_qty": "", "unit_price": "", "gross_amt": "", "net_amt": "", "cgst_pct": 9, "sgst_pct": 9, "igst_pct": 0 }],
   "tax_groups": [{ "cgst_pct": 9, "sgst_pct": 9, "taxable": 1000, "cgstAmt": 90, "sgstAmt": 90 }],
   "total_tax": 180,
   "additional_charges": [{ "type": "Transport", "amount": 500, "gst_pct": 18, "net": 590 }],
@@ -224,5 +221,4 @@ After GRN is confirmed:
 | `toWords(n)` | Converts integer to Indian number words (Lakh, Thousand, Hundred…) |
 | `toWordsRupees(n)` | Wraps `toWords` → `"Rupees X Only"` |
 | `fmt(n)` | `n.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })` |
-| `emptyGrnRow()` | Returns a blank GRN row object |
-| `emptyItemRow()` | Returns a blank line item row object (includes `cgst_pct`, `sgst_pct`, `igst_pct`) |
+| `emptyItemRow()` | Returns a blank line item row object (includes `grn_no`, `grn_ref`, `ref_date`, `cgst_pct`, `sgst_pct`, `igst_pct`) |

@@ -43,7 +43,7 @@ GET /purchasebill/next-id
 ## 2. List Purchase Bills
 
 Returns a filtered, pageable list of bills. All query params are optional and combinable.
-Heavy arrays (`line_items`, `tax_groups`, `grn_rows`, `additional_charges`) are **excluded** from this response — use the detail endpoint for those.
+Heavy arrays (`line_items`, `tax_groups`, `additional_charges`) are **excluded** from this response — use the detail endpoint for those.
 
 ```
 GET /purchasebill/list
@@ -131,7 +131,7 @@ GET /purchasebill/list?tender_id=TND-001&from_date=2025-04-01&to_date=2026-03-31
 
 ## 3. Bills by Tender (Full Detail)
 
-Returns **all bills** for a specific tender with complete details including `line_items`, `tax_groups`, `grn_rows`, and `additional_charges`. All filters are optional and combinable.
+Returns **all bills** for a specific tender with complete details including `line_items`, `tax_groups`, and `additional_charges`. All filters are optional and combinable.
 
 ```
 GET /purchasebill/by-tender/:tenderId
@@ -180,11 +180,11 @@ GET /purchasebill/by-tender/TND-001?vendor_id=VND-002&status=approved
       "vendor_gstin": "27AABCU9603R1ZX",
       "place_of_supply": "InState",
       "tax_mode": "instate",
-      "grn_rows": [
-        { "grn_no": "GRN-0042", "ref_date": "2026-03-10T00:00:00.000Z", "grn_qty": 50 }
-      ],
       "line_items": [
         {
+          "grn_no": "GRN-0042",
+          "grn_ref": "67a1b2c3d4e5f6a7b8c9d0e3",
+          "ref_date": "2026-03-10T00:00:00.000Z",
           "item_description": "Cement OPC 53 Grade",
           "unit": "Bags",
           "accepted_qty": 50,
@@ -379,17 +379,11 @@ Content-Type: application/json
 
   "tax_mode":        "instate",
 
-  "grn_rows": [
-    {
-      "grn_no":   "GRN-0042",
-      "grn_ref":  "67a1b2c3d4e5f6a7b8c9d0e3",
-      "ref_date": "2026-03-10",
-      "grn_qty":  50
-    }
-  ],
-
   "line_items": [
     {
+      "grn_no":           "GRN-0042",
+      "grn_ref":          "67a1b2c3d4e5f6a7b8c9d0e3",
+      "ref_date":         "2026-03-10",
       "item_id":          "67a1b2c3d4e5f6a7b8c9d0e4",
       "item_description": "Cement OPC 53 Grade",
       "unit":             "Bags",
@@ -445,23 +439,17 @@ Content-Type: application/json
 | `tax_mode` | `"instate" \| "otherstate"` | No | Tax mode |
 | `status` | `"draft" \| "pending" \| "approved" \| "paid"` | No | Defaults to `"pending"` |
 
-#### `grn_rows[]`
+#### `line_items[]` — minimum 1 item required
 
 | Field | Type | Description |
 |---|---|---|
 | `grn_no` | `string` | GRN bill number from MaterialTransaction |
 | `grn_ref` | `ObjectId` | `_id` of the MaterialTransaction document |
 | `ref_date` | `date` | GRN date |
-| `grn_qty` | `number` | Quantity received in this GRN |
-
-#### `line_items[]` — minimum 1 item required
-
-| Field | Type | Description |
-|---|---|---|
 | `item_id` | `ObjectId` | `_id` of the Material document |
 | `item_description` | `string` | Material name / description |
 | `unit` | `string` | Unit of measurement |
-| `accepted_qty` | `number` | Quantity accepted from GRN |
+| `accepted_qty` | `number` | Quantity received and accepted (same as GRN qty) |
 | `unit_price` | `number` | Rate per unit (quoted_rate from GRN) |
 | `gross_amt` | `number` | `accepted_qty × unit_price` |
 | `cgst_pct` | `number` | CGST rate % |
@@ -539,11 +527,11 @@ purchase_bill_id:  "<doc_id>"
     "vendor_gstin": "27AABCU9603R1ZX",
     "place_of_supply": "InState",
     "tax_mode": "instate",
-    "grn_rows": [
-      { "grn_no": "GRN-0042", "ref_date": "2026-03-10T00:00:00.000Z", "grn_qty": 50 }
-    ],
     "line_items": [
       {
+        "grn_no": "GRN-0042",
+        "grn_ref": "67a1b2c3d4e5f6a7b8c9d0e3",
+        "ref_date": "2026-03-10T00:00:00.000Z",
         "item_description": "Cement OPC 53 Grade",
         "unit": "Bags",
         "accepted_qty": 50,

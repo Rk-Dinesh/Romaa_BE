@@ -29,18 +29,14 @@ function buildDoc(payload, doc_id) {
     place_of_supply: payload.place_of_supply || "InState",
     tax_mode:        payload.tax_mode        || "instate",
 
-    grn_rows: (payload.grn_rows || []).map((r) => ({
-      grn_no:   r.grn_no  || "",
-      grn_ref:  r.grn_ref || null,
-      ref_date: r.ref_date ? new Date(r.ref_date) : null,
-      grn_qty:  Number(r.grn_qty) || 0,
-    })),
-
     // Only pass source fields — pre-save derives cgst_amt, sgst_amt, igst_amt, net_amt
     line_items: (payload.line_items || []).map((i) => ({
-      item_id:          i.item_id          || null,
-      item_description: i.item_description || "",
-      unit:             i.unit             || "",
+      grn_no:           i.grn_no            || "",
+      grn_ref:          i.grn_ref           || null,
+      ref_date:         i.ref_date ? new Date(i.ref_date) : null,
+      item_id:          i.item_id           || null,
+      item_description: i.item_description  || "",
+      unit:             i.unit              || "",
       accepted_qty:     Number(i.accepted_qty) || 0,
       unit_price:       Number(i.unit_price)   || 0,
       gross_amt:        Number(i.gross_amt)    || 0,
@@ -63,11 +59,11 @@ function buildDoc(payload, doc_id) {
 
 // ── Mark linked GRN transactions as billed ────────────────────────────────────
 
-async function markGRNsBilled(grn_rows, doc_id) {
-  if (!grn_rows || grn_rows.length === 0) return;
+async function markGRNsBilled(line_items, doc_id) {
+  if (!line_items || line_items.length === 0) return;
 
-  const refs  = grn_rows.map((r) => r.grn_ref).filter(Boolean);
-  const names = grn_rows.map((r) => r.grn_no).filter(Boolean);
+  const refs  = line_items.map((r) => r.grn_ref).filter(Boolean);
+  const names = line_items.map((r) => r.grn_no).filter(Boolean);
   if (refs.length === 0 && names.length === 0) return;
 
   const filter = { type: "IN" };
@@ -113,7 +109,7 @@ class PurchaseBillService {
 
   // GET /purchasebill/list
   // All filters are optional and combinable.
-  // Returns summary fields only — line_items / tax_groups / grn_rows excluded.
+  // Returns summary fields only — line_items / tax_groups excluded.
   static async getBills(filters = {}) {
     const query = {};
 
@@ -287,7 +283,7 @@ class PurchaseBillService {
     const saved = await PurchaseBillModel.create(buildDoc(payload, payload.doc_id));
 
     // Mark every linked GRN transaction as billed
-    await markGRNsBilled(saved.grn_rows, saved.doc_id);
+    await markGRNsBilled(saved.line_items, saved.doc_id);
 
     return saved;
   }
