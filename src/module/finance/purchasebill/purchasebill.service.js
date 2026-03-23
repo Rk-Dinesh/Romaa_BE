@@ -1,5 +1,6 @@
 import PurchaseBillModel from "./purchasebill.model.js";
 import MaterialTransactionModel from "../../tender/materials/materialTransaction.model.js";
+import VendorModel from "../../purchase/vendor/vendor.model.js";
 
 // ── Build document from payload ───────────────────────────────────────────────
 // Only source fields are mapped here.
@@ -110,13 +111,177 @@ class PurchaseBillService {
     return { doc_id, is_first };
   }
 
+  // GET /purchasebill/list
+  // All filters are optional and combinable.
+  // Returns summary fields only — line_items / tax_groups / grn_rows excluded.
+  static async getBills(filters = {}) {
+    const query = {};
+
+    if (filters.doc_id)    query.doc_id    = filters.doc_id;
+    if (filters.tender_id) query.tender_id = filters.tender_id;
+    if (filters.vendor_id) query.vendor_id = filters.vendor_id;
+    if (filters.tax_mode)  query.tax_mode  = filters.tax_mode;
+    if (filters.invoice_no) query.invoice_no = { $regex: filters.invoice_no, $options: "i" };
+    if (filters.status)    query.status    = filters.status;
+
+    if (filters.from_date || filters.to_date) {
+      query.doc_date = {};
+      if (filters.from_date) query.doc_date.$gte = new Date(filters.from_date);
+      if (filters.to_date) {
+        const to = new Date(filters.to_date);
+        to.setHours(23, 59, 59, 999);
+        query.doc_date.$lte = to;
+      }
+    }
+
+    return await PurchaseBillModel.find(query)
+      .select(
+        "doc_id doc_date invoice_no invoice_date due_date credit_days " +
+        "tender_id tender_name " +
+        "vendor_id vendor_name vendor_gstin " +
+        "place_of_supply tax_mode status " +
+        "grand_total total_tax net_amount round_off " +
+        "createdAt"
+      )
+      .sort({ doc_date: -1, createdAt: -1 })
+      .lean();
+  }
+
+  // GET /purchasebill/by-tender/:tenderId?status=&vendor_id=&from_date=&to_date=&invoice_no=
+  // All bills for a tender with full details — no pagination.
+  static async getBillsByTender(tenderId, filters = {}) {
+    const query = { tender_id: tenderId };
+
+    if (filters.status)     query.status     = filters.status;
+    if (filters.vendor_id)  query.vendor_id  = filters.vendor_id;
+    if (filters.tax_mode)   query.tax_mode   = filters.tax_mode;
+    if (filters.invoice_no) query.invoice_no = { $regex: filters.invoice_no, $options: "i" };
+
+    if (filters.from_date || filters.to_date) {
+      query.doc_date = {};
+      if (filters.from_date) query.doc_date.$gte = new Date(filters.from_date);
+      if (filters.to_date) {
+        const to = new Date(filters.to_date);
+        to.setHours(23, 59, 59, 999);
+        query.doc_date.$lte = to;
+      }
+    }
+
+    return await PurchaseBillModel.find(query)
+      .sort({ doc_date: -1, createdAt: -1 })
+      .lean();
+  }
+
+  // GET /purchasebill/summary/:tenderId
+  // Aggregate totals + status breakdown for a single tender.
+  static async getTenderSummary(tenderId) {
+    const [agg] = await PurchaseBillModel.aggregate([
+      { $match: { tender_id: tenderId } },
+      {
+        $facet: {
+          totals: [
+            { $match: { status: { $ne: "draft" } } },
+            {
+              $group: {
+                _id:         null,
+                total_bills: { $sum: 1 },
+                total_grand: { $sum: "$grand_total" },
+                total_tax:   { $sum: "$total_tax" },
+                total_net:   { $sum: "$net_amount" },
+              },
+            },
+          ],
+          by_status: [
+            { $group: { _id: "$status", count: { $sum: 1 }, net_amount: { $sum: "$net_amount" } } },
+            { $sort: { _id: 1 } },
+          ],
+          recent: [
+            { $sort: { doc_date: -1, createdAt: -1 } },
+            { $limit: 5 },
+            { $project: { doc_id: 1, doc_date: 1, invoice_no: 1, vendor_name: 1, net_amount: 1, status: 1, due_date: 1 } },
+          ],
+        },
+      },
+    ]);
+
+    const totals = agg.totals[0] || { total_bills: 0, total_grand: 0, total_tax: 0, total_net: 0 };
+
+    return {
+      tender_id:   tenderId,
+      total_bills: totals.total_bills,
+      total_grand: totals.total_grand,
+      total_tax:   totals.total_tax,
+      total_net:   totals.total_net,
+      by_status:   agg.by_status,
+      recent:      agg.recent,
+    };
+  }
+
+  // GET /purchasebill/summary-all
+  // One summary row per tender — for the finance overview table.
+  // Each row: tender_id, tender_name, total_bills, total_grand, total_tax,
+  //           total_net, pending_amount, paid_amount, latest_bill_date
+  static async getAllTendersSummary() {
+    return await PurchaseBillModel.aggregate([
+      // Only non-draft bills contribute to financials
+      {
+        $group: {
+          _id:               "$tender_id",
+          tender_name:       { $first: "$tender_name" },
+          total_bills:       { $sum: 1 },
+          total_grand:       { $sum: "$grand_total" },
+          total_tax:         { $sum: "$total_tax" },
+          total_net:         { $sum: "$net_amount" },
+          pending_amount: {
+            $sum: { $cond: [{ $eq: ["$status", "pending"] }, "$net_amount", 0] },
+          },
+          approved_amount: {
+            $sum: { $cond: [{ $eq: ["$status", "approved"] }, "$net_amount", 0] },
+          },
+          paid_amount: {
+            $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$net_amount", 0] },
+          },
+          latest_bill_date:  { $max: "$doc_date" },
+        },
+      },
+      {
+        $project: {
+          _id:              0,
+          tender_id:        "$_id",
+          tender_name:      1,
+          total_bills:      1,
+          total_grand:      1,
+          total_tax:        1,
+          total_net:        1,
+          pending_amount:   1,
+          approved_amount:  1,
+          paid_amount:      1,
+          latest_bill_date: 1,
+        },
+      },
+      { $sort: { latest_bill_date: -1 } },
+    ]);
+  }
+
   static async createPurchaseBill(payload) {
     if (!payload.doc_id) throw new Error("doc_id is required");
+    if (!payload.vendor_id) throw new Error("vendor_id is required");
 
     if (payload.invoice_no) {
       const duplicate = await PurchaseBillModel.exists({ invoice_no: payload.invoice_no });
       if (duplicate) throw new Error(`Invoice number '${payload.invoice_no}' already exists`);
     }
+
+    // Auto-fill vendor fields from VendorModel
+    const vendor = await VendorModel.findOne({ vendor_id: payload.vendor_id }).lean();
+    if (!vendor) throw new Error(`Vendor '${payload.vendor_id}' not found`);
+
+    payload.vendor_ref      = vendor._id;
+    payload.vendor_name     = vendor.company_name;
+    payload.vendor_gstin    = vendor.gstin    || "";
+    payload.place_of_supply = vendor.place_of_supply || "InState";
+    // Auto-fill credit_days from vendor master if not explicitly provided
+    if (!payload.credit_days) payload.credit_days = vendor.credit_day || 0;
 
     // create() triggers the pre-save hook which computes all derived fields
     const saved = await PurchaseBillModel.create(buildDoc(payload, payload.doc_id));
