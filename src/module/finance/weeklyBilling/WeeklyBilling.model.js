@@ -28,8 +28,8 @@ const WeeklyBillingSchema = new mongoose.Schema(
     bill_date: { type: Date, default: Date.now },
 
     tender_id:   { type: String, required: true, index: true },
-    vendor_id:   { type: String, required: true },
-    vendor_name: { type: String, required: true },
+    contractor_id:   { type: String, required: true },
+    contractor_name: { type: String, required: true },
     fin_year:    { type: String }, // "25-26" — auto-set in pre-save hook
 
     from_date: { type: Date, required: true },
@@ -71,7 +71,7 @@ WeeklyBillingSchema.pre("save", function (next) {
 });
 
 // Index for duplicate-bill check and list queries
-WeeklyBillingSchema.index({ tender_id: 1, vendor_name: 1, from_date: 1, to_date: 1 });
+WeeklyBillingSchema.index({ tender_id: 1, contractor_name: 1, from_date: 1, to_date: 1 });
 WeeklyBillingSchema.index({ tender_id: 1, fin_year: 1 });
 
 const WeeklyBillingModel = mongoose.model("WeeklyBilling", WeeklyBillingSchema);

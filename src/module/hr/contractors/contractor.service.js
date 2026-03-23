@@ -30,6 +30,13 @@ class ContractorService {
     );
   }
 
+  static async getContractorsByTenderId(tender_id) {
+    return await ContractorModel.find({
+      isDeleted: { $ne: true },
+      "assigned_projects.tender_id": tender_id,
+    }).select("contractor_id contractor_name contact_phone contact_email business_type status place_of_supply credit_day");
+  }
+
   static async getAllContractorsSelectbyProject(tender_id) {
     return await ContractorModel.find({
       isDeleted: { $ne: true },

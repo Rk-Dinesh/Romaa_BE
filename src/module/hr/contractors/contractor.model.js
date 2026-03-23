@@ -11,7 +11,7 @@ const assignedProjectSchema = new mongoose.Schema(
       default: "active",
     },
   },
-  { _id: false }
+  { _id: false },
 );
 
 const accountDetailsSchema = new mongoose.Schema(
@@ -24,7 +24,7 @@ const accountDetailsSchema = new mongoose.Schema(
     upi_id: { type: String },
     payment_terms: { type: String }, // e.g. "Net 30", "Weekly"
   },
-  { _id: false }
+  { _id: false },
 );
 
 const contractorSchema = new mongoose.Schema(
@@ -56,7 +56,8 @@ const contractorSchema = new mongoose.Schema(
       enum: ["ACTIVE", "INACTIVE", "SUSPENDED", "BLACKLISTED"],
       default: "ACTIVE",
     },
-
+    place_of_supply: { type: String, enum: ["InState", "Others"] },
+    credit_day: { type: Number },
     // --- Assigned Projects ---
     assigned_projects: { type: [assignedProjectSchema], default: [] },
 
@@ -69,13 +70,15 @@ const contractorSchema = new mongoose.Schema(
 
     remarks: { type: String },
     created_by_user: { type: String },
-    wage_fixing:[{
-      category:String,
-      wage:Number,
-    }],
+    wage_fixing: [
+      {
+        category: String,
+        wage: Number,
+      },
+    ],
     isDeleted: { type: Boolean, default: false },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 contractorSchema.index({ isDeleted: 1, status: 1 });

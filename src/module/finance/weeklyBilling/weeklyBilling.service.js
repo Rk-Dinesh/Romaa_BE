@@ -74,7 +74,7 @@ class WeeklyBillingService {
   //
   // Returns one entry per vendor, each having a sub_bills array ready to be
   // passed directly into generateBill.
-  static async getVendorSummary(tenderId, fromDate, toDate) {
+  static async getContractorSummary(tenderId, fromDate, toDate) {
     let WOD;
     try {
       WOD = mongoose.model("WorkOrderDone");
@@ -94,18 +94,18 @@ class WeeklyBillingService {
 
     if (!records.length) return [];
 
-    // vendor_name → work_order_id → sub_bill draft
+    // contractor_name → work_order_id → sub_bill draft
     const vendorMap = {};
 
     for (const rec of records) {
-      const vName = rec.vendor_name  || "Unknown";
+      const vName = rec.contractor_name  || "Unknown";
       const woId  = rec.workOrder_id || "NO_WO";
       const wdId  = String(rec._id);
 
       if (!vendorMap[vName]) {
         vendorMap[vName] = {
-          vendor_name: vName,
-          vendor_id:   rec.vendor_id || "",
+          contractor_name: vName,
+          contractor_id:   rec.contractor_id || "",
           woMap:       {},
           base_amount: 0,
         };
@@ -156,10 +156,10 @@ class WeeklyBillingService {
   }
 
   // ── 5. Check for duplicate (overlapping date range for same vendor) ───────────
-  static async checkDuplicateBill(tenderId, vendorName, fromDate, toDate) {
+  static async checkDuplicateBill(tenderId, contractorName, fromDate, toDate) {
     return await WeeklyBillingModel.findOne({
       tender_id:   tenderId,
-      vendor_name: vendorName,
+      contractor_name: contractorName,
       status:      { $ne: "Cancelled" },
       from_date:   { $lte: new Date(toDate) },
       to_date:     { $gte: new Date(fromDate) },
@@ -200,8 +200,8 @@ class WeeklyBillingService {
   static async generateBill(payload) {
     const {
       tender_id,
-      vendor_id,
-      vendor_name,
+      contractor_id,
+      contractor_name,
       from_date,
       to_date,
       gst_pct    = 0,
@@ -211,11 +211,11 @@ class WeeklyBillingService {
 
     // Duplicate check
     const existing = await WeeklyBillingService.checkDuplicateBill(
-      tender_id, vendor_name, from_date, to_date
+      tender_id, contractor_name, from_date, to_date
     );
     if (existing) {
       const err = new Error(
-        `Bill ${existing.bill_no} already exists for ${vendor_name} covering this date range.`
+        `Bill ${existing.bill_no} already exists for ${contractor_name} covering this date range.`
       );
       err.statusCode = 409;
       throw err;
@@ -256,8 +256,8 @@ class WeeklyBillingService {
           bill_no,
           sub_bill_no,
           tender_id,
-          vendor_id,
-          vendor_name,
+          contractor_id,
+          contractor_name,
           fin_year:         finYear,
           from_date:        new Date(from_date),
           to_date:          new Date(to_date),
@@ -282,8 +282,8 @@ class WeeklyBillingService {
       bill_no,
       bill_date:    new Date(),
       tender_id,
-      vendor_id,
-      vendor_name,
+      contractor_id,
+      contractor_name,
       from_date:    new Date(from_date),
       to_date:      new Date(to_date),
       sub_bills:    builtSubBills,

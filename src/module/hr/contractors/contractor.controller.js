@@ -39,6 +39,15 @@ export const getAllContractorsSelectbyProject = async (req, res) => {
   }
 };
 
+export const getContractorsByTenderId = async (req, res) => {
+  try {
+    const data = await ContractorService.getContractorsByTenderId(req.params.tender_id);
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // Get contractor by ID
 export const getContractorById = async (req, res) => {
   try {

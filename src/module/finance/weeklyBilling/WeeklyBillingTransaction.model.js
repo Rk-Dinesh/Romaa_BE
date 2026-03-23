@@ -12,8 +12,8 @@ const weeklyBillingTransactionSchema = new mongoose.Schema(
 
     // ── Lookup fields (denormalised for query efficiency) ──────────────────
     tender_id:   { type: String, required: true, index: true },
-    vendor_id:   { type: String, default: "" },
-    vendor_name: { type: String, default: "" },
+    contractor_id:   { type: String, default: "" },
+    contractor_name: { type: String, default: "" },
     fin_year:    { type: String, default: "" }, // "25-26"
 
     from_date: { type: Date },

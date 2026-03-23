@@ -18,6 +18,7 @@ import {
   getDashboardStats,
   getAllContractorsSelectbyProject,
   getContractorWithEmployeesbyProject,
+  getContractorsByTenderId,
 } from "./contractor.controller.js";
 
 const contractorRoute = Router();
@@ -32,6 +33,7 @@ contractorRoute.post("/add", createContractor);
 contractorRoute.get("/getall", getAllContractors);
 contractorRoute.get("/getallselect", getAllContractorsSelect);
 contractorRoute.get("/getallselectbyproject/:tender_id", getAllContractorsSelectbyProject);
+contractorRoute.get("/getbytender/:tender_id", getContractorsByTenderId);
 contractorRoute.get("/getactive", getActiveContractors);
 contractorRoute.get("/contractorlist", getContractorsPaginated);
 contractorRoute.get("/search", searchContractors);

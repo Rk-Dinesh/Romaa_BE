@@ -49,10 +49,10 @@ export const getSubBillTransactions = async (req, res) => {
   }
 };
 
-// ── GET /weeklyBilling/api/vendor-summary/:tenderId?fromDate=&toDate= ──────────
-// Returns work-done records grouped by vendor → work_order, ready for the
+// ── GET /weeklyBilling/api/contractor-summary/:tenderId?fromDate=&toDate= ──────────
+// Returns work-done records grouped by contractor → work_order, ready for the
 // "Generate Bill" modal.
-export const getVendorSummary = async (req, res) => {
+export const getContractorSummary = async (req, res) => {
   try {
     const { tenderId }         = req.params;
     const { fromDate, toDate } = req.query;
@@ -62,7 +62,7 @@ export const getVendorSummary = async (req, res) => {
     if (new Date(fromDate) > new Date(toDate))
       return fail(res, "fromDate must be before toDate", 400);
 
-    const data = await service.getVendorSummary(tenderId, fromDate, toDate);
+    const data = await service.getContractorSummary(tenderId, fromDate, toDate);
     return ok(res, data);
   } catch (err) {
     return fail(res, err.message, err.statusCode || 500);
@@ -88,8 +88,8 @@ export const generateBill = async (req, res) => {
   try {
     const {
       tender_id,
-      vendor_id,
-      vendor_name,
+      contractor_id,
+      contractor_name,
       from_date,
       to_date,
       gst_pct,
@@ -98,8 +98,8 @@ export const generateBill = async (req, res) => {
     } = req.body;
 
     if (!tender_id)   return fail(res, "tender_id is required",   400);
-    if (!vendor_id)   return fail(res, "vendor_id is required",   400);
-    if (!vendor_name) return fail(res, "vendor_name is required", 400);
+    if (!contractor_id)   return fail(res, "contractor_id is required",   400);
+    if (!contractor_name) return fail(res, "contractor_name is required", 400);
     if (!from_date)   return fail(res, "from_date is required",   400);
     if (!to_date)     return fail(res, "to_date is required",     400);
     if (new Date(from_date) > new Date(to_date))
@@ -108,7 +108,7 @@ export const generateBill = async (req, res) => {
       return fail(res, "sub_bills must be a non-empty array", 400);
 
     const bill = await service.generateBill({
-      tender_id, vendor_id, vendor_name,
+      tender_id, contractor_id, contractor_name,
       from_date, to_date, gst_pct,
       sub_bills, created_by,
     });

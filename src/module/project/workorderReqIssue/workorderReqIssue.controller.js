@@ -63,7 +63,7 @@ export const getAllByWorkOrderIssuedForWorkDoneMaterial = async (req, res) => {
 };  
 
 
-export const approveVendorQuotation = async (req, res) => {
+export const approveContractorQuotation = async (req, res) => {
   try {
     const { workOrderId } = req.params;
     const { quotationId } = req.body;
@@ -76,7 +76,7 @@ export const approveVendorQuotation = async (req, res) => {
     });
 
     res.status(200).json({
-      message: 'Vendor quotation approved and selectedVendor updated.',
+      message: 'Contractor quotation approved and selectedContractor updated.',
       data: updatedWorkOrderRequest,
       success: true,
     });
@@ -85,7 +85,7 @@ export const approveVendorQuotation = async (req, res) => {
   }
 };
 
-export const rejectVendor = async (req, res) => {
+export const rejectContractor = async (req, res) => {
   try {
     const { workOrderId } = req.params; 
     const { quotationId } = req.body;
@@ -101,7 +101,7 @@ export const rejectVendor = async (req, res) => {
 
     res.status(200).json({
       success: true,
-      message: "Vendor quotation rejected successfully.",
+      message: "Contractor quotation rejected successfully.",
       data: result,
     });
   } catch (error) {
@@ -109,25 +109,25 @@ export const rejectVendor = async (req, res) => {
   }
 };
 
-export const postVendorQuotationWithTenderCheck = async (req, res) => {
+export const postContractorQuotationWithTenderCheck = async (req, res) => {
   try {
     const { workOrderId } = req.params;
-    const { vendorId, tenderId, quoteItems, ...rest } = req.body;
+    const { contractorId, tenderId, quoteItems, ...rest } = req.body;
 
-    if (!vendorId) return res.status(400).json({ message: 'vendorId is required' });
+    if (!contractorId) return res.status(400).json({ message: 'contractorId is required' });
     if (!tenderId) return res.status(400).json({ message: 'tenderId is required' });
     if (!Array.isArray(quoteItems) || quoteItems.length === 0)
       return res.status(400).json({ message: 'quoteItems are required' });
 
-    const updatedWorkOrderRequest = await WorkOrderRequestService.addVendorQuotationWithTenderCheck({
+    const updatedWorkOrderRequest = await WorkOrderRequestService.addContractorQuotationWithTenderCheck({
       workOrderId,
-      vendorId,
+      contractorId,
       quoteData: { quoteItems, ...rest },
       tenderId
     });
 
     res.status(201).json({
-      message: 'Vendor quotation added successfully',
+      message: 'Contractor quotation added successfully',
       data: updatedWorkOrderRequest,
     });
   } catch (error) {

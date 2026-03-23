@@ -28,17 +28,17 @@ const WorkOrderRequestSchema = new mongoose.Schema(
       },
     ],
 
-     permittedVendor: [
+     permittedContractor: [
       {
-        vendorId: String,
-        vendorName: String,
-        vendorContact: String,
-        vendorAddress: String,
+        contractorId: String,
+        contractorName: String,
+        contractorContact: String,
+        contractorAddress: String,
       },
     ],
 
-    // Vendor quotations section with custom quotation ID // vendorId default , delivery period,
-    vendorQuotations: [
+    // Contractor quotations section with custom quotation ID // contractorId default , delivery period,
+    contractorQuotations: [
       new mongoose.Schema(
         {
           quotationId: {
@@ -52,8 +52,8 @@ const WorkOrderRequestSchema = new mongoose.Schema(
             },
             unique: false,
           },
-          vendorId: String,
-          vendorName: String,
+          contractorId: String,
+          contractorName: String,
           contact: String,
           address: String,
           quotationDate: { type: Date, default: Date.now },
@@ -81,10 +81,10 @@ const WorkOrderRequestSchema = new mongoose.Schema(
       ),
     ],
 
-    // Selected vendor with reference to approved quotation
-    selectedVendor: {
-      vendorId: String,
-      vendorName: String,
+    // Selected contractor with reference to approved quotation
+    selectedContractor: {
+      contractorId: String,
+      contractorName: String,
       approvedQuotationId: { type: Schema.Types.ObjectId },
     },
 
@@ -116,7 +116,7 @@ const WorkOrderRequestSchema = new mongoose.Schema(
         "Request Raised",
         "Quotation Requested",
         "Quotation Received",
-        "Vendor Approved",
+        "Contractor Approved",
         "Work Order Issued",
         "Completed",
       ],

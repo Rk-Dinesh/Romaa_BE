@@ -3,7 +3,7 @@ import {
   getBillingList,
   getBillDetail,
   getSubBillTransactions,
-  getVendorSummary,
+  getContractorSummary,
   generateBill,
   updateStatus,
 } from "./weeklyBilling.controller.js";
@@ -34,7 +34,7 @@ const weeklyBillingRouter = Router();
 weeklyBillingRouter.get("/api/list/:tenderId",                getBillingList);
 weeklyBillingRouter.get("/api/detail/:billNo",                getBillDetail);
 weeklyBillingRouter.get("/api/sub-bill/:subBillNo",           getSubBillTransactions);
-weeklyBillingRouter.get("/api/vendor-summary/:tenderId",      getVendorSummary);
+weeklyBillingRouter.get("/api/contractor-summary/:tenderId",      getContractorSummary);
 weeklyBillingRouter.post("/api/generate",                     generateBill);
 weeklyBillingRouter.patch("/api/status/:billId",              updateStatus);
 

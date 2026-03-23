@@ -40,7 +40,7 @@ class WorkOrderDoneService {
       
       workDoneId: generatedWorkDoneId, 
       tender_id: payload.tender_id,
-      vendor_name: payload.vendor_name,
+      contractor_name: payload.contractor_name,
       report_date: payload.report_date ? new Date(payload.report_date) : new Date(),
       status: "Submitted",
     }));
@@ -70,7 +70,7 @@ class WorkOrderDoneService {
       workDoneId: generatedWorkDoneId,
       tender_id: payload.tender_id,
       workOrder_id: payload.work_order_id,
-      vendor_name: payload.vendor_name,
+      contractor_name: payload.contractor_name,
       report_date: payload.report_date ? new Date(payload.report_date) : new Date(),
       status: "Submitted",
       dailyWorkDone: processedItems,
@@ -158,7 +158,7 @@ class WorkOrderDoneService {
                 workDoneId: generatedWorkDoneId,
                 tender_id: payload.tender_id,
                 workOrder_id: payload.work_order_id,
-                vendor_name: payload.vendor_name,
+                contractor_name: payload.contractor_name,
                 report_date: payload.report_date ? new Date(payload.report_date) : new Date(),
                 status: "Submitted",
                 dailyWorkDone: processedItems,

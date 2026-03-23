@@ -50,7 +50,7 @@ const WorkOrderDoneSchema = new mongoose.Schema(
       required: true,
       index: true, // Index this for fast retrieval of all reports for a tender
     },
-    vendor_name: {
+    contractor_name: {
       type: String,
     },
     report_date: {
