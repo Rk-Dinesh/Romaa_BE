@@ -1,0 +1,310 @@
+================================================================================
+  FINANCE MODULE — LEDGER, CREDIT NOTE, DEBIT NOTE
+  Romaa Backend — Construction ERP
+================================================================================
+
+
+────────────────────────────────────────────────────────────────────────────────
+1. LEDGER
+────────────────────────────────────────────────────────────────────────────────
+
+DEFINITION
+  A Ledger is the master record of all financial transactions for a single
+  account (a vendor, customer, employee, or expense head). Every transaction
+  that touches that account gets posted as a line entry — debit or credit —
+  and the running balance tells you exactly how much is owed/receivable at
+  any point in time.
+
+HOW A LEDGER LOOKS
+  Vendor: ABC Suppliers Pvt Ltd  (VND-002)
+  ─────────────────────────────────────────────────────────────────────────────
+  Date        Particulars               Debit (Dr)   Credit (Cr)   Balance
+  ─────────────────────────────────────────────────────────────────────────────
+  2026-03-01  Opening Balance                                        ₹0
+  2026-03-10  Purchase Bill PB/25-26/0001              ₹23,990      ₹23,990 Cr
+  2026-03-15  Credit Note CN/25-26/001    ₹1,416                    ₹22,574 Cr
+  2026-03-18  Debit Note DN/25-26/001     ₹2,500                    ₹20,074 Cr
+  2026-03-20  Payment Voucher PV/001      ₹20,074                   ₹0
+  ─────────────────────────────────────────────────────────────────────────────
+
+  Cr balance = you OWE the vendor (liability)
+  Dr balance = vendor owes you (overpayment or excess credit note)
+
+TYPES OF LEDGERS IN CONSTRUCTION ERP
+  ┌─────────────────────┬────────────────────────────────────────┐
+  │ Ledger Type         │ Examples                               │
+  ├─────────────────────┼────────────────────────────────────────┤
+  │ Vendor / Creditor   │ ABC Suppliers, Steel Corp              │
+  │ Client / Debtor     │ NHAI, PWD, Municipal Corp              │
+  │ Expense Head        │ Material Cost, Labour, Transport       │
+  │ Bank / Cash         │ HDFC Current A/c, Petty Cash           │
+  │ Tax                 │ CGST Payable, SGST Payable, TDS        │
+  └─────────────────────┴────────────────────────────────────────┘
+
+DOUBLE-ENTRY ACCOUNTING (every transaction creates two entries)
+
+  Purchase Bill raised:
+    Dr  Material/Expense A/c      ₹20,000
+    Dr  CGST Input A/c             ₹1,800
+    Dr  SGST Input A/c             ₹1,800
+    Cr  Vendor Ledger (ABC)       ₹23,600   ← liability created
+
+  Payment made:
+    Dr  Vendor Ledger (ABC)       ₹23,600   ← liability cleared
+    Cr  Bank A/c                  ₹23,600
+
+HOW THE LEDGER IS COMPUTED (for our ERP)
+  Rather than a stored document, the vendor ledger is a LIVE AGGREGATE
+  computed on-the-fly from:
+    + Purchase Bills (Cr entries)
+    - Credit Notes   (Dr entries — reduce payable)
+    - Debit Notes    (Dr entries — reduce payable)
+    - Payment Vouchers (Dr entries — clear payable)
+
+  Net Payable = Σ PB amounts − Σ CN amounts − Σ DN amounts − Σ Payments
+
+
+────────────────────────────────────────────────────────────────────────────────
+2. CREDIT NOTE (CN)
+────────────────────────────────────────────────────────────────────────────────
+
+DEFINITION
+  A Credit Note is a document issued by the VENDOR TO YOU (or by you to a
+  client) to REDUCE an outstanding liability/receivable. It is a partial or
+  full reversal of an original invoice/purchase bill.
+
+WHEN A VENDOR SENDS YOU A CREDIT NOTE
+  - You returned damaged or excess material (material return)
+  - The vendor overcharged on an invoice (price correction)
+  - Quantity short-supplied vs what was billed
+  - Post-invoice discount granted by the vendor
+
+EFFECT ON VENDOR LEDGER
+  Before CN:  Vendor balance = ₹23,990 Cr  (you owe ₹23,990)
+  CN raised:  ₹1,416 Dr entry posted to vendor ledger
+  After CN:   Vendor balance = ₹22,574 Cr  (you now owe ₹22,574)
+
+  → CN reduces your payable. It is a partial reversal of the original bill.
+
+CREDIT NOTE DOCUMENT STRUCTURE
+  ┌────────────────────────────────────────────────────────────────┐
+  │ CN No:        CN/25-26/001                                     │
+  │ Date:         2026-03-15                                       │
+  │ Against Bill: PB/25-26/0001  (original purchase bill)         │
+  │ Vendor:       ABC Suppliers Pvt Ltd  (VND-002)                 │
+  │ Tender:       TND-001                                          │
+  │                                                                │
+  │ Line Items:                                                    │
+  │   Item           Qty  Rate  Gross   CGST   SGST   Net         │
+  │   Cement OPC 53   3   400   1,200    108    108   1,416       │
+  │                                                                │
+  │ Reason: 3 bags returned — damaged on delivery                  │
+  └────────────────────────────────────────────────────────────────┘
+
+GST ON CREDIT NOTES
+  - GST must be reversed on the CN amount
+  - You LOSE the input tax credit (ITC) you had originally claimed
+  - CGST / SGST / IGST are recalculated on the CN line items
+  - Vendor must issue a GST-compliant CN with their GSTIN
+  - Required for ITC reversal reflected in GSTR-2B
+
+KEY FIELDS FOR SCHEMA
+  - cn_no          (auto-generated: CN/<FY>/<seq>)
+  - cn_date
+  - bill_ref       (ObjectId → PurchaseBill)
+  - bill_no        (snapshot of PB doc_id)
+  - vendor_id / vendor_ref / vendor_name / vendor_gstin (snapshots)
+  - tender_id / tender_ref / tender_name
+  - line_items[]   (item_id, item_description, unit, return_qty,
+                    unit_price, gross_amt, cgst_pct, sgst_pct, igst_pct,
+                    cgst_amt, sgst_amt, igst_amt, net_amt)
+  - reason         (free text: "Damaged", "Excess", "Price Diff", etc.)
+  - grand_total / total_tax / net_amount  (computed by pre-save)
+  - status         (draft → pending → approved)
+
+
+────────────────────────────────────────────────────────────────────────────────
+3. DEBIT NOTE (DN)
+────────────────────────────────────────────────────────────────────────────────
+
+DEFINITION
+  A Debit Note is the mirror image of a Credit Note. It is used to record
+  a REDUCTION in payable due to a claim you raise against the vendor
+  (penalty, short supply, price difference), OR an INCREASE in payable when
+  the vendor raises a DN against you (supplementary charges).
+
+TWO SCENARIOS
+
+  Scenario A — YOU raise a DN against the vendor
+    Used when you want to formally claim a deduction:
+    - Penalty for delayed supply
+    - Quality failure / rejection at site
+    - Price difference (vendor billed higher than agreed PO rate)
+    - Short supply deduction
+    Effect: Dr entry in your books against the vendor
+            → reduces what you pay them
+
+  Scenario B — VENDOR raises a DN against you
+    Used when the vendor needs to charge you extra beyond original bill:
+    - Additional freight / handling not in original bill
+    - Price escalation approved post-PO
+    - Supplementary supply quantity
+    Effect: Cr entry — increases your payable to vendor
+
+EFFECT ON VENDOR LEDGER (Scenario A — you raise DN for penalty)
+  Before DN:  Vendor balance = ₹22,574 Cr
+  DN raised:  ₹2,500 Dr entry posted
+  After DN:   Vendor balance = ₹20,074 Cr
+
+DEBIT NOTE DOCUMENT STRUCTURE
+  ┌────────────────────────────────────────────────────────────────┐
+  │ DN No:        DN/25-26/001                                     │
+  │ Date:         2026-03-18                                       │
+  │ Against Bill: PB/25-26/0001                                    │
+  │ Vendor:       ABC Suppliers Pvt Ltd  (VND-002)                 │
+  │ Tender:       TND-001                                          │
+  │                                                                │
+  │ Particulars:                                                   │
+  │   Penalty for 5-day delay in supply @ ₹500/day = ₹2,500       │
+  │                                                                │
+  │ Net Deduction: ₹2,500                                          │
+  │ Raised by: Romaa (company)                                     │
+  └────────────────────────────────────────────────────────────────┘
+
+GST ON DEBIT NOTES
+  - If you raise DN for penalty/price diff: typically NO GST (penalty is
+    not a supply of goods/services)
+  - If vendor raises DN for supplementary supply: GST applicable,
+    treated like a supplementary bill — adds to your ITC
+
+KEY FIELDS FOR SCHEMA
+  - dn_no          (auto-generated: DN/<FY>/<seq>)
+  - dn_date
+  - bill_ref       (ObjectId → PurchaseBill)
+  - bill_no        (snapshot)
+  - raised_by      ("company" | "vendor")
+  - vendor_id / vendor_ref / vendor_name / vendor_gstin
+  - tender_id / tender_ref / tender_name
+  - particulars[]  (description, amount, gst_pct, net)
+  - reason_type    (enum: "Penalty", "PriceDiff", "ShortSupply",
+                    "Freight", "Escalation", "Other")
+  - net_amount     (computed)
+  - status         (draft → pending → approved)
+
+
+────────────────────────────────────────────────────────────────────────────────
+4. HOW THEY INTER-RELATE IN CONSTRUCTION ERP
+────────────────────────────────────────────────────────────────────────────────
+
+  GRN (material received)
+      ↓
+  Purchase Bill (PB) ──────────────────── Vendor Ledger: +₹23,990 Cr
+      │
+      ├── Credit Note (CN) ─────────────── Vendor Ledger: -₹1,416 Cr
+      │   (material return / overbilling)
+      │
+      ├── Debit Note (DN) ──────────────── Vendor Ledger: -₹2,500 Cr
+      │   (penalty / price difference)
+      │
+      └── Payment Voucher (PV) ─────────── Vendor Ledger: -₹20,074 Cr
+          (net payment)                    Bank Ledger:   -₹20,074 Dr
+
+  Net Payable = ₹23,990 (PB) − ₹1,416 (CN) − ₹2,500 (DN) = ₹20,074
+
+
+────────────────────────────────────────────────────────────────────────────────
+5. KEY DIFFERENCES AT A GLANCE
+────────────────────────────────────────────────────────────────────────────────
+
+  ┌────────────────────┬─────────────────────────┬──────────────────────────┐
+  │                    │ Credit Note (CN)         │ Debit Note (DN)          │
+  ├────────────────────┼─────────────────────────┼──────────────────────────┤
+  │ Raised by          │ Vendor (to you)          │ You (against vendor)     │
+  │                    │ or you (to client)       │ or vendor (against you)  │
+  ├────────────────────┼─────────────────────────┼──────────────────────────┤
+  │ Effect on payable  │ Reduces it               │ Reduces it (you raise)   │
+  │                    │                          │ Increases it (vendor)    │
+  ├────────────────────┼─────────────────────────┼──────────────────────────┤
+  │ Common trigger     │ Material return,         │ Penalty, price diff,     │
+  │                    │ overbilling, discount    │ short supply, escalation │
+  ├────────────────────┼─────────────────────────┼──────────────────────────┤
+  │ GST impact         │ ITC reversed             │ Usually no GST (penalty) │
+  │                    │                          │ New ITC (vendor DN)      │
+  ├────────────────────┼─────────────────────────┼──────────────────────────┤
+  │ Always links to    │ Original Purchase Bill   │ Original Purchase Bill   │
+  └────────────────────┴─────────────────────────┴──────────────────────────┘
+
+
+────────────────────────────────────────────────────────────────────────────────
+6. SCOPING DECISIONS BEFORE SCHEMA DESIGN
+────────────────────────────────────────────────────────────────────────────────
+
+  The following questions must be aligned on before writing schemas:
+
+  Q1. BILL-LINKED OR STANDALONE?
+      → Must every CN/DN always reference a PurchaseBill?
+      → Or can CNs/DNs exist standalone (e.g. advance deductions, opening bal)?
+
+  Q2. DIRECTION — WHO RAISES?
+      → Do we track only CNs/DNs received from vendors?
+      → Or also CNs/DNs raised by Romaa against vendors?
+      → Or CNs/DNs raised by Romaa against clients (separate flow)?
+
+  Q3. LEDGER STORAGE — LIVE vs STORED?
+      → Option A: Compute ledger on-the-fly by aggregating PB + CN + DN + PV
+        (simpler to maintain, always accurate, slower query)
+      → Option B: Store a LedgerEntry collection with posted entries
+        (faster reads, needs careful write discipline, risk of drift)
+      Recommendation: Option A (aggregate) for now — add materialised
+      LedgerEntry later when reporting volume demands it.
+
+  Q4. PAYMENT VOUCHER (PV) — IN SCOPE NOW?
+      → PV settles the net vendor balance (Dr vendor, Cr bank)
+      → Without PV, the ledger balance never reaches zero
+      → Minimum viable: track PV as a simple record with amount + bill refs
+
+  Q5. GST REVERSAL TRACKING?
+      → For GST filing (GSTR-2), ITC reversed on CNs must be trackable
+      → Needs: cn_line_items to carry cgst_amt, sgst_amt, igst_amt
+      → Already planned in CN schema above
+
+  Q6. PARTIAL CN/DN?
+      → Can a CN cover only some items from the original bill?
+      → Can a DN cover only a partial amount?
+      → Recommendation: Yes — line-item level CN, amount-level DN
+
+  Q7. APPROVAL WORKFLOW?
+      → Status: draft → pending → approved
+      → Who approves? (role-based — finance manager)
+      → Does an approved CN/DN automatically post to ledger?
+
+
+────────────────────────────────────────────────────────────────────────────────
+7. PROPOSED MODULE STRUCTURE (to be created)
+────────────────────────────────────────────────────────────────────────────────
+
+  src/module/finance/
+  ├── purchasebill/        ✅ done
+  ├── weeklyBilling/       ✅ done
+  ├── creditnote/          ← to be designed
+  │   ├── creditnote.model.js
+  │   ├── creditnote.service.js
+  │   ├── creditnote.controller.js
+  │   └── creditnote.route.js
+  ├── debitnote/           ← to be designed
+  │   ├── debitnote.model.js
+  │   ├── debitnote.service.js
+  │   ├── debitnote.controller.js
+  │   └── debitnote.route.js
+  └── vendorledger/        ← computed aggregation (no stored model needed)
+      ├── ledger.service.js   ← aggregates PB + CN + DN + PV
+      └── ledger.controller.js
+
+  Route prefixes (to be added to app.js):
+    /creditnote      → Credit notes
+    /debitnote       → Debit notes
+    /ledger    → Vendor ledger view
+
+================================================================================
+  END OF DOCUMENT
+================================================================================

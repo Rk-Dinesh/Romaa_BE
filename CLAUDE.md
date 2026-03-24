@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Romaa Backend is a construction/project management system built for managing tenders, projects, HR, purchases, assets, and site operations.
+Romaa Backend is a construction/project management system built for managing tenders, projects, HR, purchases, assets, site operations, and finance.
 
 ## Tech Stack
 
@@ -48,6 +48,9 @@ Romaa_BE/
 │       │   ├── contractors/       # Contractor companies
 │       │   ├── contractemployee/  # Contract workers
 │       │   ├── userAttendance/    # Punch in/out, geofencing
+│       │   ├── nmrAttendance/     # NMR (Non-Muster Roll) attendance
+│       │   ├── geofence/          # Geofence zone model (no route)
+│       │   ├── payroll/           # Payroll model (no route)
 │       │   ├── holidays/          # Holiday calendar
 │       │   └── leave/             # Leave requests
 │       ├── tender/
@@ -67,6 +70,7 @@ Romaa_BE/
 │       │   ├── schedule/          # Project schedule (legacy)
 │       │   ├── scheduleNew/       # Schedule lite + task models
 │       │   ├── workorderReqIssue/ # Work order requests/issues
+│       │   ├── drawingvboqDE/     # Drawing vs BOQ detailed estimate comparison
 │       │   └── clientbilling/
 │       │       ├── billing/       # Client billing
 │       │       ├── estimate/      # Billing estimate
@@ -78,10 +82,17 @@ Romaa_BE/
 │       │   ├── machinery/         # Machinery asset master
 │       │   └── machinerylogs/     # Machinery usage logs
 │       ├── site/
-│       │   └── workdone/          # Site work done entries
+│       │   ├── workdone/          # Site work done entries
+│       │   ├── workorderdone/     # Site work order done entries
+│       │   └── dlp/               # Defect Liability Period tracking
 │       ├── documents/
 │       │   ├── tenderdocuments/   # Tender document uploads
 │       │   └── workorderdocuments/ # Work order document uploads
+│       ├── finance/
+│       │   ├── purchasebill/      # Purchase bills (GRN-based, vendor invoices)
+│       │   └── weeklyBilling/     # Weekly contractor billing with sub-bills
+│       ├── notifications/         # In-app notifications
+│       ├── dashboard/             # Dashboard aggregations
 │       └── master/
 │           └── hsnmaster/         # HSN/SAC master (tax codes)
 └── utils/
@@ -192,9 +203,17 @@ AWS_SECRET_ACCESS_KEY
 | `/machineryasset` | Machinery assets |
 | `/machinerylogs` | Machinery logs |
 | `/workdone` | Site work done |
+| `/workorderdone` | Site work order done |
+| `/dlp` | Defect Liability Period |
 | `/document` | Tender documents |
 | `/workorderdocument` | Work order documents |
 | `/hsn` | HSN/SAC master |
+| `/purchasebill` | Purchase bills |
+| `/weeklybilling` | Weekly contractor billing |
+| `/notification` | Notifications |
+| `/dashboard` | Dashboard |
+| `/nmrattendance` | NMR attendance |
+| `/drawingvboqde` | Drawing vs BOQ detailed estimate |
 
 ## Key Models
 
