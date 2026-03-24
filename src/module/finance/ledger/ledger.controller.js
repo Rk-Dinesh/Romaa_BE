@@ -30,6 +30,21 @@ export const getSupplierBalance = async (req, res) => {
   }
 };
 
+// GET /ledger/statement/:supplierId
+// ?supplier_type=&tender_id=&financial_year=25-26
+export const getSupplierStatement = async (req, res) => {
+  try {
+    const { supplierId } = req.params;
+    const { supplier_type, tender_id, financial_year } = req.query;
+    const data = await LedgerService.getSupplierStatement(supplierId, {
+      supplier_type, tender_id, financial_year,
+    });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // GET /ledger/summary
 // ?supplier_type=Vendor|Contractor&only_outstanding=true
 export const getAllSupplierBalances = async (req, res) => {
@@ -56,6 +71,21 @@ export const getTenderLedger = async (req, res) => {
     const data = await LedgerService.getTenderLedger(tenderId, {
       supplier_id, supplier_type, vch_type, from_date, to_date,
     });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// GET /ledger/tender-balance/:tenderId
+// ?supplier_type=Vendor|Contractor
+export const getTenderBalance = async (req, res) => {
+  try {
+    const { tenderId } = req.params;
+    if (!tenderId) return res.status(400).json({ status: false, message: "tenderId is required" });
+
+    const { supplier_type } = req.query;
+    const data = await LedgerService.getTenderBalance(tenderId, { supplier_type });
     res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });

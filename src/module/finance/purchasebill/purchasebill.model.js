@@ -121,7 +121,7 @@ const PurchaseBillSchema = new mongoose.Schema(
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     status: {
       type: String,
-      enum: ["draft", "pending", "approved", "paid"],
+      enum: ["draft", "pending", "approved"],
       default: "pending",
     },
   },

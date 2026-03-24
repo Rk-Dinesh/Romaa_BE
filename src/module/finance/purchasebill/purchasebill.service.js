@@ -1,6 +1,7 @@
 import PurchaseBillModel from "./purchasebill.model.js";
 import MaterialTransactionModel from "../../tender/materials/materialTransaction.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
+import LedgerService from "../ledger/ledger.service.js";
 
 // ── Build document from payload ───────────────────────────────────────────────
 // Only source fields are mapped here.
@@ -55,6 +56,27 @@ function buildDoc(payload, doc_id) {
 
     status: payload.status || "pending",
   };
+}
+
+// ── Post to supplier ledger on approval ──────────────────────────────────────
+// PurchaseBill = Cr entry (liability created — you owe the vendor)
+async function postToLedger(bill) {
+  await LedgerService.postEntry({
+    supplier_type: "Vendor",
+    supplier_id:   bill.vendor_id,
+    supplier_ref:  bill.vendor_ref,
+    supplier_name: bill.vendor_name,
+    vch_date:      bill.doc_date,
+    vch_no:        bill.doc_id,
+    vch_type:      "PurchaseBill",
+    vch_ref:       bill._id,
+    particulars:   `Purchase Bill ${bill.doc_id}${bill.narration ? " - " + bill.narration : ""}`,
+    tender_id:     bill.tender_id,
+    tender_ref:    bill.tender_ref,
+    tender_name:   bill.tender_name,
+    debit_amt:     0,
+    credit_amt:    bill.net_amount,  // Cr entry: payable to vendor
+  });
 }
 
 // ── Mark linked GRN transactions as billed ────────────────────────────────────
@@ -285,7 +307,26 @@ class PurchaseBillService {
     // Mark every linked GRN transaction as billed
     await markGRNsBilled(saved.line_items, saved.doc_id);
 
+    // Auto-post to ledger if created directly as approved
+    if (saved.status === "approved") {
+      await postToLedger(saved);
+    }
+
     return saved;
+  }
+
+  // PATCH /purchasebill/approve/:id
+  static async approvePurchaseBill(id) {
+    const bill = await PurchaseBillModel.findById(id);
+    if (!bill)                        throw new Error("Purchase bill not found");
+    if (bill.status === "approved")   throw new Error("Already approved");
+
+    bill.status = "approved";
+    await bill.save();
+
+    await postToLedger(bill);
+
+    return bill;
   }
 }
 

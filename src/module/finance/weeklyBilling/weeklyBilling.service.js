@@ -2,6 +2,8 @@ import mongoose from "mongoose";
 import WeeklyBillingModel from "./WeeklyBilling.model.js";
 import WeeklyBillingTransactionModel from "./WeeklyBillingTransaction.model.js";
 import BillCounterModel from "./WeeklyBillingCounter.model.js";
+import ContractorModel from "../../hr/contractors/contractor.model.js";
+import LedgerService from "../ledger/ledger.service.js";
 
 // ── Financial year helper ──────────────────────────────────────────────────────
 // Apr–Mar Indian financial year.  Mar 2026 → "25-26",  Apr 2026 → "26-27"
@@ -306,7 +308,7 @@ class WeeklyBillingService {
   // Also syncs status to all child transactions so queries on transactions
   // can filter by status without joining the parent.
   static async updateBillStatus(billId, status) {
-    const allowed = ["Generated", "Pending", "Paid", "Cancelled"];
+    const allowed = ["Generated", "Pending", "Approved", "Cancelled"];
     if (!allowed.includes(status)) {
       const err = new Error(`Invalid status. Allowed: ${allowed.join(", ")}`);
       err.statusCode = 400;
@@ -325,6 +327,31 @@ class WeeklyBillingService {
         { bill_no: updated.bill_no },
         { status }
       );
+
+      // Post to ledger when a bill is approved
+      // WeeklyBill = Cr entry (liability created — you owe the contractor)
+      if (status === "Approved") {
+        const contractor = await ContractorModel.findOne(
+          { contractor_id: updated.contractor_id }
+        ).lean();
+
+        await LedgerService.postEntry({
+          supplier_type: "Contractor",
+          supplier_id:   updated.contractor_id,
+          supplier_ref:  contractor?._id || null,
+          supplier_name: updated.contractor_name,
+          vch_date:      updated.bill_date,
+          vch_no:        updated.bill_no,
+          vch_type:      "WeeklyBill",
+          vch_ref:       updated._id,
+          particulars:   `Weekly Bill ${updated.bill_no} (${updated.from_date.toISOString().slice(0,10)} – ${updated.to_date.toISOString().slice(0,10)})`,
+          tender_id:     updated.tender_id,
+          tender_ref:    null,
+          tender_name:   "",
+          debit_amt:     0,
+          credit_amt:    updated.total_amount,  // Cr entry: payable to contractor
+        });
+      }
     }
 
     return updated;

@@ -56,6 +56,8 @@ import creditNoteRouter from './src/module/finance/creditnote/creditnote.route.j
 import debitNoteRouter from './src/module/finance/debitnote/debitnote.route.js';
 import paymentVoucherRouter from './src/module/finance/paymentvoucher/paymentvoucher.route.js';
 import receiptVoucherRouter from './src/module/finance/receiptvoucher/receiptvoucher.route.js';
+import accountTreeRouter from './src/module/finance/accounttree/accounttree.route.js';
+import journalEntryRouter from './src/module/finance/journalentry/journalentry.route.js';
 
 
 
@@ -189,6 +191,8 @@ app.use('/creditnote', creditNoteRouter)
 app.use('/debitnote', debitNoteRouter)
 app.use('/paymentvoucher', paymentVoucherRouter)
 app.use('/receiptvoucher', receiptVoucherRouter)
+app.use('/accounttree', accountTreeRouter)
+app.use('/journalentry', journalEntryRouter)
 
 
 

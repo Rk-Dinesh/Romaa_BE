@@ -34,7 +34,7 @@ const weeklyBillingTransactionSchema = new mongoose.Schema(
     // ── Status mirrors parent bill (updated on bill status change) ─────────
     status: {
       type: String,
-      enum: ["Generated", "Pending", "Paid", "Cancelled"],
+      enum: ["Generated", "Pending", "Approved", "Cancelled"],
       default: "Generated",
     },
   },

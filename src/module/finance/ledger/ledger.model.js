@@ -59,6 +59,10 @@ const LedgerEntrySchema = new mongoose.Schema(
     tender_ref:  { type: mongoose.Schema.Types.ObjectId, ref: "Tenders", default: null },
     tender_name: { type: String, default: "" },
 
+    // ── Financial year (e.g. "25-26") ────────────────────────────────────
+    // Auto-set by postEntry from vch_date. Enables fast FY-scoped reports.
+    financial_year: { type: String, default: "" },
+
     // ── Amounts ───────────────────────────────────────────────────────────
     // Always populate only the relevant side; leave the other as 0.
     //   PurchaseBill → credit_amt > 0  (liability created)
@@ -77,11 +81,15 @@ LedgerEntrySchema.index({ supplier_id: 1, vch_date: 1, createdAt: 1 });
 // Tender-wise ledger (e.g. show all payables for TND-001)
 LedgerEntrySchema.index({ tender_id: 1, supplier_id: 1, vch_date: 1 });
 
-// Lookup by source voucher (to find the ledger entry for a given PB/CN/DN)
-LedgerEntrySchema.index({ vch_ref: 1 });
+// Duplicate protection — prevent double-posting when vch_ref is set.
+// sparse: true means null vch_ref entries (Journal) are excluded from uniqueness check.
+LedgerEntrySchema.index({ vch_ref: 1, vch_type: 1 }, { sparse: true });
 
 // Filter by voucher type (e.g. all payments, all CNs)
 LedgerEntrySchema.index({ supplier_id: 1, vch_type: 1, vch_date: -1 });
+
+// FY-scoped reports
+LedgerEntrySchema.index({ supplier_id: 1, financial_year: 1 });
 
 const LedgerEntryModel = mongoose.model("LedgerEntry", LedgerEntrySchema);
 export default LedgerEntryModel;

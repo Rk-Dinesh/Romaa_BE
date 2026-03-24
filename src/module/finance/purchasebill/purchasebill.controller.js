@@ -62,6 +62,17 @@ export const getNextDocId = async (_req, res) => {
   }
 };
 
+// PATCH /purchasebill/approve/:id
+export const approvePurchaseBill = async (req, res) => {
+  try {
+    const data = await PurchaseBillService.approvePurchaseBill(req.params.id);
+    res.status(200).json({ status: true, message: "Purchase bill approved and posted to ledger", data });
+  } catch (error) {
+    const code = error.message.includes("not found") || error.message.includes("Already") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
 // POST /purchasebill/create
 export const createPurchaseBill = async (req, res) => {
   try {

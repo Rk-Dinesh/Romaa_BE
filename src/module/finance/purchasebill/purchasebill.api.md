@@ -574,6 +574,56 @@ purchase_bill_id:  "<doc_id>"
 
 ---
 
+---
+
+## 8. Approve Purchase Bill
+
+Approves a purchase bill and **automatically posts a Credit entry** to the supplier ledger, creating the payable.
+
+```
+PATCH /purchasebill/approve/:id
+```
+
+**Auth required:** No (dev) / `finance > purchasebill > edit` (prod)
+**URL Params:** `id` — MongoDB `_id` of the purchase bill
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "message": "Purchase bill approved and posted to ledger",
+  "data": {
+    "doc_id": "PB/25-26/0001",
+    "status": "approved",
+    ...
+  }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | `id` not found | `"Purchase bill not found"` |
+| `400` | Already approved | `"Already approved"` |
+| `500` | DB / ledger error | `error.message` |
+
+### Ledger Effect
+
+When a bill is approved, a `LedgerEntry` is automatically created:
+
+```
+supplier_type : "Vendor"
+vch_type      : "PurchaseBill"
+credit_amt    : net_amount      ← Cr entry — liability created (you owe the vendor)
+debit_amt     : 0
+```
+
+> The ledger entry is protected against double-posting — calling approve twice returns `400 Already approved`.
+
+---
+
 ## Workflow
 
 ```
@@ -581,20 +631,25 @@ purchase_bill_id:  "<doc_id>"
    GET  /purchasebill/summary/:tenderId      → render totals card and status breakdown
 
 2. Open Bills list
-   GET  /purchasebill/by-tender/:tenderId    → paginated bill table
-   (use ?page=&limit=&status= to filter)
+   GET  /purchasebill/by-tender/:tenderId    → bill table
 
 3. Open Create Bill form
    GET  /purchasebill/next-id               → get doc_id, pre-fill bill number
 
 4. User fills in Tender + Vendor (vendor_id), picks GRN entries
-   POST /purchasebill/create               → server auto-fills vendor_name, vendor_gstin,
-                                             place_of_supply, credit_days from vendor master
+   POST /purchasebill/create               → server auto-fills vendor fields from master
                                            → bill saved, GRNs marked as billed
+                                           → status = "pending" by default
 
-5. Refresh list + summary
+5. Finance approves
+   PATCH /purchasebill/approve/:id         → status → "approved"
+                                           → LedgerEntry posted (credit_amt = net_amount)
+                                           → vendor payable register updated
+
+6. Refresh list + summary
    GET  /purchasebill/by-tender/:tenderId
    GET  /purchasebill/summary/:tenderId
+   GET  /ledger/balance/VND-XXX            → see updated vendor payable balance
 ```
 
 > **Frontend note:** Do not send `vendor_ref`, `vendor_name`, `vendor_gstin`, or `place_of_supply` in the create payload — the server fetches and locks them automatically from the vendor master using `vendor_id`.

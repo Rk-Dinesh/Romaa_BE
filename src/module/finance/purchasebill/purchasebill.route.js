@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getBills, getBillsByTender, getTenderSummary, getAllTendersSummary, getNextDocId, createPurchaseBill } from "./purchasebill.controller.js";
+import { getBills, getBillsByTender, getTenderSummary, getAllTendersSummary, getNextDocId, createPurchaseBill, approvePurchaseBill } from "./purchasebill.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 
 const purchaseBillRouter = Router();
@@ -50,6 +50,14 @@ purchaseBillRouter.post(
   // verifyJWT,
   // verifyPermission("finance", "purchasebill", "create"),
   createPurchaseBill
+);
+
+// PATCH /purchasebill/approve/:id
+purchaseBillRouter.patch(
+  "/approve/:id",
+  // verifyJWT,
+  // verifyPermission("finance", "purchasebill", "edit"),
+  approvePurchaseBill
 );
 
 export default purchaseBillRouter;

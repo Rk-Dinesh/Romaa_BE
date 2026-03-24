@@ -44,7 +44,7 @@ const WeeklyBillingSchema = new mongoose.Schema(
 
     status: {
       type: String,
-      enum: ["Generated", "Pending", "Paid", "Cancelled"],
+      enum: ["Generated", "Pending", "Approved", "Cancelled"],
       default: "Generated",
     },
 
