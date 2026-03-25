@@ -62,7 +62,26 @@ const WeeklyBillingSchema = new mongoose.Schema(
       default: "Generated",
     },
 
-    created_by: { type: String, default: "Site Engineer" },
+    created_by:  { type: String, default: "Site Engineer" },
+    approved_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
+    approved_at: { type: Date, default: null },
+
+    // ── Payment tracking ──────────────────────────────────────────────────────
+    // Populated automatically when a PaymentVoucher referencing this bill is approved.
+    paid_status: {
+      type: String,
+      enum: ["unpaid", "partial", "paid"],
+      default: "unpaid",
+    },
+    amount_paid: { type: Number, default: 0 }, // cumulative amount paid via PVs
+    payment_refs: [
+      {
+        pv_ref:    { type: mongoose.Schema.Types.ObjectId, ref: "PaymentVoucher", default: null },
+        pv_no:     { type: String, default: "" },   // snapshot of PaymentVoucher.pv_no
+        paid_amt:  { type: Number, default: 0 },
+        paid_date: { type: Date,   default: null },
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -84,9 +103,10 @@ WeeklyBillingSchema.pre("save", function (next) {
   next();
 });
 
-// Index for duplicate-bill check and list queries
+// Index for duplicate-bill check, list queries, and payment queue
 WeeklyBillingSchema.index({ tender_id: 1, contractor_name: 1, from_date: 1, to_date: 1 });
 WeeklyBillingSchema.index({ tender_id: 1, fin_year: 1 });
+WeeklyBillingSchema.index({ paid_status: 1, bill_date: -1 }); // unpaid / partial bills queue
 
 const WeeklyBillingModel = mongoose.model("WeeklyBilling", WeeklyBillingSchema);
 export default WeeklyBillingModel;

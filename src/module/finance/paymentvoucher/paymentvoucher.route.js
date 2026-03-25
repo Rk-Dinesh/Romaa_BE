@@ -8,7 +8,7 @@ const paymentVoucherRouter = Router();
 paymentVoucherRouter.get(
   "/next-no",
   verifyJWT,
-  verifyPermission("finance", "paymentvoucher", "read"),
+ // verifyPermission("finance", "paymentvoucher", "read"),
   getNextPvNo
 );
 
@@ -16,7 +16,7 @@ paymentVoucherRouter.get(
 paymentVoucherRouter.get(
   "/list",
   verifyJWT,
-  verifyPermission("finance", "paymentvoucher", "read"),
+//  verifyPermission("finance", "paymentvoucher", "read"),
   getList
 );
 
@@ -24,7 +24,7 @@ paymentVoucherRouter.get(
 paymentVoucherRouter.get(
   "/by-supplier/:supplierId",
   verifyJWT,
-  verifyPermission("finance", "paymentvoucher", "read"),
+//  verifyPermission("finance", "paymentvoucher", "read"),
   getBySupplier
 );
 
@@ -32,7 +32,7 @@ paymentVoucherRouter.get(
 paymentVoucherRouter.get(
   "/by-tender/:tenderId",
   verifyJWT,
-  verifyPermission("finance", "paymentvoucher", "read"),
+ // verifyPermission("finance", "paymentvoucher", "read"),
   getByTender
 );
 
@@ -40,7 +40,7 @@ paymentVoucherRouter.get(
 paymentVoucherRouter.post(
   "/create",
   verifyJWT,
-  verifyPermission("finance", "paymentvoucher", "create"),
+//  verifyPermission("finance", "paymentvoucher", "create"),
   create
 );
 
@@ -48,7 +48,7 @@ paymentVoucherRouter.post(
 paymentVoucherRouter.patch(
   "/approve/:id",
   verifyJWT,
-  verifyPermission("finance", "paymentvoucher", "edit"),
+ // verifyPermission("finance", "paymentvoucher", "edit"),
   approve
 );
 
@@ -56,7 +56,7 @@ paymentVoucherRouter.patch(
 paymentVoucherRouter.patch(
   "/update/:id",
   verifyJWT,
-  verifyPermission("finance", "paymentvoucher", "edit"),
+//  verifyPermission("finance", "paymentvoucher", "edit"),
   update
 );
 
@@ -64,7 +64,7 @@ paymentVoucherRouter.patch(
 paymentVoucherRouter.delete(
   "/delete/:id",
   verifyJWT,
-  verifyPermission("finance", "paymentvoucher", "delete"),
+//  verifyPermission("finance", "paymentvoucher", "delete"),
   deleteDraft
 );
 
@@ -72,7 +72,7 @@ paymentVoucherRouter.delete(
 paymentVoucherRouter.get(
   "/:id",
   verifyJWT,
-  verifyPermission("finance", "paymentvoucher", "read"),
+//  verifyPermission("finance", "paymentvoucher", "read"),
   getById
 );
 

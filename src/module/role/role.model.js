@@ -101,7 +101,9 @@ const RoleSchema = new mongoose.Schema(
         cash_entry: Actions,
         ledger_entry: Actions,
         supplier_outstanding: Actions,
-        overall_expenses: Actions
+        overall_expenses: Actions,
+        company_bank_details: Actions,
+        
       },
 
       // --- Reports Module ---

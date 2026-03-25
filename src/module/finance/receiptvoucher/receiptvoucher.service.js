@@ -2,6 +2,7 @@ import ReceiptVoucherModel from "./receiptvoucher.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
 import LedgerService from "../ledger/ledger.service.js";
+import AccountTreeService from "../accounttree/accounttree.service.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -56,9 +57,10 @@ function buildDoc(payload, rv_no) {
     rv_date:       payload.rv_date       ? new Date(payload.rv_date) : new Date(),
     document_year: payload.document_year || currentFY(),
 
-    receipt_mode: payload.receipt_mode || "NEFT",
-    bank_name:    payload.bank_name    || "",
-    bank_ref:     payload.bank_ref     || "",
+    receipt_mode:      payload.receipt_mode      || "NEFT",
+    bank_account_code: payload.bank_account_code || "",
+    bank_name:         payload.bank_name         || "",
+    bank_ref:          payload.bank_ref          || "",
     cheque_no:    payload.cheque_no    || "",
     cheque_date:  payload.cheque_date  ? new Date(payload.cheque_date) : null,
 
@@ -221,7 +223,7 @@ class ReceiptVoucherService {
     if (rv.status === "approved") throw new Error("Cannot edit an approved receipt voucher");
 
     const allowed = [
-      "rv_date", "document_year", "receipt_mode", "bank_name", "bank_ref",
+      "rv_date", "document_year", "receipt_mode", "bank_account_code", "bank_name", "bank_ref",
       "cheque_no", "cheque_date", "against_ref", "against_no", "amount",
       "entries", "narration", "tender_id", "tender_ref", "tender_name",
     ];
@@ -251,6 +253,17 @@ class ReceiptVoucherService {
     await rv.save();
 
     await postToLedger(rv);
+
+    // Increase the receiving bank account's opening_balance in AccountTree
+    // Receipt in = Dr to bank account (Dr normal Asset → balance increases)
+    if (!rv.bank_account_code) {
+      throw new Error("bank_account_code is required to approve a receipt voucher — select the bank account being credited");
+    }
+    await AccountTreeService.applyBalanceLines([{
+      account_code: rv.bank_account_code,
+      debit_amt:    rv.amount,
+      credit_amt:   0,
+    }]);
 
     return rv;
   }

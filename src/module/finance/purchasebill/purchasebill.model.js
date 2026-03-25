@@ -126,6 +126,23 @@ const PurchaseBillSchema = new mongoose.Schema(
       enum: ["draft", "pending", "approved"],
       default: "pending",
     },
+
+    // ── Payment tracking ──────────────────────────────────────────────────────
+    // Populated automatically when a PaymentVoucher referencing this bill is approved.
+    paid_status: {
+      type: String,
+      enum: ["unpaid", "partial", "paid"],
+      default: "unpaid",
+    },
+    amount_paid: { type: Number, default: 0 }, // cumulative amount received via PVs
+    payment_refs: [
+      {
+        pv_ref:    { type: mongoose.Schema.Types.ObjectId, ref: "PaymentVoucher", default: null },
+        pv_no:     { type: String, default: "" },   // snapshot of PaymentVoucher.pv_no
+        paid_amt:  { type: Number, default: 0 },
+        paid_date: { type: Date,   default: null },
+      },
+    ],
   },
   { timestamps: true }
 );
@@ -212,6 +229,7 @@ PurchaseBillSchema.pre("save", function (next) {
 PurchaseBillSchema.index({ tender_id: 1, createdAt: -1 });   // tender bill list
 PurchaseBillSchema.index({ vendor_id: 1, createdAt: -1 });   // vendor bill list
 PurchaseBillSchema.index({ status: 1, doc_date: -1 });      // payment due / approval queue
+PurchaseBillSchema.index({ paid_status: 1, doc_date: -1 }); // unpaid / partial bills queue
 PurchaseBillSchema.index({ doc_date: -1 });                 // date-range reports
 PurchaseBillSchema.index({ "line_items.item_id": 1 });       // multikey: item-wise reports
 PurchaseBillSchema.index(

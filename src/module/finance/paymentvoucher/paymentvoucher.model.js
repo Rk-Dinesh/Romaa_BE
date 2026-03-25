@@ -20,6 +20,7 @@ const EntryLineSchema = new mongoose.Schema(
 // Which bills are being settled by this payment (optional — On Account allowed)
 const BillRefSchema = new mongoose.Schema(
   {
+    bill_type:   { type: String, enum: ["PurchaseBill", "WeeklyBilling"], default: "PurchaseBill" },
     bill_ref:    { type: mongoose.Schema.Types.ObjectId, default: null },
     bill_no:     { type: String, default: "" },  // snapshot
     settled_amt: { type: Number, default: 0 },
@@ -38,11 +39,12 @@ const PaymentVoucherSchema = new mongoose.Schema(
     document_year: { type: String, default: "" },  // e.g. "25-26"
 
     // ── Payment instrument ────────────────────────────────────────────────
-    payment_mode: { type: String, enum: PAYMENT_MODES, default: "NEFT" },
-    bank_name:    { type: String, default: "" },  // paying bank account
-    bank_ref:     { type: String, default: "" },  // UTR / NEFT / RTGS ref no.
-    cheque_no:    { type: String, default: "" },
-    cheque_date:  { type: Date,   default: null },
+    payment_mode:      { type: String, enum: PAYMENT_MODES, default: "NEFT" },
+    bank_account_code: { type: String, default: "" },  // AccountTree / CompanyBankAccount account_code
+    bank_name:         { type: String, default: "" },  // paying bank display name
+    bank_ref:          { type: String, default: "" },  // UTR / NEFT / RTGS ref no.
+    cheque_no:         { type: String, default: "" },
+    cheque_date:       { type: Date,   default: null },
 
     // ── Supplier being paid (Vendor or Contractor) ────────────────────────
     supplier_type:  { type: String, enum: SUPPLIER_TYPES, required: true },

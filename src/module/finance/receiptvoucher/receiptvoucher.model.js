@@ -28,11 +28,12 @@ const ReceiptVoucherSchema = new mongoose.Schema(
     document_year: { type: String, default: "" },  // e.g. "25-26"
 
     // ── Receipt instrument ────────────────────────────────────────────────
-    receipt_mode: { type: String, enum: RECEIPT_MODES, default: "NEFT" },
-    bank_name:    { type: String, default: "" },  // receiving bank account
-    bank_ref:     { type: String, default: "" },  // UTR / NEFT / RTGS ref no.
-    cheque_no:    { type: String, default: "" },
-    cheque_date:  { type: Date,   default: null },
+    receipt_mode:      { type: String, enum: RECEIPT_MODES, default: "NEFT" },
+    bank_account_code: { type: String, default: "" },  // AccountTree / CompanyBankAccount account_code
+    bank_name:         { type: String, default: "" },  // receiving bank display name
+    bank_ref:          { type: String, default: "" },  // UTR / NEFT / RTGS ref no.
+    cheque_no:         { type: String, default: "" },
+    cheque_date:       { type: Date,   default: null },
 
     // ── Source supplier (Vendor or Contractor who pays you back) ──────────
     // Use case: vendor advance refund, security deposit return, etc.

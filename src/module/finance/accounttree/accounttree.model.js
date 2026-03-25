@@ -159,24 +159,10 @@ const AccountTreeSchema = new mongoose.Schema(
     opening_balance_type: { type: String, enum: ["Dr", "Cr", ""], default: "" },
     opening_balance_date: { type: Date, default: null },
 
-    // ── Bank details (only for is_bank_cash = true accounts) ─────────────
-    // Stores the physical bank account information for bank ledger accounts.
-    // e.g., SBI Current A/c, HDFC OD account, etc.
-    bank_details: {
-      bank_name:      { type: String, default: "" },   // SBI, HDFC, ICICI, etc.
-      account_no:     { type: String, default: "" },   // actual bank account number
-      ifsc_code:      { type: String, default: "" },   // branch IFSC
-      bank_address:   { type: String, default: "" },   // branch address
-      account_type:   {
-        type: String,
-        enum: ["Savings", "Current", "OD", "CC", "Fixed Deposit", ""],
-        default: "",
-      },
-      interest_pct:   { type: Number, default: 0 },    // interest % on OD/CC accounts
-      credit_limit:   { type: Number, default: 0 },    // OD/CC credit limit sanctioned
-      debit_limit:    { type: Number, default: 0 },    // max daily debit allowed
-      discount_limit: { type: Number, default: 0 },    // bill discounting limit
-    },
+    // ── Bank details ──────────────────────────────────────────────────────
+    // Physical bank account details are stored in the CompanyBankAccount
+    // collection (linked by account_code). The is_bank_cash flag here
+    // identifies this as a bank/cash account for voucher dropdowns.
   },
   { timestamps: true }
 );

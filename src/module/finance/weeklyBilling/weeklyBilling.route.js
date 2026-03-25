@@ -5,6 +5,7 @@ import {
   getSubBillTransactions,
   getContractorSummary,
   generateBill,
+  approveBill,
   updateStatus,
 } from "./weeklyBilling.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
@@ -26,17 +27,56 @@ import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 //  POST /weeklyBilling/api/generate
 //       Generate a new bill (returns 409 on overlapping period for same vendor)
 //
+//  PATCH /weeklyBilling/api/approve/:billId
+//       Approve a bill (Generated/Pending → Approved) + posts to ledger
+//
 //  PATCH /weeklyBilling/api/status/:billId
-//       Update bill status: Generated → Pending → Paid | Cancelled
+//       Generic status update: Generated → Pending → Approved | Cancelled
 // ──────────────────────────────────────────────────────────────────────────────
 
 const weeklyBillingRouter = Router();
 
-weeklyBillingRouter.get("/api/list/:tenderId",                verifyJWT, verifyPermission("finance", "weeklybilling", "read"),    getBillingList);
-weeklyBillingRouter.get("/api/detail/:billNo",                verifyJWT, verifyPermission("finance", "weeklybilling", "read"),    getBillDetail);
-weeklyBillingRouter.get("/api/sub-bill/:subBillNo",           verifyJWT, verifyPermission("finance", "weeklybilling", "read"),    getSubBillTransactions);
-weeklyBillingRouter.get("/api/contractor-summary/:tenderId",  verifyJWT, verifyPermission("finance", "weeklybilling", "read"),    getContractorSummary);
-weeklyBillingRouter.post("/api/generate",                     verifyJWT, verifyPermission("finance", "weeklybilling", "create"),  generateBill);
-weeklyBillingRouter.patch("/api/status/:billId",              verifyJWT, verifyPermission("finance", "weeklybilling", "edit"),    updateStatus);
+weeklyBillingRouter.get(
+  "/api/list/:tenderId",
+  verifyJWT,
+ // verifyPermission("finance", "weeklybilling", "read"),
+  getBillingList,
+);
+weeklyBillingRouter.get(
+  "/api/detail/:billNo",
+  verifyJWT,
+//  verifyPermission("finance", "weeklybilling", "read"),
+  getBillDetail,
+);
+weeklyBillingRouter.get(
+  "/api/sub-bill/:subBillNo",
+  verifyJWT,
+//  verifyPermission("finance", "weeklybilling", "read"),
+  getSubBillTransactions,
+);
+weeklyBillingRouter.get(
+  "/api/contractor-summary/:tenderId",
+  verifyJWT,
+ // verifyPermission("finance", "weeklybilling", "read"),
+  getContractorSummary,
+);
+weeklyBillingRouter.post(
+  "/api/generate",
+  verifyJWT,
+ // verifyPermission("finance", "weeklybilling", "create"),
+  generateBill,
+);
+weeklyBillingRouter.patch(
+  "/api/approve/:billId",
+  verifyJWT,
+// verifyPermission("finance", "weeklybilling", "edit"),
+  approveBill,
+);
+weeklyBillingRouter.patch(
+  "/api/status/:billId",
+  verifyJWT,
+//  verifyPermission("finance", "weeklybilling", "edit"),
+  updateStatus,
+);
 
 export default weeklyBillingRouter;

@@ -8,7 +8,7 @@ const receiptVoucherRouter = Router();
 receiptVoucherRouter.get(
   "/next-no",
   verifyJWT,
-  verifyPermission("finance", "receiptvoucher", "read"),
+//  verifyPermission("finance", "receiptvoucher", "read"),
   getNextRvNo
 );
 
@@ -16,7 +16,7 @@ receiptVoucherRouter.get(
 receiptVoucherRouter.get(
   "/list",
   verifyJWT,
-  verifyPermission("finance", "receiptvoucher", "read"),
+//  verifyPermission("finance", "receiptvoucher", "read"),
   getList
 );
 
@@ -24,7 +24,7 @@ receiptVoucherRouter.get(
 receiptVoucherRouter.get(
   "/by-supplier/:supplierId",
   verifyJWT,
-  verifyPermission("finance", "receiptvoucher", "read"),
+//  verifyPermission("finance", "receiptvoucher", "read"),
   getBySupplier
 );
 
@@ -32,7 +32,7 @@ receiptVoucherRouter.get(
 receiptVoucherRouter.get(
   "/by-tender/:tenderId",
   verifyJWT,
-  verifyPermission("finance", "receiptvoucher", "read"),
+//  verifyPermission("finance", "receiptvoucher", "read"),
   getByTender
 );
 
@@ -40,7 +40,7 @@ receiptVoucherRouter.get(
 receiptVoucherRouter.post(
   "/create",
   verifyJWT,
-  verifyPermission("finance", "receiptvoucher", "create"),
+//  verifyPermission("finance", "receiptvoucher", "create"),
   create
 );
 
@@ -48,7 +48,7 @@ receiptVoucherRouter.post(
 receiptVoucherRouter.patch(
   "/approve/:id",
   verifyJWT,
-  verifyPermission("finance", "receiptvoucher", "edit"),
+//  verifyPermission("finance", "receiptvoucher", "edit"),
   approve
 );
 
@@ -56,7 +56,7 @@ receiptVoucherRouter.patch(
 receiptVoucherRouter.patch(
   "/update/:id",
   verifyJWT,
-  verifyPermission("finance", "receiptvoucher", "edit"),
+//  verifyPermission("finance", "receiptvoucher", "edit"),
   update
 );
 
@@ -64,7 +64,7 @@ receiptVoucherRouter.patch(
 receiptVoucherRouter.delete(
   "/delete/:id",
   verifyJWT,
-  verifyPermission("finance", "receiptvoucher", "delete"),
+//  verifyPermission("finance", "receiptvoucher", "delete"),
   deleteDraft
 );
 
@@ -72,7 +72,7 @@ receiptVoucherRouter.delete(
 receiptVoucherRouter.get(
   "/:id",
   verifyJWT,
-  verifyPermission("finance", "receiptvoucher", "read"),
+//  verifyPermission("finance", "receiptvoucher", "read"),
   getById
 );
 

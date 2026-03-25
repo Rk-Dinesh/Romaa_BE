@@ -120,6 +120,20 @@ export const generateBill = async (req, res) => {
   }
 };
 
+// ── PATCH /weeklyBilling/api/approve/:billId ─────────────────────────────────
+// Approves a bill: Generated or Pending → Approved + posts to ledger.
+export const approveBill = async (req, res) => {
+  try {
+    const { billId } = req.params;
+    const approvedBy = req.user?._id || null;
+
+    const updated = await service.approveBill(billId, approvedBy);
+    return ok(res, updated, "Bill approved and posted to ledger");
+  } catch (err) {
+    return fail(res, err.message, err.statusCode || 500);
+  }
+};
+
 // ── PATCH /weeklyBilling/api/status/:billId ───────────────────────────────────
 // Updates bill status and syncs all child transactions.
 export const updateStatus = async (req, res) => {

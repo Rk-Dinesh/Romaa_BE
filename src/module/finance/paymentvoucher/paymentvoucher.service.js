@@ -2,6 +2,9 @@ import PaymentVoucherModel from "./paymentvoucher.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
 import LedgerService from "../ledger/ledger.service.js";
+import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
+import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
+import AccountTreeService from "../accounttree/accounttree.service.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -56,9 +59,10 @@ function buildDoc(payload, pv_no) {
     pv_date:       payload.pv_date       ? new Date(payload.pv_date) : new Date(),
     document_year: payload.document_year || currentFY(),
 
-    payment_mode: payload.payment_mode || "NEFT",
-    bank_name:    payload.bank_name    || "",
-    bank_ref:     payload.bank_ref     || "",
+    payment_mode:      payload.payment_mode      || "NEFT",
+    bank_account_code: payload.bank_account_code || "",
+    bank_name:         payload.bank_name         || "",
+    bank_ref:          payload.bank_ref          || "",
     cheque_no:    payload.cheque_no    || "",
     cheque_date:  payload.cheque_date  ? new Date(payload.cheque_date) : null,
 
@@ -73,6 +77,7 @@ function buildDoc(payload, pv_no) {
     tender_name: payload.tender_name || "",
 
     bill_refs: (payload.bill_refs || []).map((b) => ({
+      bill_type:   b.bill_type   || "PurchaseBill",
       bill_ref:    b.bill_ref    || null,
       bill_no:     b.bill_no     || "",
       settled_amt: Number(b.settled_amt) || 0,
@@ -115,6 +120,54 @@ async function postToLedger(pv) {
     debit_amt:     pv.amount,  // PV = Dr entry (clears/reduces supplier payable)
     credit_amt:    0,
   });
+}
+
+// ── Mark referenced bills as (partially) paid ─────────────────────────────────
+// Called after a PV is approved. Iterates bill_refs and for each:
+//   1. Pushes a payment_refs entry onto the bill
+//   2. Increments amount_paid
+//   3. Recomputes paid_status (unpaid / partial / paid)
+//
+// Uses findById + save (not findOneAndUpdate) so the payment_refs array push
+// goes through Mongoose array mutation — safe for concurrent saves because
+// each PV only touches its own bill_refs set.
+async function markBillsSettled(pv) {
+  if (!pv.bill_refs || pv.bill_refs.length === 0) return;
+
+  for (const ref of pv.bill_refs) {
+    if (!ref.bill_ref || !(ref.settled_amt > 0)) continue;
+
+    const Model = ref.bill_type === "WeeklyBilling"
+      ? WeeklyBillingModel
+      : PurchaseBillModel;
+
+    const bill = await Model.findById(ref.bill_ref);
+    if (!bill) continue;
+
+    // Append the new payment record
+    bill.payment_refs.push({
+      pv_ref:    pv._id,
+      pv_no:     pv.pv_no,
+      paid_amt:  ref.settled_amt,
+      paid_date: pv.pv_date || new Date(),
+    });
+
+    // Accumulate paid amount
+    bill.amount_paid = Math.round(((bill.amount_paid || 0) + ref.settled_amt) * 100) / 100;
+
+    // Recalculate paid_status against the bill's payable total
+    const billTotal = ref.bill_type === "WeeklyBilling"
+      ? (bill.net_payable || bill.total_amount)
+      : bill.net_amount;
+
+    if (bill.amount_paid >= billTotal) {
+      bill.paid_status = "paid";
+    } else {
+      bill.paid_status = "partial";
+    }
+
+    await bill.save();
+  }
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -237,7 +290,7 @@ class PaymentVoucherService {
     if (pv.status === "approved") throw new Error("Cannot edit an approved payment voucher");
 
     const allowed = [
-      "pv_date", "document_year", "payment_mode", "bank_name", "bank_ref",
+      "pv_date", "document_year", "payment_mode", "bank_account_code", "bank_name", "bank_ref",
       "cheque_no", "cheque_date", "bill_refs", "amount", "entries", "narration", "tender_id",
       "tender_ref", "tender_name", "gross_amount", "tds_section", "tds_pct",
     ];
@@ -266,7 +319,22 @@ class PaymentVoucherService {
     pv.status = "approved";
     await pv.save();
 
+    // Post to supplier ledger (Dr entry — clears payable)
     await postToLedger(pv);
+
+    // Update every referenced bill with this PV's payment details
+    await markBillsSettled(pv);
+
+    // Reduce the paying bank account's opening_balance in AccountTree
+    // Payment out = Cr to bank account (Dr normal Asset → balance decreases)
+    if (!pv.bank_account_code) {
+      throw new Error("bank_account_code is required to approve a payment voucher — select the bank account being debited");
+    }
+    await AccountTreeService.applyBalanceLines([{
+      account_code: pv.bank_account_code,
+      debit_amt:    0,
+      credit_amt:   pv.amount,
+    }]);
 
     return pv;
   }

@@ -1,5 +1,6 @@
 import JournalEntryModel from "./journalentry.model.js";
 import AccountTreeModel from "../accounttree/accounttree.model.js";
+import AccountTreeService from "../accounttree/accounttree.service.js";
 import LedgerService from "../ledger/ledger.service.js";
 
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
@@ -222,6 +223,7 @@ class JournalEntryService {
       saved.approved_at = new Date();
       await saved.save();
       await crossPostToSupplierLedger(saved);
+      await AccountTreeService.applyBalanceLines(saved.lines);
     }
 
     return saved;
@@ -243,6 +245,7 @@ class JournalEntryService {
     await je.save();
 
     await crossPostToSupplierLedger(je);
+    await AccountTreeService.applyBalanceLines(je.lines);
 
     return je;
   }
@@ -302,6 +305,7 @@ class JournalEntryService {
 
     const reversal = await JournalEntryModel.create(reversalDoc);
     await crossPostToSupplierLedger(reversal);
+    await AccountTreeService.applyBalanceLines(reversal.lines);  // Dr↔Cr already swapped
 
     return reversal;
   }

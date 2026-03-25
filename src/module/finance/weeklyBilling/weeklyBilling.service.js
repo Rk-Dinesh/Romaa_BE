@@ -340,7 +340,40 @@ class WeeklyBillingService {
     return bill;
   }
 
-  // ── 7. Update bill status ─────────────────────────────────────────────────────
+  // ── 7. Approve a bill ────────────────────────────────────────────────────────
+  // Dedicated approve endpoint — validates state, sets Approved, posts to ledger.
+  // approvedBy is the Employee ObjectId from req.user._id.
+  static async approveBill(billId, approvedBy = null) {
+    const bill = await WeeklyBillingModel.findById(billId);
+    if (!bill) {
+      const err = new Error("Bill not found");
+      err.statusCode = 404;
+      throw err;
+    }
+    if (bill.status === "Approved") {
+      const err = new Error("Bill is already approved");
+      err.statusCode = 400;
+      throw err;
+    }
+    if (bill.status === "Cancelled") {
+      const err = new Error("Cannot approve a cancelled bill");
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // Delegate to updateBillStatus for the actual status change + ledger post
+    const updated = await WeeklyBillingService.updateBillStatus(billId, "Approved");
+
+    // Stamp approved_by / approved_at on the document
+    await WeeklyBillingModel.findByIdAndUpdate(billId, {
+      approved_by: approvedBy,
+      approved_at: new Date(),
+    });
+
+    return { ...updated, approved_by: approvedBy, approved_at: new Date() };
+  }
+
+  // ── 8. Update bill status ─────────────────────────────────────────────────────
   // Also syncs status to all child transactions so queries on transactions
   // can filter by status without joining the parent.
   static async updateBillStatus(billId, status) {

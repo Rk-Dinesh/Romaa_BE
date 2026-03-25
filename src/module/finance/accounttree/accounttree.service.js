@@ -24,6 +24,61 @@ class AccountTreeService {
       .lean();
   }
 
+  // ── Apply Dr/Cr movements to opening_balance for a set of lines ─────────
+  // Shared utility called by JournalEntry, PaymentVoucher, ReceiptVoucher on
+  // approval so that AccountTree.opening_balance stays as a live running balance.
+  //
+  // lines: Array of { account_code, debit_amt, credit_amt }
+  //
+  // For every unique account_code in lines:
+  //   net = Σ debit_amt − Σ credit_amt  (positive = net Dr movement)
+  //   signed_current = opening_balance_type==="Dr" ? +ob : -ob
+  //   signed_new     = signed_current + net
+  //   opening_balance_type = signed_new >= 0 ? "Dr" : "Cr"
+  //   opening_balance      = |signed_new|
+  static async applyBalanceLines(lines = []) {
+    const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
+
+    // Accumulate net Dr-Cr per account_code
+    const netMap = {};
+    for (const line of lines) {
+      if (!line.account_code) continue;
+      const net = (Number(line.debit_amt) || 0) - (Number(line.credit_amt) || 0);
+      netMap[line.account_code] = r2((netMap[line.account_code] || 0) + net);
+    }
+
+    const codes = Object.keys(netMap);
+    if (!codes.length) return;
+
+    const nodes = await AccountTreeModel
+      .find({ account_code: { $in: codes }, is_deleted: false })
+      .select("account_code opening_balance opening_balance_type")
+      .lean();
+
+    if (!nodes.length) return;
+
+    const bulkOps = nodes.map((node) => {
+      const net     = netMap[node.account_code] || 0;
+      const ob      = node.opening_balance      || 0;
+      const obType  = node.opening_balance_type || "Dr";
+      const signed  = obType === "Dr" ? ob : -ob;
+      const newSig  = r2(signed + net);
+      return {
+        updateOne: {
+          filter: { account_code: node.account_code },
+          update: {
+            $set: {
+              opening_balance:      Math.abs(newSig),
+              opening_balance_type: newSig >= 0 ? "Dr" : "Cr",
+            },
+          },
+        },
+      };
+    });
+
+    await AccountTreeModel.bulkWrite(bulkOps);
+  }
+
   // ── GET /accounttree/posting-accounts ────────────────────────────────────
   // Only leaf accounts that can receive transactions — used in voucher dropdowns
   static async getPostingAccounts(filters = {}) {
@@ -147,17 +202,6 @@ class AccountTreeService {
     ];
     for (const field of allowed) {
       if (payload[field] !== undefined) acc[field] = payload[field];
-    }
-
-    // Merge bank_details fields individually (partial update support)
-    if (payload.bank_details && typeof payload.bank_details === "object") {
-      const bankAllowed = ["bank_name", "account_no", "ifsc_code", "bank_address",
-                           "account_type", "interest_pct", "credit_limit", "debit_limit", "discount_limit"];
-      for (const field of bankAllowed) {
-        if (payload.bank_details[field] !== undefined) {
-          acc.bank_details[field] = payload.bank_details[field];
-        }
-      }
     }
 
     // Keep in sync
