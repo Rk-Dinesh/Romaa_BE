@@ -235,6 +235,7 @@ Content-Type: application/json
 | `rv_date` | `date` | No | Defaults to today |
 | `document_year` | `string` | No | e.g. `"25-26"` — defaults to current FY |
 | `receipt_mode` | `string` | No | `Cash` / `Cheque` / `NEFT` / `RTGS` / `UPI` / `DD` — default `NEFT` |
+| `bank_account_code` | `string` | No | Account code from AccountTree (e.g. `"1020-HDFC-001"`) — **required for approval** (can be set here or passed at approve time). Get from `GET /finance-dropdown/bank-accounts` |
 | `bank_name` | `string` | No | Name of the receiving bank account |
 | `bank_ref` | `string` | No | UTR / transaction reference number |
 | `cheque_no` | `string` | No | Cheque number (for `receipt_mode = Cheque`) |
@@ -308,18 +309,42 @@ If `status` is `"approved"` at creation (or after `PATCH /approve`):
 
 ## 6. Approve Receipt Voucher
 
-Moves a `pending` receipt voucher to `approved` and auto-posts the Dr ledger entry.
+Moves a `pending` receipt voucher to `approved` and triggers:
+1. **Ledger posting** — Dr entry to supplier ledger (reduces supplier balance / advance)
+2. **Bank balance update** — increases bank/cash account balance via `AccountTreeService.applyBalanceLines()`
 
 ```
 PATCH /receiptvoucher/approve/:id
+Content-Type: application/json
 ```
 
 **Auth required:** `finance > receiptvoucher > edit`
+
+### Request Body (optional if `bank_account_code` already set on RV)
+
+```json
+{
+  "bank_account_code": "1020-HDFC-001"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `bank_account_code` | `string` | **Conditional** | Required if not already set on the voucher. Links to bank/cash account for balance update. |
+
+> If the RV already has `bank_account_code` (set at create time), the body can be `{}`. If missing from both, approval fails with `"bank_account_code is required"`.
+
+### What happens on approval
+
+1. RV status set to `"approved"`
+2. Dr ledger entry posted to LedgerEntry (reduces supplier outstanding)
+3. Bank account `opening_balance` increased via `applyBalanceLines()` (Dr to bank)
 
 ### Example Request
 
 ```
 PATCH /receiptvoucher/approve/67a1b2c3d4e5f6a7b8c9d0e3
+Body: { "bank_account_code": "1020-HDFC-001" }
 ```
 
 ### Success Response `200`
@@ -342,6 +367,7 @@ PATCH /receiptvoucher/approve/67a1b2c3d4e5f6a7b8c9d0e3
 |---|---|---|
 | `400` | ID not found | `"Receipt voucher not found"` |
 | `400` | Already approved | `"Already approved"` |
+| `400` | No bank account | `"bank_account_code is required"` |
 
 ---
 

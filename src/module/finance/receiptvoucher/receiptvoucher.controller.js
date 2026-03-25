@@ -100,7 +100,7 @@ export const deleteDraft = async (req, res) => {
 // PATCH /receiptvoucher/approve/:id
 export const approve = async (req, res) => {
   try {
-    const data = await ReceiptVoucherService.approve(req.params.id);
+    const data = await ReceiptVoucherService.approve(req.params.id, req.body);
     res.status(200).json({ status: true, message: "Receipt voucher approved", data });
   } catch (error) {
     const code = error.message.includes("not found") ||

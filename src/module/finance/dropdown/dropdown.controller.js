@@ -3,10 +3,11 @@ import DropdownService from "./dropdown.service.js";
 // ── GET /finance-dropdown/bank-accounts ───────────────────────────────────────
 // Returns all active company bank accounts with their current balance.
 // Used in: Payment Voucher "Bank Account" selector, Receipt Voucher source selector.
-export const getBankAccounts = async (_req, res) => {
+export const getBankAccounts = async (req, res) => {
   try {
-    const data = await DropdownService.getBankAccounts();
-    res.status(200).json({ status: true, data });
+    const { type } = req.query;  // "bank" | "cash" | omit for both
+    const data = await DropdownService.getBankAccounts(type || null);
+    res.status(200).json({ status: true, count: data.length, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

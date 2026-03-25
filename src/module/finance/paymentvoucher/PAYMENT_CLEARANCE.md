@@ -1,260 +1,288 @@
-# Payment Clearance — Bill Settlement Tracking
+# Payment Clearance — Bill Settlement & Bank Balance Tracking
 
 ## Overview
 
-When a Payment Voucher is **approved**, every bill listed in its `bill_refs` is
-automatically updated to reflect that payment. The bill records:
+When a Payment Voucher is **approved**, three things happen automatically:
 
-- **which payment voucher** cleared it (`payment_refs` array)
-- **how much has been paid** (`amount_paid`)
-- **whether it is fully or partially settled** (`paid_status`)
+1. **Bill settlement** — every bill in `bill_refs` is marked as paid/partial
+2. **Supplier ledger** — a Dr entry is posted to the supplier ledger
+3. **Bank balance** — the paying bank account's `opening_balance` in AccountTree is reduced
 
-This gives a complete payable-to-payment audit trail without any manual steps.
+The same applies in reverse for Receipt Vouchers (bank balance increases).
 
 ---
 
-## Data Flow
+## Data Flow — Payment Voucher Approval
 
 ```
-PaymentVoucher approved
+PATCH /paymentvoucher/approve/:id
+Body: { "bank_account_code": "1020-HDFC-001" }   ← REQUIRED
+        │
+        ├── Validate bank_account_code (BEFORE saving status)
+        │
+        ├── pv.status = "approved"  → pv.save()
         │
         ├── postToLedger(pv)          → supplier ledger entry posted
         │
         ├── markBillsSettled(pv)
         │       │
-        │       ├─ bill_type = "PurchaseBill"  →  PurchaseBillModel.findById(bill_ref)
-        │       └─ bill_type = "WeeklyBilling" →  WeeklyBillingModel.findById(bill_ref)
+        │       ├─ bill_type = "PurchaseBill"  →  update PurchaseBill
+        │       └─ bill_type = "WeeklyBilling" →  update WeeklyBilling
         │               │
         │               ▼
         │       bill.payment_refs.push({ pv_ref, pv_no, paid_amt, paid_date })
         │       bill.amount_paid += settled_amt
         │       bill.paid_status  = "unpaid" | "partial" | "paid"
-        │       bill.save()
         │
-        └── adjustBankBalance(pv)
+        └── AccountTreeService.applyBalanceLines()
                 │
-                └─ AccountTreeModel.findOne({ account_code: pv.bank_account_code })
+                └─ AccountTree for bank_account_code
                         │
                         ▼
                 signed = +opening_balance (Dr) OR −opening_balance (Cr)
                 signed -= pv.amount            ← Cr to bank reduces Dr balance
+                opening_balance      = |signed|
                 opening_balance_type = signed >= 0 ? "Dr" : "Cr"
-                opening_balance      = Math.abs(signed)
-                AccountTree.save()
 ```
 
 ---
 
-## Changes Made
+## Data Flow — Receipt Voucher Approval
 
-### 1. `purchasebill/purchasebill.model.js`
+```
+PATCH /receiptvoucher/approve/:id
+Body: { "bank_account_code": "1020-HDFC-001" }   ← REQUIRED
+        │
+        ├── Validate bank_account_code (BEFORE saving status)
+        │
+        ├── rv.status = "approved"  → rv.save()
+        │
+        ├── postToLedger(rv)          → supplier ledger entry posted
+        │
+        └── AccountTreeService.applyBalanceLines()
+                │
+                └─ signed += rv.amount   ← Dr to bank increases Dr balance
+```
 
-Three new fields added to `PurchaseBillSchema`:
+---
 
-| Field | Type | Description |
-|---|---|---|
-| `paid_status` | `"unpaid" \| "partial" \| "paid"` | Payment state — default `"unpaid"` |
-| `amount_paid` | `Number` | Cumulative amount received via payment vouchers |
-| `payment_refs` | `Array` | One entry per PV that settled this bill |
+## IMPORTANT — `bank_account_code` is Required
 
-`payment_refs` entry shape:
-```js
+`bank_account_code` links the voucher to the bank account in AccountTree.
+Without it, the bank balance cannot be updated.
+
+### How to pass it
+
+**Option A — Set it when creating the voucher:**
+
+```json
+POST /paymentvoucher/create
 {
-  pv_ref:    ObjectId  // → PaymentVoucher
-  pv_no:     String    // snapshot e.g. "PV/25-26/0003"
-  paid_amt:  Number    // amount settled in this PV
-  paid_date: Date      // pv_date from the voucher
+  "bank_account_code": "1020-HDFC-001",
+  "bank_name": "HDFC Current A/c",
+  ...
 }
 ```
 
-New index added:
-```js
-PurchaseBillSchema.index({ paid_status: 1, doc_date: -1 }); // unpaid/partial queue
-```
+**Option B — Pass it at approval time (for existing vouchers):**
 
----
-
-### 2. `weeklyBilling/WeeklyBilling.model.js`
-
-Same three fields added to `WeeklyBillingSchema` (identical structure).
-
-`paid_status` is compared against `net_payable` (after retention deduction).
-
-New index added:
-```js
-WeeklyBillingSchema.index({ paid_status: 1, bill_date: -1 }); // unpaid/partial queue
-```
-
----
-
-### 3. `paymentvoucher/paymentvoucher.model.js`
-
-`bill_type` added to `BillRefSchema` so the service knows which collection to update:
-
-```js
+```json
+PATCH /paymentvoucher/approve/:id
 {
-  bill_type:   "PurchaseBill" | "WeeklyBilling"   // default: "PurchaseBill"
-  bill_ref:    ObjectId
-  bill_no:     String
-  settled_amt: Number
+  "bank_account_code": "1020-HDFC-001"
 }
 ```
 
----
-
-### 4. `paymentvoucher/paymentvoucher.model.js`
-
-`bank_account_code` added to link the PV to a `CompanyBankAccount` / `AccountTree` node:
-
-```js
-bank_account_code: { type: String, default: "" }  // e.g. "1020-HDFC-001"
+If the voucher already has `bank_account_code`, the body is optional.
+If it's missing from both the voucher AND the body, approval will fail with:
+```
+"bank_account_code is required — pass it in the approve request body or set it on the voucher first"
 ```
 
-This is the `account_code` of the bank account being debited on payment.
+### Where to get the `bank_account_code`
 
----
-
-### 5. `paymentvoucher/paymentvoucher.service.js`
-
-- Imports `PurchaseBillModel`, `WeeklyBillingModel`, and `AccountTreeModel`
-- Added `markBillsSettled(pv)` helper — runs after `postToLedger(pv)` on approve
-- Added `adjustBankBalance(pv)` helper — runs after `markBillsSettled(pv)` on approve
-- `buildDoc` maps `bill_type` and `bank_account_code` from payload
-- `approve(id)` sequence: `postToLedger → markBillsSettled → adjustBankBalance`
-
-**`adjustBankBalance` logic:**
-
-For a Dr-normal bank account (Asset), paying out credits the bank and reduces its Dr balance:
-
-```js
-signed = obType === "Dr" ? opening_balance : -opening_balance
-signed -= pv.amount    // payment out = Cr to bank
-new opening_balance_type = signed >= 0 ? "Dr" : "Cr"
-new opening_balance      = Math.abs(signed)
+From the bank accounts dropdown:
 ```
-
-If no `bank_account_code` is set on the PV, the step is silently skipped.
+GET /finance-dropdown/bank-accounts
+```
+Use the `account_code` field from the response (e.g. `"1020-HDFC-001"`).
 
 ---
 
-## Finance Dropdown — Payable Bills API
+## Frontend Integration Guide
 
-The `/finance-dropdown/payable-bills` endpoint surfaces only bills that still have
-outstanding balance (`paid_status != "paid"`) and returns `balance_due` per bill
-so the frontend can pre-fill `settled_amt` when building a new PV.
+### Step 1 — Load bank accounts for the bank selector
 
 ```
-GET /finance-dropdown/payable-bills
-    ?supplier_id=VND-001          (optional)
-    &supplier_type=Vendor         (optional — "Vendor" | "Contractor", omit for both)
-    &tender_id=TND-001            (optional)
+GET /finance-dropdown/bank-accounts
 Authorization: Bearer <token>
 ```
 
-Response includes:
+Response:
 ```json
 {
-  "_id": "<ObjectId>",
-  "bill_type": "PurchaseBill",
-  "bill_no": "PB/25-26/0001",
-  "bill_amount": 118000,
-  "amount_paid": 60000,
-  "balance_due": 58000,
-  "paid_status": "partial"
+  "status": true,
+  "data": [
+    {
+      "account_code": "1020-HDFC-001",
+      "account_name": "HDFC Current A/c",
+      "bank_name": "HDFC Bank",
+      "branch_name": "Anna Nagar Branch",
+      "current_balance": 490000,
+      "opening_balance": 490000,
+      "opening_balance_type": "Dr"
+    }
+  ]
 }
 ```
 
----
+Show `account_name`, `bank_name`, `branch_name`, and `current_balance` in the dropdown.
+Store the selected `account_code` as `bank_account_code`.
 
-## Frontend Usage
+### Step 2 — Load payable bills (for PV only)
 
-### Creating a Payment Voucher against bills
+```
+GET /finance-dropdown/payable-bills?supplier_id=VND-001&tender_id=TND-001
+```
+
+Pre-fill `settled_amt` with `balance_due` from each row.
+
+### Step 3 — Create the Payment Voucher
 
 ```json
 POST /paymentvoucher/create
 {
   "pv_no": "PV/25-26/0003",
   "pv_date": "2026-03-25",
+  "bank_account_code": "1020-HDFC-001",
+  "bank_name": "HDFC Current A/c",
+  "payment_mode": "NEFT",
   "supplier_type": "Vendor",
   "supplier_id": "VND-001",
-  "payment_mode": "NEFT",
-  "gross_amount": 118000,
+  "gross_amount": 10000,
   "bill_refs": [
     {
       "bill_type": "PurchaseBill",
-      "bill_ref": "<ObjectId of PurchaseBill>",
+      "bill_ref": "<ObjectId>",
       "bill_no": "PB/25-26/0001",
-      "settled_amt": 118000
+      "settled_amt": 10000
     }
   ],
   "entries": [
-    { "dr_cr": "Dr", "account_name": "Vendor A/c", "debit_amt": 118000, "credit_amt": 0 },
-    { "dr_cr": "Cr", "account_name": "HDFC Bank A/c", "debit_amt": 0, "credit_amt": 118000 }
+    { "dr_cr": "Dr", "account_name": "Vendor A/c", "debit_amt": 10000, "credit_amt": 0 },
+    { "dr_cr": "Cr", "account_name": "HDFC Bank A/c", "debit_amt": 0, "credit_amt": 10000 }
   ],
   "narration": "Payment against PB/25-26/0001"
 }
 ```
 
-For a **Weekly Bill**:
+### Step 4 — Approve
+
 ```json
-{
-  "bill_type": "WeeklyBilling",
-  "bill_ref": "<ObjectId of WeeklyBilling>",
-  "bill_no": "WB/TND-001/25-26/0001",
-  "settled_amt": 55000
-}
-```
-
-### Approve the PV
-
-```
 PATCH /paymentvoucher/approve/:id
-Authorization: Bearer <token>
-```
-
-On approval, the referenced bills are automatically updated.
-
-### After Approval — bill response includes
-
-```json
 {
-  "doc_id": "PB/25-26/0001",
-  "status": "approved",
-  "net_amount": 118000,
-  "paid_status": "paid",
-  "amount_paid": 118000,
-  "payment_refs": [
-    {
-      "pv_ref": "<ObjectId>",
-      "pv_no": "PV/25-26/0003",
-      "paid_amt": 118000,
-      "paid_date": "2026-03-25T00:00:00.000Z"
-    }
-  ]
+  "bank_account_code": "1020-HDFC-001"
 }
 ```
 
-### Partial Payment Example
+> If `bank_account_code` was already set at create time, the body can be `{}`.
 
-If a bill of ₹1,18,000 receives two payments:
+**After approval:**
+- Bank balance dropdown will show `490000` instead of `500000`
+- Bill `paid_status` will update to `"partial"` or `"paid"`
 
-| PV | Amount | `paid_status` after |
+### Step 5 — Create a Receipt Voucher (money in)
+
+```json
+POST /receiptvoucher/create
+{
+  "rv_no": "RV/25-26/0001",
+  "rv_date": "2026-03-25",
+  "bank_account_code": "1020-HDFC-001",
+  "bank_name": "HDFC Current A/c",
+  "receipt_mode": "NEFT",
+  "supplier_type": "Vendor",
+  "supplier_id": "VND-001",
+  "amount": 100000,
+  "entries": [
+    { "dr_cr": "Dr", "account_name": "HDFC Bank A/c", "debit_amt": 100000, "credit_amt": 0 },
+    { "dr_cr": "Cr", "account_name": "Vendor A/c", "debit_amt": 0, "credit_amt": 100000 }
+  ],
+  "narration": "Advance refund from vendor"
+}
+```
+
+Approve:
+```json
+PATCH /receiptvoucher/approve/:id
+{
+  "bank_account_code": "1020-HDFC-001"
+}
+```
+
+**After approval:** Bank balance increases by `100000`.
+
+---
+
+## Balance Update Logic — `AccountTreeService.applyBalanceLines()`
+
+This shared function is called by **all** finance approvals:
+
+| Module | Direction | Effect on bank Dr balance |
 |---|---|---|
-| PV/25-26/0003 | ₹60,000 | `"partial"` |
-| PV/25-26/0008 | ₹58,000 | `"paid"` |
+| PaymentVoucher | Cr to bank | **Decreases** (payment out) |
+| ReceiptVoucher | Dr to bank | **Increases** (receipt in) |
+| JournalEntry | Per line | Dr increases, Cr decreases |
+
+Formula:
+```
+signed_balance = opening_balance_type === "Dr" ? +opening_balance : -opening_balance
+signed_balance += (debit_amt - credit_amt)
+new opening_balance_type = signed_balance >= 0 ? "Dr" : "Cr"
+new opening_balance      = Math.abs(signed_balance)
+```
+
+The dropdown reads `opening_balance` directly — no separate JE aggregation.
+
+---
+
+## Changes Made
+
+### Models
+
+| Model | New Fields |
+|---|---|
+| `PurchaseBill` | `paid_status`, `amount_paid`, `payment_refs[]` |
+| `WeeklyBilling` | `paid_status`, `amount_paid`, `payment_refs[]` |
+| `PaymentVoucher` | `bank_account_code`, `bill_type` on BillRefSchema |
+| `ReceiptVoucher` | `bank_account_code` |
+
+### Services
+
+| Service | Changes |
+|---|---|
+| `AccountTreeService` | New `applyBalanceLines(lines)` — shared Dr/Cr balance update |
+| `PaymentVoucherService` | `approve(id, body)` accepts `bank_account_code` in body; calls `applyBalanceLines` |
+| `ReceiptVoucherService` | `approve(id, body)` accepts `bank_account_code` in body; calls `applyBalanceLines` |
+| `JournalEntryService` | `approve()`, `reverse()`, `create()` all call `applyBalanceLines(je.lines)` |
+| `DropdownService` | `getBankAccounts()` reads `opening_balance` directly (no JE aggregation) |
 
 ---
 
 ## Querying Unpaid / Partial Bills
 
 ```
+GET /finance-dropdown/payable-bills?supplier_type=Vendor&tender_id=TND-001
 GET /purchasebill/list?status=approved&paid_status=unpaid
 GET /purchasebill/list?status=approved&paid_status=partial
-GET /purchasebill/list?vendor_id=VND-001&paid_status=unpaid
 ```
 
-Use the finance dropdown API for pre-built, filtered payable-bill lists ready for PV creation:
+## Partial Payment Example
 
-```
-GET /finance-dropdown/payable-bills?supplier_type=Vendor&tender_id=TND-001
-```
+Bank starts at ₹5,00,000. Bill of ₹1,18,000:
+
+| Action | Bank Balance | Bill `paid_status` |
+|---|---|---|
+| PV ₹60,000 approved | ₹4,40,000 | `"partial"` |
+| PV ₹58,000 approved | ₹3,82,000 | `"paid"` |
+| RV ₹1,00,000 approved | ₹4,82,000 | — |

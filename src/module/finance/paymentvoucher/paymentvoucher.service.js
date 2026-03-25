@@ -274,10 +274,23 @@ class PaymentVoucherService {
 
     validateEntriesBalance(payload.entries);
 
-    const saved = await PaymentVoucherModel.create(buildDoc(payload, payload.pv_no));
+    const doc = buildDoc(payload, payload.pv_no);
+
+    // If creating directly as approved, bank_account_code must be present
+    if (doc.status === "approved" && !doc.bank_account_code) {
+      throw new Error("bank_account_code is required when creating an approved payment voucher");
+    }
+
+    const saved = await PaymentVoucherModel.create(doc);
 
     if (saved.status === "approved") {
       await postToLedger(saved);
+      await markBillsSettled(saved);
+      await AccountTreeService.applyBalanceLines([{
+        account_code: saved.bank_account_code,
+        debit_amt:    0,
+        credit_amt:   saved.amount,
+      }]);
     }
 
     return saved;
@@ -311,10 +324,21 @@ class PaymentVoucherService {
   }
 
   // PATCH /paymentvoucher/approve/:id
-  static async approve(id) {
+  // body may include { bank_account_code } to set it at approval time
+  static async approve(id, body = {}) {
     const pv = await PaymentVoucherModel.findById(id);
     if (!pv)                      throw new Error("Payment voucher not found");
     if (pv.status === "approved") throw new Error("Already approved");
+
+    // Allow setting bank_account_code at approval time (for existing PVs that lack it)
+    if (body.bank_account_code) {
+      pv.bank_account_code = body.bank_account_code;
+    }
+
+    // Validate BEFORE any state changes
+    if (!pv.bank_account_code) {
+      throw new Error("bank_account_code is required — pass it in the approve request body or set it on the voucher first");
+    }
 
     pv.status = "approved";
     await pv.save();
@@ -327,9 +351,6 @@ class PaymentVoucherService {
 
     // Reduce the paying bank account's opening_balance in AccountTree
     // Payment out = Cr to bank account (Dr normal Asset → balance decreases)
-    if (!pv.bank_account_code) {
-      throw new Error("bank_account_code is required to approve a payment voucher — select the bank account being debited");
-    }
     await AccountTreeService.applyBalanceLines([{
       account_code: pv.bank_account_code,
       debit_amt:    0,

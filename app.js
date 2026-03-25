@@ -59,9 +59,11 @@ import paymentVoucherRouter from './src/module/finance/paymentvoucher/paymentvou
 import receiptVoucherRouter from './src/module/finance/receiptvoucher/receiptvoucher.route.js';
 import accountTreeRouter from './src/module/finance/accounttree/accounttree.route.js';
 import companyBankAccountRouter from './src/module/finance/companybankaccount/companybankaccount.route.js';
+import companyCashAccountRouter from './src/module/finance/companycashaccount/companycashaccount.route.js';
 import journalEntryRouter from './src/module/finance/journalentry/journalentry.route.js';
 import JournalEntryService from './src/module/finance/journalentry/journalentry.service.js';
 import financeDropdownRouter from './src/module/finance/dropdown/dropdown.route.js';
+import bankTransferRouter from './src/module/finance/banktransfer/banktransfer.route.js';
 
 
 
@@ -198,7 +200,7 @@ app.use('/dlp', dlpRouter)
 app.use('/nmrattendance', nmrAttendanceRouter)
 app.use('/drawingvboqde', drawingVsBOQDERouter)
 app.use('/workdone', workdoneRouter)
-app.use('/purchasebill', purchaseBillRouter)
+app.use('/purchasebill', purchaseBillRouter) //fix_finance
 app.use('/weeklybilling', weeklyBillingRouter)
 app.use('/ledger', ledgerRouter)
 app.use('/creditnote', creditNoteRouter)
@@ -207,8 +209,10 @@ app.use('/paymentvoucher', paymentVoucherRouter)
 app.use('/receiptvoucher', receiptVoucherRouter)
 app.use('/accounttree', accountTreeRouter)
 app.use('/companybankaccount', companyBankAccountRouter)
+app.use('/companycashaccount', companyCashAccountRouter)
 app.use('/journalentry', journalEntryRouter)
 app.use('/finance-dropdown', financeDropdownRouter)
+app.use('/banktransfer', bankTransferRouter)
 
 
 

@@ -1,6 +1,7 @@
 import PurchaseBillModel      from "../purchasebill/purchasebill.model.js";
 import WeeklyBillingModel     from "../weeklyBilling/WeeklyBilling.model.js";
 import CompanyBankAccountModel from "../companybankaccount/companybankaccount.model.js";
+import CompanyCashAccountModel from "../companycashaccount/companycashaccount.model.js";
 import AccountTreeModel       from "../accounttree/accounttree.model.js";
 import VendorPermittedModel   from "../../tender/vendorpermitted/vendorpermitted.mode.js";
 import TenderModel            from "../../tender/tender/tender.model.js";
@@ -14,27 +15,78 @@ const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
 class DropdownService {
 
-  // ── 1. Company bank accounts with current balance ─────────────────────────
+  // ── 1. Company bank + cash accounts with current balance ──────────────────
   // GET /finance-dropdown/bank-accounts
+  //       ?type=bank          (optional — "bank" | "cash", omit for both)
   //
   // current_balance = AccountTree.opening_balance (live running balance).
   // opening_balance is updated in-place by AccountTreeService.applyBalanceLines()
   // on every approval: JournalEntry, PaymentVoucher, ReceiptVoucher.
-  // No separate JE aggregation — that would double-count transactions already
-  // folded into opening_balance.
-  static async getBankAccounts() {
-    const accounts = await CompanyBankAccountModel
-      .find({ is_deleted: false, is_active: true })
-      .select("account_code account_name bank_name branch_name account_number ifsc_code account_type credit_limit")
-      .sort({ account_name: 1 })
-      .lean();
+  static async getBankAccounts(type) {
+    const results = [];
 
-    if (!accounts.length) return [];
+    const fetchBank = !type || type === "bank";
+    const fetchCash = !type || type === "cash";
 
-    const codes = accounts.map((a) => a.account_code);
+    // ── Bank Accounts ───────────────────────────────────────────────────
+    if (fetchBank) {
+      const banks = await CompanyBankAccountModel
+        .find({ is_deleted: false, is_active: true })
+        .select("account_code account_name bank_name branch_name account_number ifsc_code account_type credit_limit")
+        .sort({ account_name: 1 })
+        .lean();
 
-    // AccountTree.opening_balance is the live running balance —
-    // updated on every approved PV / RV / JE via applyBalanceLines()
+      for (const a of banks) {
+        results.push({
+          _id:              a._id,
+          account_category: "bank",
+          account_code:     a.account_code,
+          account_name:     a.account_name,
+          bank_name:        a.bank_name        || "",
+          branch_name:      a.branch_name      || "",
+          account_number:   a.account_number   || "",
+          ifsc_code:        a.ifsc_code        || "",
+          account_type:     a.account_type     || "",
+          credit_limit:     a.credit_limit     || 0,
+          custodian_name:   "",
+          location:         "",
+          cash_limit:       0,
+        });
+      }
+    }
+
+    // ── Cash Accounts ───────────────────────────────────────────────────
+    if (fetchCash) {
+      const cashAccounts = await CompanyCashAccountModel
+        .find({ is_deleted: false, is_active: true })
+        .select("account_code account_name custodian_name location cash_limit")
+        .sort({ account_name: 1 })
+        .lean();
+
+      for (const c of cashAccounts) {
+        results.push({
+          _id:              c._id,
+          account_category: "cash",
+          account_code:     c.account_code,
+          account_name:     c.account_name,
+          bank_name:        "",
+          branch_name:      "",
+          account_number:   "",
+          ifsc_code:        "",
+          account_type:     "Cash",
+          credit_limit:     0,
+          custodian_name:   c.custodian_name || "",
+          location:         c.location       || "",
+          cash_limit:       c.cash_limit     || 0,
+        });
+      }
+    }
+
+    if (!results.length) return [];
+
+    // ── Fetch live balances from AccountTree ─────────────────────────────
+    const codes = results.map((r) => r.account_code);
+
     const treeNodes = await AccountTreeModel
       .find({ account_code: { $in: codes }, is_deleted: false })
       .select("account_code opening_balance opening_balance_type")
@@ -44,7 +96,6 @@ class DropdownService {
     for (const n of treeNodes) {
       const ob  = n.opening_balance      || 0;
       const typ = n.opening_balance_type || "Dr";
-      // signed: Dr = positive, Cr = negative
       balMap[n.account_code] = {
         opening_balance:      ob,
         opening_balance_type: typ,
@@ -52,18 +103,10 @@ class DropdownService {
       };
     }
 
-    return accounts.map((a) => {
-      const bal = balMap[a.account_code] || { opening_balance: 0, opening_balance_type: "Dr", current_balance: 0 };
+    return results.map((r) => {
+      const bal = balMap[r.account_code] || { opening_balance: 0, opening_balance_type: "Dr", current_balance: 0 };
       return {
-        _id:                  a._id,
-        account_code:         a.account_code,
-        account_name:         a.account_name,
-        bank_name:            a.bank_name,
-        branch_name:          a.branch_name || "",
-        account_number:       a.account_number,
-        ifsc_code:            a.ifsc_code,
-        account_type:         a.account_type,
-        credit_limit:         a.credit_limit,
+        ...r,
         opening_balance:      bal.opening_balance,
         opening_balance_type: bal.opening_balance_type,
         current_balance:      bal.current_balance,

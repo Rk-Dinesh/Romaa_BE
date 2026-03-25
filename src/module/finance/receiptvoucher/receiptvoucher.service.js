@@ -207,10 +207,22 @@ class ReceiptVoucherService {
 
     validateEntriesBalance(payload.entries);
 
-    const saved = await ReceiptVoucherModel.create(buildDoc(payload, payload.rv_no));
+    const doc = buildDoc(payload, payload.rv_no);
+
+    // If creating directly as approved, bank_account_code must be present
+    if (doc.status === "approved" && !doc.bank_account_code) {
+      throw new Error("bank_account_code is required when creating an approved receipt voucher");
+    }
+
+    const saved = await ReceiptVoucherModel.create(doc);
 
     if (saved.status === "approved") {
       await postToLedger(saved);
+      await AccountTreeService.applyBalanceLines([{
+        account_code: saved.bank_account_code,
+        debit_amt:    saved.amount,
+        credit_amt:   0,
+      }]);
     }
 
     return saved;
@@ -244,10 +256,21 @@ class ReceiptVoucherService {
   }
 
   // PATCH /receiptvoucher/approve/:id
-  static async approve(id) {
+  // body may include { bank_account_code } to set it at approval time
+  static async approve(id, body = {}) {
     const rv = await ReceiptVoucherModel.findById(id);
     if (!rv)                      throw new Error("Receipt voucher not found");
     if (rv.status === "approved") throw new Error("Already approved");
+
+    // Allow setting bank_account_code at approval time
+    if (body.bank_account_code) {
+      rv.bank_account_code = body.bank_account_code;
+    }
+
+    // Validate BEFORE any state changes
+    if (!rv.bank_account_code) {
+      throw new Error("bank_account_code is required — pass it in the approve request body or set it on the voucher first");
+    }
 
     rv.status = "approved";
     await rv.save();
@@ -256,9 +279,6 @@ class ReceiptVoucherService {
 
     // Increase the receiving bank account's opening_balance in AccountTree
     // Receipt in = Dr to bank account (Dr normal Asset → balance increases)
-    if (!rv.bank_account_code) {
-      throw new Error("bank_account_code is required to approve a receipt voucher — select the bank account being credited");
-    }
     await AccountTreeService.applyBalanceLines([{
       account_code: rv.bank_account_code,
       debit_amt:    rv.amount,

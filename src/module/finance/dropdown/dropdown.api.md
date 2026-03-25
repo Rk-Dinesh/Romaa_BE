@@ -7,25 +7,30 @@ Base prefix: `/finance-dropdown`
 
 ---
 
-## 1. Company Bank Accounts with Balance
+## 1. Company Bank + Cash Accounts with Balance
 
 ```
 GET /finance-dropdown/bank-accounts
+GET /finance-dropdown/bank-accounts?type=bank     ← bank only
+GET /finance-dropdown/bank-accounts?type=cash     ← cash only
 Authorization: Bearer <token>
 ```
 
-Returns every active company bank account with its **current balance**
-computed from the AccountTree opening balance plus all approved Journal Entry
-lines for that account code.
+Returns all active **bank accounts** (from `CompanyBankAccount`) and **cash accounts**
+(from `CompanyCashAccount`) with their live `current_balance` from AccountTree.
+
+Use `account_category` to distinguish between bank and cash entries.
 
 ### Response `200`
 
 ```json
 {
   "status": true,
+  "count": 2,
   "data": [
     {
       "_id": "...",
+      "account_category": "bank",
       "account_code": "1020-HDFC-001",
       "account_name": "HDFC Current A/c",
       "bank_name": "HDFC Bank",
@@ -33,42 +38,52 @@ lines for that account code.
       "account_number": "XXXX1234",
       "ifsc_code": "HDFC0001234",
       "account_type": "Current",
-      "credit_limit": 0,
-      "opening_balance": 500000.00,
+      "credit_limit": 500000,
+      "custodian_name": "",
+      "location": "",
+      "cash_limit": 0,
+      "opening_balance": 490000,
       "opening_balance_type": "Dr",
-      "current_balance": 850000.00
+      "current_balance": 490000
+    },
+    {
+      "_id": "...",
+      "account_category": "cash",
+      "account_code": "1010-PETTY-001",
+      "account_name": "Head Office Petty Cash",
+      "bank_name": "",
+      "branch_name": "",
+      "account_number": "",
+      "ifsc_code": "",
+      "account_type": "Cash",
+      "credit_limit": 0,
+      "custodian_name": "Raj Kumar",
+      "location": "Head Office",
+      "cash_limit": 50000,
+      "opening_balance": 25000,
+      "opening_balance_type": "Dr",
+      "current_balance": 25000
     }
   ]
 }
 ```
 
-**Used on:** Payment Voucher → "Bank / Payment Account" selector
+**Used on:** Payment Voucher / Receipt Voucher → "Bank / Cash Account" selector
 
-**Balance logic:**
-- Bank accounts are Assets (Dr normal balance)
-- `opening_balance` on `AccountTree` is a **live running balance** — it is adjusted automatically whenever a Payment Voucher referencing this `bank_account_code` is approved
-- Any manual JournalEntry lines for this account are added on top
-
-```
-current_balance = opening_balance(Dr) − opening_balance(Cr)
-                + Σ approved JE debit_amt − Σ approved JE credit_amt
-```
-
-**How `opening_balance` is updated on PV approval:**
-```
-signed_balance = +opening_balance (if Dr) OR −opening_balance (if Cr)
-signed_balance -= pv.amount          ← Cr to bank (payment out) reduces Dr balance
-new opening_balance_type = signed_balance >= 0 ? "Dr" : "Cr"
-new opening_balance      = Math.abs(signed_balance)
-```
-
-**New fields vs previous version:**
+**Key fields:**
 
 | Field | Description |
 |---|---|
-| `branch_name` | Bank branch name (stored on `CompanyBankAccount`) |
-| `opening_balance` | Brought-forward / migration balance from `AccountTree` |
-| `opening_balance_type` | `"Dr"` or `"Cr"` — direction of the opening balance |
+| `account_category` | `"bank"` or `"cash"` — use to render differently in the dropdown |
+| `account_code` | Store as `bank_account_code` on PV/RV — used for balance updates |
+| `current_balance` | Live running balance from `AccountTree.opening_balance` |
+| `custodian_name` | Cash only — person managing the cash |
+| `location` | Cash only — physical location |
+
+**Balance logic:**
+- `opening_balance` on AccountTree is a **live running balance** updated by `AccountTreeService.applyBalanceLines()` on every PV / RV / JE approval
+- `current_balance` = `opening_balance` (Dr positive, Cr negative)
+- No separate JE aggregation (avoids double-counting)
 
 ---
 
@@ -231,7 +246,8 @@ Omit `type` to get all three groups in one call.
 
 | API | Primary source | Enriched from |
 |-----|---------------|---------------|
-| Bank accounts | `CompanyBankAccount` | `AccountTree` (opening balance) + `JournalEntry.lines` (movements) |
+| Bank accounts | `CompanyBankAccount` | `AccountTree` (live running balance) |
+| Cash accounts | `CompanyCashAccount` | `AccountTree` (live running balance) |
 | Payable bills | `PurchaseBill` + `WeeklyBilling` | — |
 | Vendors | `VendorPermitted.listOfPermittedVendors` | `Vendors` |
 | Contractors | `Contractors.assigned_projects.tender_id` (same as `/contractor/getbytender/:tenderId`) | — |

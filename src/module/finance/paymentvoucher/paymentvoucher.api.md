@@ -239,6 +239,7 @@ Content-Type: application/json
 | `pv_date` | `date` | No | Defaults to today |
 | `document_year` | `string` | No | e.g. `"25-26"` — defaults to current FY |
 | `payment_mode` | `string` | No | `Cash` / `Cheque` / `NEFT` / `RTGS` / `UPI` / `DD` — default `NEFT` |
+| `bank_account_code` | `string` | No | Account code from AccountTree (e.g. `"1020-HDFC-001"`) — **required for approval** (can be set here or passed at approve time). Get from `GET /finance-dropdown/bank-accounts` |
 | `bank_name` | `string` | No | Name of the paying bank account |
 | `bank_ref` | `string` | No | UTR / transaction reference number |
 | `cheque_no` | `string` | No | Cheque number (for `payment_mode = Cheque`) |
@@ -266,6 +267,7 @@ Content-Type: application/json
 
 | Field | Type | Description |
 |---|---|---|
+| `bill_type` | `"PurchaseBill" \| "WeeklyBilling"` | Type of bill being settled |
 | `bill_ref` | `ObjectId` | `_id` of the PurchaseBill or WeeklyBill being settled |
 | `bill_no` | `string` | Snapshot of bill number |
 | `settled_amt` | `number` | Amount being settled from this bill |
@@ -329,18 +331,47 @@ If `status` is `"approved"` at creation (or after `PATCH /approve`):
 
 ## 6. Approve Payment Voucher
 
-Moves a `pending` payment voucher to `approved` and auto-posts the Dr ledger entry.
+Moves a `pending` payment voucher to `approved` and triggers:
+1. **Ledger posting** — Dr entry to supplier ledger (clears payable)
+2. **Bill settlement** — updates `payment_refs`, `amount_paid`, `paid_status` on each bill in `bill_refs`
+3. **Bank balance update** — reduces bank/cash account balance via `AccountTreeService.applyBalanceLines()`
 
 ```
 PATCH /paymentvoucher/approve/:id
+Content-Type: application/json
 ```
 
 **Auth required:** `finance > paymentvoucher > edit`
+
+### Request Body (optional if `bank_account_code` already set on PV)
+
+```json
+{
+  "bank_account_code": "1020-HDFC-001"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `bank_account_code` | `string` | **Conditional** | Required if not already set on the voucher. Links to bank/cash account for balance update. |
+
+> If the PV already has `bank_account_code` (set at create time), the body can be `{}`. If missing from both, approval fails with `"bank_account_code is required"`.
+
+### What happens on approval
+
+1. PV status set to `"approved"`
+2. For each `bill_refs[]` entry:
+   - `payment_refs` pushed onto the bill (PurchaseBill or WeeklyBilling)
+   - `amount_paid` incremented by `settled_amt`
+   - `paid_status` recalculated: `unpaid` / `partial` / `paid`
+3. Dr ledger entry posted to LedgerEntry (reduces supplier outstanding)
+4. Bank account `opening_balance` reduced via `applyBalanceLines()` (Cr to bank)
 
 ### Example Request
 
 ```
 PATCH /paymentvoucher/approve/67a1b2c3d4e5f6a7b8c9d0e2
+Body: { "bank_account_code": "1020-HDFC-001" }
 ```
 
 ### Success Response `200`
@@ -363,6 +394,7 @@ PATCH /paymentvoucher/approve/67a1b2c3d4e5f6a7b8c9d0e2
 |---|---|---|
 | `400` | ID not found | `"Payment voucher not found"` |
 | `400` | Already approved | `"Already approved"` |
+| `400` | No bank account | `"bank_account_code is required"` |
 
 ---
 
