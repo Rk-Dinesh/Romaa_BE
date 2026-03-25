@@ -12,6 +12,18 @@ function currentFY() {
   return `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`; // "25-26"
 }
 
+// Validate that entries balance: sum of debits must equal sum of credits
+function validateEntriesBalance(entries) {
+  if (!entries || entries.length === 0) return; // entries are optional
+  const totalDr = entries.reduce((s, e) => s + (Number(e.debit_amt)  || 0), 0);
+  const totalCr = entries.reduce((s, e) => s + (Number(e.credit_amt) || 0), 0);
+  if (Math.round((totalDr - totalCr) * 100) !== 0) {
+    throw new Error(
+      `Entry lines do not balance: total debits (${totalDr.toFixed(2)}) ≠ total credits (${totalCr.toFixed(2)})`
+    );
+  }
+}
+
 // ── Auto-fill supplier fields ─────────────────────────────────────────────────
 async function resolveSupplier(supplier_type, supplier_id) {
   if (supplier_type === "Vendor") {
@@ -67,6 +79,9 @@ function buildDoc(payload, pv_no) {
     })),
 
     amount: Number(payload.amount) || 0,
+    gross_amount: Number(payload.gross_amount) || Number(payload.amount) || 0,
+    tds_section:  payload.tds_section || "",
+    tds_pct:      Number(payload.tds_pct) || 0,
 
     entries: (payload.entries || []).map((e) => ({
       dr_cr:        e.dr_cr,
@@ -140,9 +155,16 @@ class PaymentVoucherService {
       }
     }
 
-    return await PaymentVoucherModel.find(query)
-      .sort({ pv_date: -1, createdAt: -1 })
-      .lean();
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      PaymentVoucherModel.find(query).sort({ pv_date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      PaymentVoucherModel.countDocuments(query),
+    ]);
+
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /paymentvoucher/by-supplier/:supplierId
@@ -159,7 +181,17 @@ class PaymentVoucherService {
         query.pv_date.$lte = to;
       }
     }
-    return await PaymentVoucherModel.find(query).sort({ pv_date: -1 }).lean();
+
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      PaymentVoucherModel.find(query).sort({ pv_date: -1 }).skip(skip).limit(limit).lean(),
+      PaymentVoucherModel.countDocuments(query),
+    ]);
+
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /paymentvoucher/by-tender/:tenderId
@@ -171,6 +203,13 @@ class PaymentVoucherService {
     return await PaymentVoucherModel.find(query).sort({ pv_date: -1 }).lean();
   }
 
+  // GET /paymentvoucher/:id
+  static async getById(id) {
+    const doc = await PaymentVoucherModel.findById(id).lean();
+    if (!doc) throw new Error("Payment voucher not found");
+    return doc;
+  }
+
   // POST /paymentvoucher/create
   static async create(payload) {
     if (!payload.pv_no)         throw new Error("pv_no is required");
@@ -180,6 +219,8 @@ class PaymentVoucherService {
     const supplierData = await resolveSupplier(payload.supplier_type, payload.supplier_id);
     Object.assign(payload, supplierData);
 
+    validateEntriesBalance(payload.entries);
+
     const saved = await PaymentVoucherModel.create(buildDoc(payload, payload.pv_no));
 
     if (saved.status === "approved") {
@@ -187,6 +228,33 @@ class PaymentVoucherService {
     }
 
     return saved;
+  }
+
+  // PATCH /paymentvoucher/update/:id
+  static async update(id, payload) {
+    const pv = await PaymentVoucherModel.findById(id);
+    if (!pv) throw new Error("Payment voucher not found");
+    if (pv.status === "approved") throw new Error("Cannot edit an approved payment voucher");
+
+    const allowed = [
+      "pv_date", "document_year", "payment_mode", "bank_name", "bank_ref",
+      "cheque_no", "cheque_date", "bill_refs", "amount", "entries", "narration", "tender_id",
+      "tender_ref", "tender_name", "gross_amount", "tds_section", "tds_pct",
+    ];
+    for (const field of allowed) {
+      if (payload[field] !== undefined) pv[field] = payload[field];
+    }
+    await pv.save();
+    return pv;
+  }
+
+  // DELETE /paymentvoucher/delete/:id
+  static async deleteDraft(id) {
+    const pv = await PaymentVoucherModel.findById(id);
+    if (!pv) throw new Error("Payment voucher not found");
+    if (pv.status === "approved") throw new Error("Cannot delete an approved payment voucher");
+    await pv.deleteOne();
+    return { deleted: true, pv_no: pv.pv_no };
   }
 
   // PATCH /paymentvoucher/approve/:id

@@ -12,8 +12,9 @@ export const getBillingList = async (req, res) => {
     const { tenderId } = req.params;
     if (!tenderId) return fail(res, "tenderId is required", 400);
 
-    const data = await service.getBillingList(tenderId);
-    return ok(res, data);
+    const { page, limit } = req.query;
+    const result = await service.getBillingList(tenderId, { page, limit });
+    return res.status(200).json({ status: true, ...result });
   } catch (err) {
     return fail(res, err.message, err.statusCode || 500);
   }

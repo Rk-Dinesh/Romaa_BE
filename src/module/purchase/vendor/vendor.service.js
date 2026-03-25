@@ -1,5 +1,6 @@
 import VendorModel from "./vendor.model.js";
 import IdcodeServices from "../../idcode/idcode.service.js";
+import AccountTreeService from "../../finance/accounttree/accounttree.service.js";
 
 class VendorService {
   // Create Vendor
@@ -14,7 +15,14 @@ class VendorService {
       vendor_id,
       ...vendorData
     });
-    return await vendor.save();
+    const saved = await vendor.save();
+    AccountTreeService.autoCreatePersonalLedger({
+      supplier_id:   saved.vendor_id,
+      supplier_type: "Vendor",
+      supplier_name: saved.company_name,
+      supplier_ref:  saved._id,
+    }).catch(() => {}); // fire-and-forget: don't fail vendor creation if ledger creation fails
+    return saved;
   }
 
   // Get all vendors

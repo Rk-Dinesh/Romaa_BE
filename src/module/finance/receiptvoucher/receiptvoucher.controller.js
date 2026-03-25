@@ -10,14 +10,14 @@ export const getNextRvNo = async (_req, res) => {
   }
 };
 
-// GET /receiptvoucher/list?supplier_type=&supplier_id=&tender_id=&status=&receipt_mode=&rv_no=&from_date=&to_date=
+// GET /receiptvoucher/list?supplier_type=&supplier_id=&tender_id=&status=&receipt_mode=&rv_no=&from_date=&to_date=&page=&limit=
 export const getList = async (req, res) => {
   try {
-    const { supplier_type, supplier_id, tender_id, status, receipt_mode, rv_no, from_date, to_date } = req.query;
-    const data = await ReceiptVoucherService.getList({
-      supplier_type, supplier_id, tender_id, status, receipt_mode, rv_no, from_date, to_date,
+    const { supplier_type, supplier_id, tender_id, status, receipt_mode, rv_no, from_date, to_date, page, limit } = req.query;
+    const result = await ReceiptVoucherService.getList({
+      supplier_type, supplier_id, tender_id, status, receipt_mode, rv_no, from_date, to_date, page, limit,
     });
-    res.status(200).json({ status: true, data });
+    res.status(200).json({ status: true, ...result });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -51,6 +51,17 @@ export const getByTender = async (req, res) => {
   }
 };
 
+// GET /receiptvoucher/:id
+export const getById = async (req, res) => {
+  try {
+    const data = await ReceiptVoucherService.getById(req.params.id);
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    const code = error.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
 // POST /receiptvoucher/create
 export const create = async (req, res) => {
   try {
@@ -60,6 +71,28 @@ export const create = async (req, res) => {
     const code = error.message.includes("required") ||
                  error.message.includes("not found") ||
                  error.message.includes("Invalid") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// PATCH /receiptvoucher/update/:id
+export const update = async (req, res) => {
+  try {
+    const data = await ReceiptVoucherService.update(req.params.id, req.body);
+    res.status(200).json({ status: true, message: "Receipt voucher updated", data });
+  } catch (error) {
+    const code = error.message.includes("not found") || error.message.includes("Cannot") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// DELETE /receiptvoucher/delete/:id
+export const deleteDraft = async (req, res) => {
+  try {
+    const data = await ReceiptVoucherService.deleteDraft(req.params.id);
+    res.status(200).json({ status: true, message: "Receipt voucher deleted", data });
+  } catch (error) {
+    const code = error.message.includes("not found") || error.message.includes("Cannot") ? 400 : 500;
     res.status(code).json({ status: false, message: error.message });
   }
 };

@@ -2,28 +2,37 @@
 
 **Base URL:** `/ledger`
 **Module:** `finance → ledger`
-**Auth:** JWT cookie or `Authorization: Bearer <token>` (currently commented out during development)
+**Auth:** JWT cookie or `Authorization: Bearer <token>`
 
 ---
 
 ## Overview
 
-The Ledger is a **read-only, append-only transaction register** per supplier (Vendor or Contractor).
+The Ledger is a **read-only, append-only transaction register** per supplier (Vendor, Contractor, or Client).
 Entries are never created via HTTP — they are auto-posted internally when vouchers are approved:
 
 | Voucher         | Entry Type | Effect on Balance     |
 |-----------------|------------|-----------------------|
 | Purchase Bill   | `Cr`       | Balance increases (you owe more)  |
 | Weekly Bill     | `Cr`       | Balance increases (you owe more)  |
+| Client Bill     | `Cr`       | Balance increases (client owes us more — receivable) |
 | Credit Note     | `Dr`       | Balance decreases (you owe less)  |
 | Debit Note      | `Dr`       | Balance decreases (you owe less)  |
 | Payment Voucher | `Dr`       | Balance decreases (liability cleared) |
 | Receipt Voucher | `Dr`       | Balance decreases (advance refund) |
 | Journal         | `Dr / Cr`  | Manual adjustment / opening balance |
 
-**Balance rule:**
+**vch_type values:** `PurchaseBill`, `WeeklyBill`, `ClientBill`, `CreditNote`, `DebitNote`, `Payment`, `Receipt`, `Journal`
+
+> `ClientBill` is posted when a client RA bill is approved — Cr entry to client's receivable account.
+
+**Balance rule (supplier/vendor/contractor):**
 - Positive balance = outstanding payable (you owe the supplier)
 - Negative balance = supplier owes you (overpayment / excess CN)
+
+**Balance rule (client):**
+- Positive balance = outstanding receivable (client owes you money)
+- For clients, use `supplier_type=Client` filter. `GET /ledger/supplier/:clientId?supplier_type=Client`
 
 **Accounting standards implemented:**
 - Opening Balance B/F — when `from_date` is used, row 1 is always "Opening Balance B/F" carrying forward all prior balance (standard period-report behaviour)
@@ -40,13 +49,13 @@ Returns one summary row per supplier with their current net balance. Used for th
 GET /ledger/summary
 ```
 
-**Auth required:** No (dev) / `finance > ledger > read` (prod)
+**Auth required:** `finance > ledger > read`
 
 ### Query Parameters
 
 | Param | Type | Description |
 |---|---|---|
-| `supplier_type` | `"Vendor" \| "Contractor"` | Filter by supplier type |
+| `supplier_type` | `"Vendor" \| "Contractor" \| "Client"` | Filter by supplier type |
 | `only_outstanding` | `"true"` | If `true`, hides suppliers with zero balance |
 
 ### Example Requests
@@ -55,6 +64,7 @@ GET /ledger/summary
 GET /ledger/summary
 GET /ledger/summary?supplier_type=Vendor
 GET /ledger/summary?supplier_type=Contractor&only_outstanding=true
+GET /ledger/summary?supplier_type=Client&only_outstanding=true
 ```
 
 ### Success Response `200`
@@ -103,12 +113,12 @@ GET /ledger/tender/:tenderId
 | Param | Type | Description |
 |---|---|---|
 | `supplier_id` | `string` | Filter to a specific supplier |
-| `supplier_type` | `"Vendor" \| "Contractor"` | Filter by supplier type |
+| `supplier_type` | `"Vendor" \| "Contractor" \| "Client"` | Filter by supplier type |
 | `vch_type` | `string` | Filter by voucher type |
 | `from_date` | `YYYY-MM-DD` | Period start — balance before this date shown as B/F |
 | `to_date` | `YYYY-MM-DD` | Period end |
 
-**Allowed `vch_type` values:** `PurchaseBill`, `WeeklyBill`, `CreditNote`, `DebitNote`, `Payment`, `Receipt`, `Journal`
+**Allowed `vch_type` values:** `PurchaseBill`, `WeeklyBill`, `ClientBill`, `CreditNote`, `DebitNote`, `Payment`, `Receipt`, `Journal`
 
 ### Example Requests
 
@@ -228,7 +238,7 @@ GET /ledger/balance/:supplierId
 
 | Param | Type | Description |
 |---|---|---|
-| `supplier_type` | `"Vendor" \| "Contractor"` | Helps disambiguate if needed |
+| `supplier_type` | `"Vendor" \| "Contractor" \| "Client"` | Helps disambiguate if needed |
 | `tender_id` | `string` | Scope balance to a specific tender |
 
 ### Example Requests
@@ -237,6 +247,7 @@ GET /ledger/balance/:supplierId
 GET /ledger/balance/VND-002
 GET /ledger/balance/CON-001?supplier_type=Contractor
 GET /ledger/balance/VND-002?tender_id=TND-001
+GET /ledger/balance/CLT-001?supplier_type=Client
 ```
 
 ### Success Response `200`
@@ -272,7 +283,7 @@ GET /ledger/statement/:supplierId
 
 | Param | Type | Description |
 |---|---|---|
-| `supplier_type` | `"Vendor" \| "Contractor"` | Filter by type |
+| `supplier_type` | `"Vendor" \| "Contractor" \| "Client"` | Filter by type |
 | `tender_id` | `string` | Scope to a specific tender |
 | `financial_year` | `string` | e.g. `"25-26"` — scope to a single FY |
 
@@ -346,7 +357,7 @@ GET /ledger/supplier/:supplierId
 
 | Param | Type | Description |
 |---|---|---|
-| `supplier_type` | `"Vendor" \| "Contractor"` | Filter by type |
+| `supplier_type` | `"Vendor" \| "Contractor" \| "Client"` | Filter by type |
 | `tender_id` | `string` | Scope to a specific tender |
 | `vch_type` | `string` | Filter by voucher type |
 | `from_date` | `YYYY-MM-DD` | Period start — balance before this date shown as Opening B/F row |
@@ -359,6 +370,7 @@ GET /ledger/supplier/VND-002
 GET /ledger/supplier/CON-001?supplier_type=Contractor&tender_id=TND-001
 GET /ledger/supplier/VND-002?from_date=2025-04-01&to_date=2026-03-31
 GET /ledger/supplier/VND-002?vch_type=PurchaseBill
+GET /ledger/supplier/CLT-001?supplier_type=Client
 ```
 
 ### Success Response `200` — with `from_date` (note B/F row)
@@ -409,6 +421,222 @@ When `from_date` is used: `balance[0]` = Opening Balance B/F, which is the sum o
 
 ---
 
+## 7. Trial Balance
+
+```
+GET /ledger/trial-balance
+```
+
+**Auth required:** `finance > ledger > read`
+
+Returns one row per account_code showing total Dr, total Cr, and closing balance from all posted Journal Entry lines.
+- Positive balance = Dr balance (assets/expenses)
+- Negative balance = Cr balance (liabilities/income)
+
+### Query Parameters
+
+| Param | Type | Description |
+|---|---|---|
+| `financial_year` | `string` | e.g. `25-26` — scope to a single FY |
+| `from_date` | `YYYY-MM-DD` | Period start |
+| `to_date` | `YYYY-MM-DD` | Period end |
+
+### Example Requests
+
+```
+GET /ledger/trial-balance?financial_year=25-26
+GET /ledger/trial-balance?from_date=2025-04-01&to_date=2026-03-31
+```
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "data": [
+    {
+      "account_code": "1020",
+      "account_name": "HDFC Current Account",
+      "account_type": "Asset",
+      "total_debit": 500000,
+      "total_credit": 120000,
+      "balance": 380000,
+      "normal_balance": "Dr"
+    },
+    {
+      "account_code": "5200",
+      "account_name": "Salary Expense",
+      "account_type": "Expense",
+      "total_debit": 150000,
+      "total_credit": 0,
+      "balance": 150000,
+      "normal_balance": "Dr"
+    }
+  ]
+}
+```
+
+> Sourced from JournalEntry lines (`is_posted: true`). Only accounts that have at least one posted JE line appear.
+
+---
+
+## 8. General Ledger (per Account)
+
+```
+GET /ledger/account/:accountCode
+```
+
+**Auth required:** `finance > ledger > read`
+
+Returns all posted JE lines for a single account with running balance.
+When `from_date` is set, row 1 is "Opening Balance B/F".
+
+### Query Parameters
+
+| Param | Type | Description |
+|---|---|---|
+| `financial_year` | `string` | e.g. `25-26` |
+| `from_date` | `YYYY-MM-DD` | Period start — balance before this date shown as B/F |
+| `to_date` | `YYYY-MM-DD` | Period end |
+
+### Example Requests
+
+```
+GET /ledger/account/1020
+GET /ledger/account/1020?from_date=2025-04-01&to_date=2026-03-31
+GET /ledger/account/5200?financial_year=25-26
+```
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "data": {
+    "account_code": "1020",
+    "account_name": "HDFC Current Account",
+    "opening_balance": 0,
+    "entries": [
+      {
+        "vch_date": "2026-03-31",
+        "je_no": "JE/25-26/0001",
+        "je_type": "Payroll",
+        "narration": "Salary disbursement March",
+        "debit_amt": 0,
+        "credit_amt": 130000,
+        "balance": -130000
+      }
+    ],
+    "closing_balance": -130000
+  }
+}
+```
+
+---
+
+## 9. Cash/Bank Book
+
+```
+GET /ledger/cash-book
+```
+
+**Auth required:** `finance > ledger > read`
+
+Returns transactions grouped by bank/cash account (all `is_bank_cash=true` accounts).
+
+### Query Parameters
+
+| Param | Type | Description |
+|---|---|---|
+| `financial_year` | `string` | e.g. `25-26` |
+| `from_date` | `YYYY-MM-DD` | Period start |
+| `to_date` | `YYYY-MM-DD` | Period end |
+| `account_code` | `string` | Filter to one specific bank/cash account |
+
+### Example Requests
+
+```
+GET /ledger/cash-book?financial_year=25-26
+GET /ledger/cash-book?from_date=2025-04-01&to_date=2026-03-31
+GET /ledger/cash-book?account_code=1020&financial_year=25-26
+```
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "data": [
+    {
+      "account_code": "1020",
+      "account_name": "HDFC Current Account",
+      "entries": [
+        {
+          "vch_date": "2026-03-20",
+          "je_no": "JE/25-26/0003",
+          "narration": "Payment to ABC Suppliers",
+          "debit_amt": 0,
+          "credit_amt": 23990,
+          "balance": -23990
+        }
+      ],
+      "total_debit": 0,
+      "total_credit": 23990
+    }
+  ]
+}
+```
+
+---
+
+## 10. ITC Register (GST Input Credit)
+
+```
+GET /ledger/itc-register
+```
+
+**Auth required:** `finance > ledger > read`
+
+Returns all `CGST_Input`, `SGST_Input`, `IGST_Input`, and `ITC_Reversal` account movements from posted JEs — grouped by financial_year and account.
+Used for GSTR-2 reconciliation and ITC tracking.
+
+### Query Parameters
+
+| Param | Type | Description |
+|---|---|---|
+| `financial_year` | `string` | e.g. `25-26` |
+| `from_date` | `YYYY-MM-DD` | Period start |
+| `to_date` | `YYYY-MM-DD` | Period end |
+
+### Example Request
+
+```
+GET /ledger/itc-register?financial_year=25-26
+```
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "data": [
+    {
+      "financial_year": "25-26",
+      "account_code": "1110",
+      "account_name": "CGST Input ITC",
+      "tax_type": "CGST_Input",
+      "total_debit": 1800,
+      "total_credit": 900,
+      "net_itc": 900
+    }
+  ]
+}
+```
+
+> `net_itc = total_debit - total_credit` — net ITC available after reversals.
+
+---
+
 ## Workflow
 
 ```
@@ -433,6 +661,15 @@ When `from_date` is used: `balance[0]` = Opening Balance B/F, which is the sum o
 
 7. Tender finance tab — all suppliers for a tender
    GET /ledger/tender/TND-001
+
+8. Client receivable — amount owed by client
+   GET /ledger/supplier/:clientId?supplier_type=Client
+
+9. Reports
+   GET /ledger/trial-balance?financial_year=25-26    → period trial balance
+   GET /ledger/account/1020?from_date=2025-04-01    → general ledger for HDFC account
+   GET /ledger/cash-book?financial_year=25-26        → full cash/bank book
+   GET /ledger/itc-register?financial_year=25-26    → GST input credit register
 ```
 
 ---

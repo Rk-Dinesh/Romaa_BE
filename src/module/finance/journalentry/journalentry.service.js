@@ -164,9 +164,16 @@ class JournalEntryService {
       query["lines.account_code"] = filters.account_code;
     }
 
-    return await JournalEntryModel.find(query)
-      .sort({ je_date: -1, createdAt: -1 })
-      .lean();
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      JournalEntryModel.find(query).sort({ je_date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      JournalEntryModel.countDocuments(query),
+    ]);
+
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /journalentry/:id
@@ -330,6 +337,39 @@ class JournalEntryService {
     }
 
     return results;
+  }
+
+  // PATCH /journalentry/update/:id  — only allowed for draft or pending
+  static async update(id, payload) {
+    const je = await JournalEntryModel.findById(id);
+    if (!je) throw new Error("Journal entry not found");
+    if (je.status === "approved") throw new Error("Cannot edit an approved journal entry — create a reversal instead");
+
+    // If lines are being updated, re-validate and re-enrich them
+    if (payload.lines) {
+      je.lines = await enrichAndValidateLines(payload.lines);
+    }
+
+    const allowed = ["je_date", "document_year", "je_type", "narration", "tender_id", "tender_ref", "tender_name", "auto_reverse_date"];
+    for (const field of allowed) {
+      if (payload[field] !== undefined) je[field] = payload[field];
+    }
+
+    if (payload.je_date) {
+      je.financial_year = getFY(new Date(payload.je_date));
+    }
+
+    await je.save();
+    return je;
+  }
+
+  // DELETE /journalentry/delete/:id  — only allowed for draft or pending
+  static async deleteDraft(id) {
+    const je = await JournalEntryModel.findById(id);
+    if (!je) throw new Error("Journal entry not found");
+    if (je.status === "approved") throw new Error("Cannot delete an approved journal entry — create a reversal instead");
+    await je.deleteOne();
+    return { deleted: true, je_no: je.je_no };
   }
 }
 

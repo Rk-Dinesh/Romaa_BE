@@ -65,6 +65,13 @@ class AccountTreeService {
     return roots;
   }
 
+  // ── GET /accounttree/:id ──────────────────────────────────────────────────
+  static async getById(id) {
+    const acc = await AccountTreeModel.findById(id).lean();
+    if (!acc || acc.is_deleted) throw new Error(`Account not found`);
+    return acc;
+  }
+
   // ── GET /accounttree/by-code/:code ───────────────────────────────────────
   static async getByCode(code) {
     const acc = await AccountTreeModel.findOne({ account_code: code, is_deleted: false }).lean();
@@ -142,6 +149,17 @@ class AccountTreeService {
       if (payload[field] !== undefined) acc[field] = payload[field];
     }
 
+    // Merge bank_details fields individually (partial update support)
+    if (payload.bank_details && typeof payload.bank_details === "object") {
+      const bankAllowed = ["bank_name", "account_no", "ifsc_code", "bank_address",
+                           "account_type", "interest_pct", "credit_limit", "debit_limit", "discount_limit"];
+      for (const field of bankAllowed) {
+        if (payload.bank_details[field] !== undefined) {
+          acc.bank_details[field] = payload.bank_details[field];
+        }
+      }
+    }
+
     // Keep in sync
     if (acc.is_group) acc.is_posting_account = false;
 
@@ -205,23 +223,26 @@ class AccountTreeService {
     const existing = await AccountTreeModel.findOne({ linked_supplier_id: supplier_id, is_deleted: false }).lean();
     if (existing) return existing; // already created
 
-    let parent_code, account_type, normal_balance, description;
+    let parent_code, account_type, account_subtype, normal_balance, description;
 
     if (supplier_type === "Vendor") {
-      parent_code    = "2010";
-      account_type   = "Liability";
-      normal_balance = "Cr";
-      description    = `Payable to vendor: ${supplier_name}`;
+      parent_code     = "2010";
+      account_type    = "Liability";
+      account_subtype = "Current Liability";
+      normal_balance  = "Cr";
+      description     = `Payable to vendor: ${supplier_name}`;
     } else if (supplier_type === "Contractor") {
-      parent_code    = "2020";
-      account_type   = "Liability";
-      normal_balance = "Cr";
-      description    = `Payable to contractor: ${supplier_name}`;
+      parent_code     = "2020";
+      account_type    = "Liability";
+      account_subtype = "Current Liability";
+      normal_balance  = "Cr";
+      description     = `Payable to contractor: ${supplier_name}`;
     } else if (supplier_type === "Client") {
-      parent_code    = "1050";
-      account_type   = "Asset";
-      normal_balance = "Dr";
-      description    = `Receivable from client: ${supplier_name}`;
+      parent_code     = "1050";
+      account_type    = "Asset";
+      account_subtype = "Current Asset";   // receivables are assets, not liabilities
+      normal_balance  = "Dr";
+      description     = `Receivable from client: ${supplier_name}`;
     } else {
       throw new Error(`autoCreatePersonalLedger: unknown supplier_type '${supplier_type}'`);
     }
@@ -234,7 +255,7 @@ class AccountTreeService {
       account_name:         `${supplier_name} — ${label}`,
       description,
       account_type,
-      account_subtype:      "Current Liability",
+      account_subtype,
       normal_balance,
       parent_code,
       level:                3,

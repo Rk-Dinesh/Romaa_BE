@@ -152,21 +152,32 @@ class PurchaseBillService {
       }
     }
 
-    return await PurchaseBillModel.find(query)
-      .select(
-        "doc_id doc_date invoice_no invoice_date due_date credit_days " +
-        "tender_id tender_name " +
-        "vendor_id vendor_name vendor_gstin " +
-        "place_of_supply tax_mode status " +
-        "grand_total total_tax net_amount round_off " +
-        "createdAt"
-      )
-      .sort({ doc_date: -1, createdAt: -1 })
-      .lean();
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      PurchaseBillModel.find(query)
+        .select(
+          "doc_id doc_date invoice_no invoice_date due_date credit_days " +
+          "tender_id tender_name " +
+          "vendor_id vendor_name vendor_gstin " +
+          "place_of_supply tax_mode status " +
+          "grand_total total_tax net_amount round_off " +
+          "createdAt"
+        )
+        .sort({ doc_date: -1, createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      PurchaseBillModel.countDocuments(query),
+    ]);
+
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /purchasebill/by-tender/:tenderId?status=&vendor_id=&from_date=&to_date=&invoice_no=
-  // All bills for a tender with full details — no pagination.
+  // All bills for a tender with full details.
   static async getBillsByTender(tenderId, filters = {}) {
     const query = { tender_id: tenderId };
 
@@ -185,9 +196,16 @@ class PurchaseBillService {
       }
     }
 
-    return await PurchaseBillModel.find(query)
-      .sort({ doc_date: -1, createdAt: -1 })
-      .lean();
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      PurchaseBillModel.find(query).sort({ doc_date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      PurchaseBillModel.countDocuments(query),
+    ]);
+
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /purchasebill/summary/:tenderId
@@ -279,6 +297,37 @@ class PurchaseBillService {
       },
       { $sort: { latest_bill_date: -1 } },
     ]);
+  }
+
+  // GET /purchasebill/:id
+  static async getPurchaseBillById(id) {
+    const bill = await PurchaseBillModel.findById(id).lean();
+    if (!bill) throw new Error("Purchase bill not found");
+    return bill;
+  }
+
+  // PATCH /purchasebill/update/:id
+  static async updatePurchaseBill(id, payload) {
+    const bill = await PurchaseBillModel.findById(id);
+    if (!bill) throw new Error("Purchase bill not found");
+    if (bill.status === "approved") throw new Error("Cannot edit an approved purchase bill");
+
+    const allowed = ["doc_date", "invoice_no", "invoice_date", "credit_days", "narration", "line_items", "additional_charges", "tax_mode", "place_of_supply"];
+    for (const field of allowed) {
+      if (payload[field] !== undefined) bill[field] = payload[field];
+    }
+
+    await bill.save(); // triggers pre-save hook — recomputes all tax/total fields
+    return bill;
+  }
+
+  // DELETE /purchasebill/delete/:id
+  static async deletePurchaseBill(id) {
+    const bill = await PurchaseBillModel.findById(id);
+    if (!bill) throw new Error("Purchase bill not found");
+    if (bill.status === "approved") throw new Error("Cannot delete an approved purchase bill");
+    await bill.deleteOne();
+    return { deleted: true, doc_id: bill.doc_id };
   }
 
   static async createPurchaseBill(payload) {

@@ -12,6 +12,18 @@ function currentFY() {
   return `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`; // "25-26"
 }
 
+// Validate that entries balance: sum of debits must equal sum of credits
+function validateEntriesBalance(entries) {
+  if (!entries || entries.length === 0) return; // entries are optional
+  const totalDr = entries.reduce((s, e) => s + (Number(e.debit_amt)  || 0), 0);
+  const totalCr = entries.reduce((s, e) => s + (Number(e.credit_amt) || 0), 0);
+  if (Math.round((totalDr - totalCr) * 100) !== 0) {
+    throw new Error(
+      `Entry lines do not balance: total debits (${totalDr.toFixed(2)}) ≠ total credits (${totalCr.toFixed(2)})`
+    );
+  }
+}
+
 // ── Auto-fill supplier fields ─────────────────────────────────────────────────
 async function resolveSupplier(supplier_type, supplier_id) {
   if (supplier_type === "Vendor") {
@@ -137,9 +149,16 @@ class ReceiptVoucherService {
       }
     }
 
-    return await ReceiptVoucherModel.find(query)
-      .sort({ rv_date: -1, createdAt: -1 })
-      .lean();
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      ReceiptVoucherModel.find(query).sort({ rv_date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      ReceiptVoucherModel.countDocuments(query),
+    ]);
+
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /receiptvoucher/by-supplier/:supplierId
@@ -168,6 +187,13 @@ class ReceiptVoucherService {
     return await ReceiptVoucherModel.find(query).sort({ rv_date: -1 }).lean();
   }
 
+  // GET /receiptvoucher/:id
+  static async getById(id) {
+    const doc = await ReceiptVoucherModel.findById(id).lean();
+    if (!doc) throw new Error("Receipt voucher not found");
+    return doc;
+  }
+
   // POST /receiptvoucher/create
   static async create(payload) {
     if (!payload.rv_no)         throw new Error("rv_no is required");
@@ -177,6 +203,8 @@ class ReceiptVoucherService {
     const supplierData = await resolveSupplier(payload.supplier_type, payload.supplier_id);
     Object.assign(payload, supplierData);
 
+    validateEntriesBalance(payload.entries);
+
     const saved = await ReceiptVoucherModel.create(buildDoc(payload, payload.rv_no));
 
     if (saved.status === "approved") {
@@ -184,6 +212,33 @@ class ReceiptVoucherService {
     }
 
     return saved;
+  }
+
+  // PATCH /receiptvoucher/update/:id
+  static async update(id, payload) {
+    const rv = await ReceiptVoucherModel.findById(id);
+    if (!rv) throw new Error("Receipt voucher not found");
+    if (rv.status === "approved") throw new Error("Cannot edit an approved receipt voucher");
+
+    const allowed = [
+      "rv_date", "document_year", "receipt_mode", "bank_name", "bank_ref",
+      "cheque_no", "cheque_date", "against_ref", "against_no", "amount",
+      "entries", "narration", "tender_id", "tender_ref", "tender_name",
+    ];
+    for (const field of allowed) {
+      if (payload[field] !== undefined) rv[field] = payload[field];
+    }
+    await rv.save();
+    return rv;
+  }
+
+  // DELETE /receiptvoucher/delete/:id
+  static async deleteDraft(id) {
+    const rv = await ReceiptVoucherModel.findById(id);
+    if (!rv) throw new Error("Receipt voucher not found");
+    if (rv.status === "approved") throw new Error("Cannot delete an approved receipt voucher");
+    await rv.deleteOne();
+    return { deleted: true, rv_no: rv.rv_no };
   }
 
   // PATCH /receiptvoucher/approve/:id

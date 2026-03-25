@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { createBill, getHistory, getDetails } from "./billing.controller.js";
+import { createBill, getHistory, getDetails, approveBill } from "./billing.controller.js";
+import { verifyJWT, verifyPermission } from "../../../../common/Auth.middlware.js";
 
 const billingRouter = Router();
 
@@ -11,5 +12,13 @@ billingRouter.get('/api/history/:tender_id', getHistory);
 
 // GET: View full details (items, measurements) of a specific bill
 billingRouter.get('/api/details/:tender_id/:bill_id', getDetails);
+
+// PATCH: Approve a bill — posts to client receivable ledger
+billingRouter.patch(
+  '/api/approve/:id',
+  verifyJWT,
+  verifyPermission("finance", "clientbilling", "edit"),
+  approveBill
+);
 
 export default billingRouter;

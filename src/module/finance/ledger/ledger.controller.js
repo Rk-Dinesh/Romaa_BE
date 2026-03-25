@@ -91,3 +91,48 @@ export const getTenderBalance = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
+// GET /ledger/trial-balance?financial_year=&from_date=&to_date=
+export const getTrialBalance = async (req, res) => {
+  try {
+    const { financial_year, from_date, to_date } = req.query;
+    const data = await LedgerService.getTrialBalance({ financial_year, from_date, to_date });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// GET /ledger/account/:accountCode?from_date=&to_date=&financial_year=
+export const getAccountLedger = async (req, res) => {
+  try {
+    const { accountCode } = req.params;
+    const { from_date, to_date, financial_year } = req.query;
+    const data = await LedgerService.getAccountLedger(accountCode, { from_date, to_date, financial_year });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// GET /ledger/cash-book?from_date=&to_date=&financial_year=
+export const getCashBook = async (req, res) => {
+  try {
+    const { from_date, to_date, financial_year } = req.query;
+    const data = await LedgerService.getCashBook({ from_date, to_date, financial_year });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// GET /ledger/itc-register?financial_year=&from_date=&to_date=
+export const getITCRegister = async (req, res) => {
+  try {
+    const { financial_year, from_date, to_date } = req.query;
+    const data = await LedgerService.getITCRegister({ financial_year, from_date, to_date });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};

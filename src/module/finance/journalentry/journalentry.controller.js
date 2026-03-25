@@ -11,18 +11,18 @@ export const getNextJeNo = async (_req, res) => {
 };
 
 // GET /journalentry/list
-// ?je_type=&status=&tender_id=&financial_year=&is_reversal=&je_no=&account_code=&from_date=&to_date=
+// ?je_type=&status=&tender_id=&financial_year=&is_reversal=&je_no=&account_code=&from_date=&to_date=&page=&limit=
 export const getList = async (req, res) => {
   try {
     const {
       je_type, status, tender_id, financial_year,
-      is_reversal, je_no, account_code, from_date, to_date,
+      is_reversal, je_no, account_code, from_date, to_date, page, limit,
     } = req.query;
-    const data = await JournalEntryService.getList({
+    const result = await JournalEntryService.getList({
       je_type, status, tender_id, financial_year,
-      is_reversal, je_no, account_code, from_date, to_date,
+      is_reversal, je_no, account_code, from_date, to_date, page, limit,
     });
-    res.status(200).json({ status: true, data });
+    res.status(200).json({ status: true, ...result });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -90,5 +90,28 @@ export const processAutoReversals = async (_req, res) => {
     res.status(200).json({ status: true, results });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// PATCH /journalentry/update/:id
+export const update = async (req, res) => {
+  try {
+    const data = await JournalEntryService.update(req.params.id, req.body);
+    res.status(200).json({ status: true, message: "Journal entry updated", data });
+  } catch (error) {
+    const code = error.message.includes("not found") || error.message.includes("Cannot edit") ||
+                 error.message.includes("balance") || error.message.includes("group account") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// DELETE /journalentry/delete/:id
+export const deleteDraft = async (req, res) => {
+  try {
+    const data = await JournalEntryService.deleteDraft(req.params.id);
+    res.status(200).json({ status: true, message: "Journal entry deleted", data });
+  } catch (error) {
+    const code = error.message.includes("not found") || error.message.includes("Cannot delete") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
   }
 };

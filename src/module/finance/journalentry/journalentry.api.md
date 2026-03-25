@@ -2,7 +2,7 @@
 
 **Base URL:** `/journalentry`
 **Module:** `finance → journalentry`
-**Auth:** JWT cookie or `Authorization: Bearer <token>` (currently commented out during development)
+**Auth:** JWT cookie or `Authorization: Bearer <token>`
 
 ---
 
@@ -43,7 +43,7 @@ GET /journalentry/next-no
 
 Returns the `je_no` that will be assigned to the next journal entry. Call this before opening the create form.
 
-**Auth required:** No (dev) / `finance > journalentry > read` (prod)
+**Auth required:** `finance > journalentry > read`
 
 **Success Response `200`**
 
@@ -73,7 +73,7 @@ Returns the `je_no` that will be assigned to the next journal entry. Call this b
 GET /journalentry/list
 ```
 
-**Auth required:** No (dev) / `finance > journalentry > read` (prod)
+**Auth required:** `finance > journalentry > read`
 
 **Query Parameters**
 
@@ -88,6 +88,8 @@ GET /journalentry/list
 | `account_code` | `string` | Find all JEs that touched a specific account |
 | `from_date` | `YYYY-MM-DD` | `je_date ≥ from_date` |
 | `to_date` | `YYYY-MM-DD` | `je_date ≤ to_date` (time set to 23:59:59) |
+| `page` | `number` | Page number (1-based). Default: `1` |
+| `limit` | `number` | Records per page. Default: `20` |
 
 **Example Requests**
 
@@ -96,7 +98,7 @@ GET /journalentry/list
 GET /journalentry/list?je_type=Depreciation&financial_year=25-26
 GET /journalentry/list?account_code=1010&from_date=2025-04-01
 GET /journalentry/list?status=pending
-GET /journalentry/list?tender_id=TND-001
+GET /journalentry/list?tender_id=TND-001&page=1&limit=20
 ```
 
 **Success Response `200`**
@@ -137,7 +139,13 @@ GET /journalentry/list?tender_id=TND-001
       "is_reversal": false,
       "approved_at": "2026-03-31T18:00:00.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 54,
+    "pages": 3
+  }
 }
 ```
 
@@ -149,7 +157,7 @@ GET /journalentry/list?tender_id=TND-001
 GET /journalentry/:id
 ```
 
-**Auth required:** No (dev) / `finance > journalentry > read` (prod)
+**Auth required:** `finance > journalentry > read`
 
 **Success Response `200`**
 
@@ -175,7 +183,7 @@ POST /journalentry/create
 Content-Type: application/json
 ```
 
-**Auth required:** No (dev) / `finance > journalentry > create` (prod)
+**Auth required:** `finance > journalentry > create`
 
 **Request Body**
 
@@ -305,7 +313,7 @@ PATCH /journalentry/approve/:id
 
 Approves a journal entry and marks it as **posted** (`is_posted: true`). For lines referencing supplier personal ledger accounts, a corresponding `LedgerEntry` is also posted automatically.
 
-**Auth required:** No (dev) / `finance > journalentry > edit` (prod)
+**Auth required:** `finance > journalentry > edit`
 
 **Success Response `200`**
 
@@ -354,7 +362,7 @@ Content-Type: application/json
 
 Creates a new **Reversal JE** that is the mirror image of the original (Dr↔Cr swapped on every line). This is the only way to correct an approved journal entry — entries are never edited after posting.
 
-**Auth required:** No (dev) / `finance > journalentry > edit` (prod)
+**Auth required:** `finance > journalentry > edit`
 
 **Request Body**
 
@@ -424,7 +432,7 @@ POST /journalentry/process-auto-reversals
 
 Processes all journal entries with `auto_reverse_date ≤ today` that haven't been reversed yet. Called by a daily cron or manually by an admin.
 
-**Auth required:** No (dev) / `finance > journalentry > edit` (prod)
+**Auth required:** `finance > journalentry > edit`
 **Request Body:** None
 
 **Use Case:** Accrual entries set with `auto_reverse_date` are automatically reversed at the start of the next period. Example: book an accrued expense on March 31 with `auto_reverse_date: 2026-04-01` — the system auto-reverses it on April 1.
@@ -455,6 +463,69 @@ Processes all journal entries with `auto_reverse_date ≤ today` that haven't be
 | `reversal` | JE number of the newly created reversal (only on `status: "ok"`) |
 | `status` | `"ok"` or `"error"` |
 | `message` | Error reason (only on `status: "error"`) |
+
+---
+
+### 8. Update Journal Entry
+
+```
+PATCH /journalentry/update/:id
+Content-Type: application/json
+```
+
+**Auth required:** `finance > journalentry > edit`
+
+Only `draft` or `pending` JEs can be updated. **Approved JEs are immutable** — use the Reverse endpoint instead.
+
+**Updatable fields:** `je_date`, `je_type`, `narration`, `tender_id`, `tender_ref`, `tender_name`, `auto_reverse_date`, `status`
+
+> If `lines[]` is sent, the array is replaced: each line is re-enriched from AccountTree (`account_name`, `account_type`, supplier fields), balance is re-validated (Σ Dr = Σ Cr), and `financial_year` is recomputed from `je_date`.
+
+**Success Response `200`**
+
+```json
+{
+  "status": true,
+  "message": "Journal entry updated",
+  "data": { ...updated JE fields... }
+}
+```
+
+**Error Responses**
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | JE is approved | `"Cannot edit an approved journal entry — create a reversal instead"` |
+| `400` | `id` not found | `"Journal entry not found"` |
+
+---
+
+### 9. Delete Draft Journal Entry
+
+```
+DELETE /journalentry/delete/:id
+```
+
+**Auth required:** `finance > journalentry > delete`
+
+Only `draft` or `pending` JEs can be deleted. Approved JEs cannot be deleted — use Reverse instead.
+
+**Success Response `200`**
+
+```json
+{
+  "status": true,
+  "message": "Journal entry deleted",
+  "data": { ...deleted JE fields... }
+}
+```
+
+**Error Responses**
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | JE is approved | `"Cannot delete an approved journal entry"` |
+| `404` | `id` not found | `"Journal entry not found"` |
 
 ---
 

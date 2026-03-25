@@ -61,6 +61,17 @@ const CreditNoteSchema = new mongoose.Schema(
     // ── Voucher amount (header-level) ─────────────────────────────────────
     amount: { type: Number, default: 0 },   // total credit note value
 
+    // ── Tax breakup ───────────────────────────────────────────────────────
+    // taxable_amount = base value before GST (pre-save sets amount = taxable_amount + total_tax)
+    taxable_amount: { type: Number, default: 0 },
+    cgst_pct:   { type: Number, default: 0 },
+    sgst_pct:   { type: Number, default: 0 },
+    igst_pct:   { type: Number, default: 0 },
+    cgst_amt:   { type: Number, default: 0 }, // computed by pre-save
+    sgst_amt:   { type: Number, default: 0 }, // computed by pre-save
+    igst_amt:   { type: Number, default: 0 }, // computed by pre-save
+    total_tax:  { type: Number, default: 0 }, // computed by pre-save
+
     // ── Double-entry lines ────────────────────────────────────────────────
     entries: {
       type: [EntryLineSchema],
@@ -82,6 +93,21 @@ const CreditNoteSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// ── Pre-save: compute tax amounts from taxable_amount × rate ──────────────────
+CreditNoteSchema.pre("save", function (next) {
+  const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
+  if (this.taxable_amount > 0 && (this.cgst_pct > 0 || this.sgst_pct > 0 || this.igst_pct > 0)) {
+    this.cgst_amt  = r2(this.taxable_amount * this.cgst_pct  / 100);
+    this.sgst_amt  = r2(this.taxable_amount * this.sgst_pct  / 100);
+    this.igst_amt  = r2(this.taxable_amount * this.igst_pct  / 100);
+    this.total_tax = r2(this.cgst_amt + this.sgst_amt + this.igst_amt);
+    this.amount    = r2(this.taxable_amount + this.total_tax);
+  } else if (this.taxable_amount > 0) {
+    this.amount = this.taxable_amount;
+  }
+  next();
+});
 
 // ── Indexes ───────────────────────────────────────────────────────────────────
 CreditNoteSchema.index({ supplier_id: 1, cn_date: -1 });     // supplier CN history

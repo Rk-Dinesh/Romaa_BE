@@ -1,4 +1,6 @@
 import LedgerEntryModel from "./ledger.model.js";
+import AccountTreeModel from "../accounttree/accounttree.model.js";
+import JournalEntryModel from "../journalentry/journalentry.model.js";
 
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -101,10 +103,23 @@ class LedgerService {
     if (filters.tender_id)     query.tender_id     = filters.tender_id;
     if (filters.vch_type)      query.vch_type      = filters.vch_type;
 
+    // ── Opening Balance from AccountTree ──────────────────────────────────────────────
+    // Fetch the personal ledger account opening balance (migration from prior books).
+    // This is the balance carried forward from before the system was live.
+    let accountOpeningBal = 0;
+    const accountQuery = { linked_supplier_id: supplierId, is_deleted: false };
+    if (filters.supplier_type) accountQuery.linked_supplier_type = filters.supplier_type;
+    const acct = await AccountTreeModel.findOne(accountQuery).lean();
+    if (acct && acct.opening_balance && acct.opening_balance > 0) {
+      // Cr type = positive (you owe), Dr type = negative (they owe you)
+      accountOpeningBal = acct.opening_balance_type === "Dr"
+        ? -acct.opening_balance
+        : acct.opening_balance;
+    }
+
     // ── Opening Balance B/F ───────────────────────────────────────────────
-    // When from_date is set, compute the balance of all entries BEFORE that date.
-    // This becomes the starting balance for the running total — the classic B/F row.
-    let openingBalance = 0;
+    // When from_date is set, sum all entries before that date + accountOpeningBal.
+    let openingBalance = accountOpeningBal;
     if (filters.from_date) {
       const preMatch = { supplier_id: supplierId };
       if (filters.supplier_type) preMatch.supplier_type = filters.supplier_type;
@@ -116,7 +131,7 @@ class LedgerService {
         { $group: { _id: null, cr: { $sum: "$credit_amt" }, dr: { $sum: "$debit_amt" } } },
       ]);
       if (preAgg) {
-        openingBalance = round2(preAgg.cr - preAgg.dr);
+        openingBalance = round2(accountOpeningBal + preAgg.cr - preAgg.dr);
       }
     }
 
@@ -153,12 +168,20 @@ class LedgerService {
     if (filters.supplier_type) match.supplier_type = filters.supplier_type;
     if (filters.tender_id)     match.tender_id     = filters.tender_id;
 
+    // Fetch AccountTree opening balance
+    const accountQuery = { linked_supplier_id: supplierId, is_deleted: false };
+    if (filters.supplier_type) accountQuery.linked_supplier_type = filters.supplier_type;
+    const acct = await AccountTreeModel.findOne(accountQuery).lean();
+    const obAmt = (acct?.opening_balance > 0)
+      ? (acct.opening_balance_type === "Dr" ? -acct.opening_balance : acct.opening_balance)
+      : 0;
+
     const [agg] = await LedgerEntryModel.aggregate([
       { $match: match },
       {
         $group: {
           _id:           null,
-          supplier_name: { $last: "$supplier_name" },  // $last = most recent snapshot
+          supplier_name: { $last: "$supplier_name" },
           supplier_type: { $last: "$supplier_type" },
           total_credit:  { $sum: "$credit_amt" },
           total_debit:   { $sum: "$debit_amt" },
@@ -178,16 +201,19 @@ class LedgerService {
       },
     ]);
 
-    return agg
-      ? { supplier_id: supplierId, ...agg }  // supplier_id always present in result
-      : {
-          supplier_id:   supplierId,
-          supplier_name: "",
-          supplier_type: filters.supplier_type ?? "",
-          total_credit:  0,
-          total_debit:   0,
-          balance:       0,
-        };
+    if (agg) {
+      const balance = round2(agg.balance + obAmt);
+      return { supplier_id: supplierId, ...agg, balance };
+    }
+
+    return {
+      supplier_id:   supplierId,
+      supplier_name: acct?.account_name ?? "",
+      supplier_type: filters.supplier_type ?? "",
+      total_credit:  0,
+      total_debit:   0,
+      balance:       round2(obAmt),
+    };
   }
 
   // ── GET /ledger/summary ───────────────────────────────────────────────────────
@@ -405,6 +431,252 @@ class LedgerService {
     );
 
     return { supplier_id: supplierId, breakdown: rows, balance };
+  }
+
+  // ── GET /ledger/trial-balance ─────────────────────────────────────────────────
+  // Aggregates all approved JE lines by account_code.
+  // Optional filters: financial_year, from_date, to_date
+  static async getTrialBalance(filters = {}) {
+    const match = { is_posted: true };
+    if (filters.financial_year) match.financial_year = filters.financial_year;
+    if (filters.from_date || filters.to_date) {
+      match.je_date = {};
+      if (filters.from_date) match.je_date.$gte = new Date(filters.from_date);
+      if (filters.to_date) {
+        const to = new Date(filters.to_date);
+        to.setHours(23, 59, 59, 999);
+        match.je_date.$lte = to;
+      }
+    }
+
+    const rows = await JournalEntryModel.aggregate([
+      { $match: match },
+      { $unwind: "$lines" },
+      {
+        $group: {
+          _id:          "$lines.account_code",
+          account_name: { $last: "$lines.account_name" },
+          account_type: { $last: "$lines.account_type" },
+          total_dr:     { $sum: "$lines.debit_amt" },
+          total_cr:     { $sum: "$lines.credit_amt" },
+        },
+      },
+      {
+        $project: {
+          _id:          0,
+          account_code: "$_id",
+          account_name: 1,
+          account_type: 1,
+          total_dr:     { $round: ["$total_dr", 2] },
+          total_cr:     { $round: ["$total_cr", 2] },
+          net:          { $round: [{ $subtract: ["$total_dr", "$total_cr"] }, 2] },
+        },
+      },
+      { $sort: { account_code: 1 } },
+    ]);
+
+    const grand_total_dr = round2(rows.reduce((s, r) => s + r.total_dr, 0));
+    const grand_total_cr = round2(rows.reduce((s, r) => s + r.total_cr, 0));
+
+    return { rows, grand_total_dr, grand_total_cr, balanced: grand_total_dr === grand_total_cr };
+  }
+
+  // ── GET /ledger/account/:accountCode ─────────────────────────────────────────
+  // General ledger for a single account: all approved JE lines touching it,
+  // with running balance. Optional filters: from_date, to_date, financial_year
+  static async getAccountLedger(accountCode, filters = {}) {
+    const match = { is_posted: true, "lines.account_code": accountCode };
+    if (filters.financial_year) match.financial_year = filters.financial_year;
+
+    // Opening balance (entries before from_date)
+    let openingBalance = 0;
+    if (filters.from_date) {
+      const preMatch = { is_posted: true, "lines.account_code": accountCode,
+        je_date: { $lt: new Date(filters.from_date) } };
+      if (filters.financial_year) preMatch.financial_year = filters.financial_year;
+
+      const [preAgg] = await JournalEntryModel.aggregate([
+        { $match: preMatch },
+        { $unwind: "$lines" },
+        { $match: { "lines.account_code": accountCode } },
+        { $group: { _id: null, dr: { $sum: "$lines.debit_amt" }, cr: { $sum: "$lines.credit_amt" } } },
+      ]);
+      if (preAgg) openingBalance = round2(preAgg.dr - preAgg.cr);
+      match.je_date = { $gte: new Date(filters.from_date) };
+    }
+
+    if (filters.to_date) {
+      const to = new Date(filters.to_date);
+      to.setHours(23, 59, 59, 999);
+      match.je_date = match.je_date || {};
+      match.je_date.$lte = to;
+    }
+
+    const entries = await JournalEntryModel.aggregate([
+      { $match: match },
+      { $unwind: "$lines" },
+      { $match: { "lines.account_code": accountCode } },
+      {
+        $project: {
+          _id:           0,
+          je_no:         1,
+          je_date:       1,
+          je_type:       1,
+          narration:     1,
+          tender_id:     1,
+          tender_name:   1,
+          debit_amt:     "$lines.debit_amt",
+          credit_amt:    "$lines.credit_amt",
+          line_narration: "$lines.narration",
+        },
+      },
+      { $sort: { je_date: 1 } },
+    ]);
+
+    const rows = attachRunningBalance(entries, openingBalance);
+
+    if (filters.from_date && openingBalance !== 0) {
+      rows.unshift({
+        je_no: "", je_date: new Date(filters.from_date), je_type: "Opening Balance",
+        narration: "Opening Balance B/F", debit_amt: openingBalance < 0 ? round2(Math.abs(openingBalance)) : 0,
+        credit_amt: openingBalance > 0 ? openingBalance : 0, balance: openingBalance, is_opening_balance: true,
+      });
+    }
+
+    return { account_code: accountCode, rows };
+  }
+
+  // ── GET /ledger/cash-book ─────────────────────────────────────────────────────
+  // All transactions on bank/cash accounts (is_bank_cash = true).
+  // Groups by account_code. Optional filters: from_date, to_date, financial_year
+  static async getCashBook(filters = {}) {
+    // Get all bank/cash account codes
+    const bankAccounts = await AccountTreeModel.find(
+      { is_bank_cash: true, is_deleted: false, is_posting_account: true },
+      { account_code: 1, account_name: 1 }
+    ).lean();
+
+    if (!bankAccounts.length) return [];
+
+    const codes = bankAccounts.map((a) => a.account_code);
+    const nameMap = Object.fromEntries(bankAccounts.map((a) => [a.account_code, a.account_name]));
+
+    const match = { is_posted: true, "lines.account_code": { $in: codes } };
+    if (filters.financial_year) match.financial_year = filters.financial_year;
+    if (filters.from_date || filters.to_date) {
+      match.je_date = {};
+      if (filters.from_date) match.je_date.$gte = new Date(filters.from_date);
+      if (filters.to_date) {
+        const to = new Date(filters.to_date);
+        to.setHours(23, 59, 59, 999);
+        match.je_date.$lte = to;
+      }
+    }
+
+    const entries = await JournalEntryModel.aggregate([
+      { $match: match },
+      { $unwind: "$lines" },
+      { $match: { "lines.account_code": { $in: codes } } },
+      {
+        $project: {
+          _id:           0,
+          account_code:  "$lines.account_code",
+          je_no:         1,
+          je_date:       1,
+          je_type:       1,
+          narration:     1,
+          tender_id:     1,
+          debit_amt:     "$lines.debit_amt",
+          credit_amt:    "$lines.credit_amt",
+        },
+      },
+      { $sort: { account_code: 1, je_date: 1 } },
+    ]);
+
+    // Group by account_code with running balance per account
+    const grouped = {};
+    for (const e of entries) {
+      if (!grouped[e.account_code]) {
+        grouped[e.account_code] = { account_code: e.account_code, account_name: nameMap[e.account_code] || "", entries: [] };
+      }
+      grouped[e.account_code].entries.push(e);
+    }
+
+    return Object.values(grouped).map((g) => ({
+      ...g,
+      entries: attachRunningBalance(g.entries),
+    }));
+  }
+
+  // ── GET /ledger/itc-register ──────────────────────────────────────────────────
+  // ITC (Input Tax Credit) register — all JE lines on CGST/SGST/IGST Input accounts.
+  // Groups by financial_year and tax_type.
+  // Optional filters: financial_year, from_date, to_date
+  static async getITCRegister(filters = {}) {
+    // Get ITC account codes from AccountTree
+    const itcAccounts = await AccountTreeModel.find({
+      tax_type: { $in: ["CGST_Input", "SGST_Input", "IGST_Input", "ITC_Reversal"] },
+      is_deleted: false,
+    }, { account_code: 1, account_name: 1, tax_type: 1 }).lean();
+
+    if (!itcAccounts.length) return { summary: [], detail: [] };
+
+    const codes   = itcAccounts.map((a) => a.account_code);
+    const typeMap = Object.fromEntries(itcAccounts.map((a) => [a.account_code, a.tax_type]));
+
+    const match = { is_posted: true, "lines.account_code": { $in: codes } };
+    if (filters.financial_year) match.financial_year = filters.financial_year;
+    if (filters.from_date || filters.to_date) {
+      match.je_date = {};
+      if (filters.from_date) match.je_date.$gte = new Date(filters.from_date);
+      if (filters.to_date) {
+        const to = new Date(filters.to_date);
+        to.setHours(23, 59, 59, 999);
+        match.je_date.$lte = to;
+      }
+    }
+
+    const rows = await JournalEntryModel.aggregate([
+      { $match: match },
+      { $unwind: "$lines" },
+      { $match: { "lines.account_code": { $in: codes } } },
+      {
+        $group: {
+          _id: { fy: "$financial_year", code: "$lines.account_code" },
+          total_itc_claimed:   { $sum: "$lines.debit_amt" },   // Dr = ITC claimed
+          total_itc_reversed:  { $sum: "$lines.credit_amt" },  // Cr = ITC reversed
+          txn_count:           { $sum: 1 },
+        },
+      },
+      {
+        $project: {
+          _id:               0,
+          financial_year:    "$_id.fy",
+          account_code:      "$_id.code",
+          total_itc_claimed:  { $round: ["$total_itc_claimed",  2] },
+          total_itc_reversed: { $round: ["$total_itc_reversed", 2] },
+          net_itc:           { $round: [{ $subtract: ["$total_itc_claimed", "$total_itc_reversed"] }, 2] },
+          txn_count:         1,
+        },
+      },
+      { $sort: { financial_year: 1, account_code: 1 } },
+    ]);
+
+    // Add tax_type from our map
+    const detail = rows.map((r) => ({ ...r, tax_type: typeMap[r.account_code] || "" }));
+
+    // Summary: group by financial_year
+    const summaryMap = {};
+    for (const r of detail) {
+      if (!summaryMap[r.financial_year]) {
+        summaryMap[r.financial_year] = { financial_year: r.financial_year, total_itc_claimed: 0, total_itc_reversed: 0, net_itc: 0 };
+      }
+      summaryMap[r.financial_year].total_itc_claimed   = round2(summaryMap[r.financial_year].total_itc_claimed  + r.total_itc_claimed);
+      summaryMap[r.financial_year].total_itc_reversed  = round2(summaryMap[r.financial_year].total_itc_reversed + r.total_itc_reversed);
+      summaryMap[r.financial_year].net_itc             = round2(summaryMap[r.financial_year].net_itc            + r.net_itc);
+    }
+
+    return { summary: Object.values(summaryMap), detail };
   }
 }
 

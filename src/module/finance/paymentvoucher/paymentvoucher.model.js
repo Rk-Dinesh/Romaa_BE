@@ -62,6 +62,15 @@ const PaymentVoucherSchema = new mongoose.Schema(
     // ── Payment amount ────────────────────────────────────────────────────
     amount: { type: Number, default: 0 },
 
+    // ── TDS (Tax Deducted at Source) ──────────────────────────────────────
+    // gross_amount = full payment before TDS
+    // tds_amt      = gross_amount × tds_pct / 100  (computed by pre-save)
+    // amount       = gross_amount − tds_amt         (net actually paid to supplier)
+    gross_amount: { type: Number, default: 0 }, // full bill amount before TDS
+    tds_section:  { type: String, default: "" }, // e.g. "194C", "194J", "194I"
+    tds_pct:      { type: Number, default: 0 },  // e.g. 1, 2, 10
+    tds_amt:      { type: Number, default: 0 },  // computed by pre-save
+
     // ── Double-entry lines ────────────────────────────────────────────────
     entries: {
       type: [EntryLineSchema],
@@ -83,6 +92,18 @@ const PaymentVoucherSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// ── Pre-save: compute TDS amount and net payment ──────────────────────────────
+PaymentVoucherSchema.pre("save", function (next) {
+  const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
+  if (this.gross_amount > 0 && this.tds_pct > 0) {
+    this.tds_amt = r2(this.gross_amount * this.tds_pct / 100);
+    this.amount  = r2(this.gross_amount - this.tds_amt);
+  } else if (this.gross_amount > 0) {
+    this.amount = this.gross_amount;
+  }
+  next();
+});
 
 // ── Indexes ───────────────────────────────────────────────────────────────────
 PaymentVoucherSchema.index({ supplier_id: 1, pv_date: -1 });      // supplier payment history

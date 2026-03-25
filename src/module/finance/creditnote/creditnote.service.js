@@ -12,6 +12,18 @@ function currentFY() {
   return `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`; // "25-26"
 }
 
+// Validate that entries balance: sum of debits must equal sum of credits
+function validateEntriesBalance(entries) {
+  if (!entries || entries.length === 0) return; // entries are optional
+  const totalDr = entries.reduce((s, e) => s + (Number(e.debit_amt)  || 0), 0);
+  const totalCr = entries.reduce((s, e) => s + (Number(e.credit_amt) || 0), 0);
+  if (Math.round((totalDr - totalCr) * 100) !== 0) {
+    throw new Error(
+      `Entry lines do not balance: total debits (${totalDr.toFixed(2)}) ≠ total credits (${totalCr.toFixed(2)})`
+    );
+  }
+}
+
 // ── Auto-fill supplier fields ─────────────────────────────────────────────────
 async function resolveSupplier(supplier_type, supplier_id) {
   if (supplier_type === "Vendor") {
@@ -65,6 +77,10 @@ function buildDoc(payload, cn_no) {
     bill_no:  payload.bill_no  || "",
 
     amount: Number(payload.amount) || 0,
+    taxable_amount: Number(payload.taxable_amount) || Number(payload.amount) || 0,
+    cgst_pct:  Number(payload.cgst_pct)  || 0,
+    sgst_pct:  Number(payload.sgst_pct)  || 0,
+    igst_pct:  Number(payload.igst_pct)  || 0,
 
     entries: (payload.entries || []).map((e) => ({
       dr_cr:        e.dr_cr,
@@ -117,9 +133,16 @@ class CreditNoteService {
       }
     }
 
-    return await CreditNoteModel.find(query)
-      .sort({ cn_date: -1, createdAt: -1 })
-      .lean();
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      CreditNoteModel.find(query).sort({ cn_date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      CreditNoteModel.countDocuments(query),
+    ]);
+
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /creditnote/by-supplier/:supplierId
@@ -148,6 +171,13 @@ class CreditNoteService {
     return await CreditNoteModel.find(query).sort({ cn_date: -1 }).lean();
   }
 
+  // GET /creditnote/:id
+  static async getById(id) {
+    const doc = await CreditNoteModel.findById(id).lean();
+    if (!doc) throw new Error("Credit note not found");
+    return doc;
+  }
+
   // POST /creditnote/create
   static async create(payload) {
     if (!payload.cn_no)         throw new Error("cn_no is required");
@@ -157,6 +187,8 @@ class CreditNoteService {
     // Auto-fill supplier fields from master
     const supplierData = await resolveSupplier(payload.supplier_type, payload.supplier_id);
     Object.assign(payload, supplierData);
+
+    validateEntriesBalance(payload.entries);
 
     const saved = await CreditNoteModel.create(buildDoc(payload, payload.cn_no));
 
@@ -181,6 +213,33 @@ class CreditNoteService {
     }
 
     return saved;
+  }
+
+  // PATCH /creditnote/update/:id
+  static async update(id, payload) {
+    const cn = await CreditNoteModel.findById(id);
+    if (!cn) throw new Error("Credit note not found");
+    if (cn.status === "approved") throw new Error("Cannot edit an approved credit note");
+
+    const allowed = [
+      "cn_date", "document_year", "reference_no", "reference_date", "location",
+      "sales_type", "adj_type", "tax_type", "rev_charge", "bill_ref", "bill_no",
+      "amount", "entries", "narration", "tender_id", "tender_ref", "tender_name",
+    ];
+    for (const field of allowed) {
+      if (payload[field] !== undefined) cn[field] = payload[field];
+    }
+    await cn.save();
+    return cn;
+  }
+
+  // DELETE /creditnote/delete/:id
+  static async deleteDraft(id) {
+    const cn = await CreditNoteModel.findById(id);
+    if (!cn) throw new Error("Credit note not found");
+    if (cn.status === "approved") throw new Error("Cannot delete an approved credit note");
+    await cn.deleteOne();
+    return { deleted: true, cn_no: cn.cn_no };
   }
 
   // PATCH /creditnote/approve/:id

@@ -2,7 +2,7 @@
 
 **Base URL:** `/receiptvoucher`
 **Module:** `finance → receiptvoucher`
-**Auth:** JWT cookie or `Authorization: Bearer <token>` (currently commented out during development)
+**Auth:** JWT cookie or `Authorization: Bearer <token>`
 
 ---
 
@@ -37,7 +37,7 @@ Returns the `rv_no` to assign to the next receipt voucher. Call before opening t
 GET /receiptvoucher/next-no
 ```
 
-**Auth required:** No (dev) / `finance > receiptvoucher > read` (prod)
+**Auth required:** `finance > receiptvoucher > read`
 
 ### Success Response `200`
 
@@ -78,6 +78,8 @@ GET /receiptvoucher/list
 | `rv_no` | `string` | Exact match |
 | `from_date` | `YYYY-MM-DD` | `rv_date ≥ from_date` |
 | `to_date` | `YYYY-MM-DD` | `rv_date ≤ to_date` |
+| `page` | `number` | Page number (1-based). Default: `1` |
+| `limit` | `number` | Records per page. Default: `20` |
 
 ### Example Requests
 
@@ -85,7 +87,7 @@ GET /receiptvoucher/list
 GET /receiptvoucher/list
 GET /receiptvoucher/list?supplier_type=Vendor&status=pending
 GET /receiptvoucher/list?tender_id=TND-001&from_date=2025-04-01&to_date=2026-03-31
-GET /receiptvoucher/list?receipt_mode=Cheque&status=approved
+GET /receiptvoucher/list?receipt_mode=Cheque&status=approved&page=1&limit=20
 ```
 
 ### Success Response `200`
@@ -113,7 +115,13 @@ GET /receiptvoucher/list?receipt_mode=Cheque&status=approved
       "narration":     "Advance refund — excess amount returned by vendor",
       "createdAt":     "2026-03-25T10:00:00.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 12,
+    "pages": 1
+  }
 }
 ```
 
@@ -306,7 +314,7 @@ Moves a `pending` receipt voucher to `approved` and auto-posts the Dr ledger ent
 PATCH /receiptvoucher/approve/:id
 ```
 
-**Auth required:** No (dev) / `finance > receiptvoucher > edit` (prod)
+**Auth required:** `finance > receiptvoucher > edit`
 
 ### Example Request
 
@@ -334,6 +342,96 @@ PATCH /receiptvoucher/approve/67a1b2c3d4e5f6a7b8c9d0e3
 |---|---|---|
 | `400` | ID not found | `"Receipt voucher not found"` |
 | `400` | Already approved | `"Already approved"` |
+
+---
+
+## 7. Get Receipt Voucher by ID
+
+```
+GET /receiptvoucher/:id
+```
+
+**Auth required:** `finance > receiptvoucher > read`
+
+Returns the full receipt voucher detail.
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "data": { ...full RV fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `404` | `id` not found | `"Receipt voucher not found"` |
+
+---
+
+## 8. Update Receipt Voucher
+
+```
+PATCH /receiptvoucher/update/:id
+Content-Type: application/json
+```
+
+**Auth required:** `finance > receiptvoucher > edit`
+
+Only `draft` or `pending` RVs can be updated. Approved RVs are blocked.
+
+**Updatable fields:** `rv_date`, `receipt_mode`, `bank_name`, `bank_ref`, `cheque_no`, `cheque_date`, `tender_id`, `tender_ref`, `tender_name`, `against_ref`, `against_no`, `amount`, `narration`
+
+> If `entries[]` is sent, the array is replaced and balance is re-validated (Σ Dr = Σ Cr).
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "message": "Receipt voucher updated",
+  "data": { ...updated RV fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | RV is approved | `"Cannot edit an approved receipt voucher"` |
+| `404` | `id` not found | `"Receipt voucher not found"` |
+
+---
+
+## 9. Delete Receipt Voucher
+
+```
+DELETE /receiptvoucher/delete/:id
+```
+
+**Auth required:** `finance > receiptvoucher > delete`
+
+Only `draft` or `pending` RVs can be deleted. Approved RVs are blocked.
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "message": "Receipt voucher deleted",
+  "data": { ...deleted RV fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | RV is approved | `"Cannot delete an approved receipt voucher"` |
+| `404` | `id` not found | `"Receipt voucher not found"` |
 
 ---
 

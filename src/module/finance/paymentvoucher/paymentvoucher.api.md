@@ -2,7 +2,7 @@
 
 **Base URL:** `/paymentvoucher`
 **Module:** `finance → paymentvoucher`
-**Auth:** JWT cookie or `Authorization: Bearer <token>` (currently commented out during development)
+**Auth:** JWT cookie or `Authorization: Bearer <token>`
 
 ---
 
@@ -34,7 +34,7 @@ Returns the `pv_no` to assign to the next payment voucher. Call before opening t
 GET /paymentvoucher/next-no
 ```
 
-**Auth required:** No (dev) / `finance > paymentvoucher > read` (prod)
+**Auth required:** `finance > paymentvoucher > read`
 
 ### Success Response `200`
 
@@ -75,6 +75,8 @@ GET /paymentvoucher/list
 | `pv_no` | `string` | Exact match |
 | `from_date` | `YYYY-MM-DD` | `pv_date ≥ from_date` |
 | `to_date` | `YYYY-MM-DD` | `pv_date ≤ to_date` |
+| `page` | `number` | Page number (1-based). Default: `1` |
+| `limit` | `number` | Records per page. Default: `20` |
 
 ### Example Requests
 
@@ -82,7 +84,7 @@ GET /paymentvoucher/list
 GET /paymentvoucher/list
 GET /paymentvoucher/list?supplier_type=Vendor&status=pending
 GET /paymentvoucher/list?tender_id=TND-001&from_date=2025-04-01&to_date=2026-03-31
-GET /paymentvoucher/list?payment_mode=NEFT&status=approved
+GET /paymentvoucher/list?payment_mode=NEFT&status=approved&page=1&limit=20
 ```
 
 ### Success Response `200`
@@ -112,7 +114,13 @@ GET /paymentvoucher/list?payment_mode=NEFT&status=approved
       "narration":     "Net payment after CN and DN deductions",
       "createdAt":     "2026-03-20T11:00:00.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 28,
+    "pages": 2
+  }
 }
 ```
 
@@ -209,7 +217,7 @@ Content-Type: application/json
     }
   ],
 
-  "amount": 20074,
+  "gross_amount": 20074,
 
   "entries": [
     { "dr_cr": "Dr", "account_name": "ABC Suppliers Pvt Ltd", "debit_amt": 20074, "credit_amt": 0 },
@@ -244,9 +252,15 @@ Content-Type: application/json
 | `tender_ref` | `ObjectId` | No | Tender `_id` |
 | `tender_name` | `string` | No | Snapshot |
 | `bill_refs` | `array` | No | Bills being settled — leave empty for On Account payment |
-| `amount` | `number` | No | Total payment amount |
+| `gross_amount` | `number` | No | Gross payment before TDS. If `tds_pct > 0`, send this instead of `amount` |
+| `tds_section` | `string` | No | TDS section code e.g. `194C`, `194J`, `194I` |
+| `tds_pct` | `number` | No | TDS rate % e.g. `1`, `2`, `10` |
+| `tds_amt` | — | — | **Server-computed** by pre-save hook — do not send |
+| `amount` | — | — | **Server-computed** by pre-save hook — do not send (see TDS hook below) |
 | `narration` | `string` | No | Free text note |
 | `status` | `string` | No | `draft` / `pending` (default) — use `approved` to auto-post ledger on create |
+
+> **TDS hook:** If `gross_amount > 0` and `tds_pct > 0`, then `tds_amt = gross_amount × tds_pct / 100` and `amount = gross_amount − tds_amt`. Otherwise `amount = gross_amount`. The `amount` field is always server-computed when `gross_amount` is provided — do not send it directly.
 
 #### `bill_refs[]` — optional, one entry per bill being settled
 
@@ -287,6 +301,10 @@ If `status` is `"approved"` at creation (or after `PATCH /approve`):
     "supplier_id":   "VND-002",
     "supplier_name": "ABC Suppliers Pvt Ltd",
     "supplier_gstin":"27AABCU9603R1ZX",
+    "gross_amount":  20074,
+    "tds_section":   null,
+    "tds_pct":       0,
+    "tds_amt":       0,
     "amount":        20074,
     "status":        "pending",
     "createdAt":     "2026-03-20T11:00:00.000Z"
@@ -317,7 +335,7 @@ Moves a `pending` payment voucher to `approved` and auto-posts the Dr ledger ent
 PATCH /paymentvoucher/approve/:id
 ```
 
-**Auth required:** No (dev) / `finance > paymentvoucher > edit` (prod)
+**Auth required:** `finance > paymentvoucher > edit`
 
 ### Example Request
 
@@ -345,6 +363,96 @@ PATCH /paymentvoucher/approve/67a1b2c3d4e5f6a7b8c9d0e2
 |---|---|---|
 | `400` | ID not found | `"Payment voucher not found"` |
 | `400` | Already approved | `"Already approved"` |
+
+---
+
+## 7. Get Payment Voucher by ID
+
+```
+GET /paymentvoucher/:id
+```
+
+**Auth required:** `finance > paymentvoucher > read`
+
+Returns the full payment voucher detail.
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "data": { ...full PV fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `404` | `id` not found | `"Payment voucher not found"` |
+
+---
+
+## 8. Update Payment Voucher
+
+```
+PATCH /paymentvoucher/update/:id
+Content-Type: application/json
+```
+
+**Auth required:** `finance > paymentvoucher > edit`
+
+Only `draft` or `pending` PVs can be updated. Approved PVs are blocked.
+
+**Updatable fields:** `pv_date`, `payment_mode`, `bank_name`, `bank_ref`, `cheque_no`, `cheque_date`, `tender_id`, `tender_ref`, `tender_name`, `bill_refs`, `gross_amount`, `tds_section`, `tds_pct`, `narration`
+
+> If `entries[]` is sent, the array is replaced and balance is re-validated (Σ Dr = Σ Cr).
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "message": "Payment voucher updated",
+  "data": { ...updated PV fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | PV is approved | `"Cannot edit an approved payment voucher"` |
+| `404` | `id` not found | `"Payment voucher not found"` |
+
+---
+
+## 9. Delete Payment Voucher
+
+```
+DELETE /paymentvoucher/delete/:id
+```
+
+**Auth required:** `finance > paymentvoucher > delete`
+
+Only `draft` or `pending` PVs can be deleted. Approved PVs are blocked.
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "message": "Payment voucher deleted",
+  "data": { ...deleted PV fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | PV is approved | `"Cannot delete an approved payment voucher"` |
+| `404` | `id` not found | `"Payment voucher not found"` |
 
 ---
 
@@ -389,7 +497,7 @@ PATCH /paymentvoucher/approve/67a1b2c3d4e5f6a7b8c9d0e2
   "cheque_date":  "2026-03-22",
   "supplier_type":"Contractor",
   "supplier_id":  "CON-001",
-  "amount":       45000,
+  "gross_amount": 45000,
   "entries": [
     { "dr_cr": "Dr", "account_name": "Sri Krishna Enterprises", "debit_amt": 45000, "credit_amt": 0 },
     { "dr_cr": "Cr", "account_name": "SBI OD A/c",              "debit_amt": 0,     "credit_amt": 45000 }
@@ -398,6 +506,29 @@ PATCH /paymentvoucher/approve/67a1b2c3d4e5f6a7b8c9d0e2
   "status": "pending"
 }
 ```
+
+---
+
+## TDS Payment Example
+
+```json
+{
+  "pv_no": "PV/25-26/0003",
+  "payment_mode": "NEFT",
+  "supplier_type": "Vendor",
+  "supplier_id": "VND-002",
+  "gross_amount": 100000,
+  "tds_section": "194C",
+  "tds_pct": 1,
+  "entries": [
+    { "dr_cr": "Dr", "account_name": "ABC Suppliers Pvt Ltd", "debit_amt": 100000, "credit_amt": 0 },
+    { "dr_cr": "Cr", "account_name": "HDFC Current A/c", "debit_amt": 0, "credit_amt": 99000 },
+    { "dr_cr": "Cr", "account_name": "TDS Payable (194C)", "debit_amt": 0, "credit_amt": 1000 }
+  ]
+}
+```
+
+> Server computes `tds_amt = 1000` (`100000 × 1 / 100`), `amount = 99000` (`100000 − 1000`) automatically. Do not send `tds_amt` or `amount` in the payload.
 
 ---
 

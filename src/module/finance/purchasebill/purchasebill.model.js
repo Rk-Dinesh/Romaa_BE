@@ -56,6 +56,8 @@ const ADDITIONAL_CHARGE_TYPES = [
   "Packing Charges",
   "Discount",
   "TCS Receivable",
+  "Retention",
+  "Security Deposit",
 ];
 
 const AdditionalChargeSchema = new mongoose.Schema(
@@ -212,6 +214,10 @@ PurchaseBillSchema.index({ vendor_id: 1, createdAt: -1 });   // vendor bill list
 PurchaseBillSchema.index({ status: 1, doc_date: -1 });      // payment due / approval queue
 PurchaseBillSchema.index({ doc_date: -1 });                 // date-range reports
 PurchaseBillSchema.index({ "line_items.item_id": 1 });       // multikey: item-wise reports
+PurchaseBillSchema.index(
+  { vendor_id: 1, invoice_no: 1 },
+  { unique: true, partialFilterExpression: { invoice_no: { $ne: "" } } }
+); // prevent duplicate vendor invoice numbers
 
 const PurchaseBillModel = mongoose.model("PurchaseBill", PurchaseBillSchema);
 export default PurchaseBillModel;

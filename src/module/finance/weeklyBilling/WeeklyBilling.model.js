@@ -42,6 +42,20 @@ const WeeklyBillingSchema = new mongoose.Schema(
     gst_amount:   { type: Number, default: 0 },
     total_amount: { type: Number, default: 0 },
 
+    // ── GST split (instate = CGST+SGST, otherstate = IGST) ────────────────
+    tax_mode:  { type: String, enum: ["instate", "otherstate"], default: "instate" },
+    cgst_pct:  { type: Number, default: 0 },
+    sgst_pct:  { type: Number, default: 0 },
+    igst_pct:  { type: Number, default: 0 },
+    cgst_amt:  { type: Number, default: 0 },
+    sgst_amt:  { type: Number, default: 0 },
+    igst_amt:  { type: Number, default: 0 },
+
+    // ── Retention ─────────────────────────────────────────────────────────
+    retention_pct: { type: Number, default: 0 }, // % withheld from contractor
+    retention_amt: { type: Number, default: 0 }, // computed: total_amount × retention_pct/100
+    net_payable:   { type: Number, default: 0 }, // computed: total_amount − retention_amt
+
     status: {
       type: String,
       enum: ["Generated", "Pending", "Approved", "Cancelled"],

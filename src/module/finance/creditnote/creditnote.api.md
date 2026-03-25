@@ -2,7 +2,7 @@
 
 **Base URL:** `/creditnote`
 **Module:** `finance → creditnote`
-**Auth:** JWT cookie or `Authorization: Bearer <token>` (currently commented out during development)
+**Auth:** JWT cookie or `Authorization: Bearer <token>`
 
 ---
 
@@ -29,7 +29,7 @@ Returns the `cn_no` to assign to the next credit note. Call before opening the C
 GET /creditnote/next-no
 ```
 
-**Auth required:** No (dev) / `finance > creditnote > read` (prod)
+**Auth required:** `finance > creditnote > read`
 
 ### Success Response `200`
 
@@ -71,6 +71,8 @@ GET /creditnote/list
 | `cn_no` | `string` | Exact match |
 | `from_date` | `YYYY-MM-DD` | `cn_date ≥ from_date` |
 | `to_date` | `YYYY-MM-DD` | `cn_date ≤ to_date` |
+| `page` | `number` | Page number (1-based). Default: `1` |
+| `limit` | `number` | Records per page. Default: `20` |
 
 ### Example Requests
 
@@ -78,6 +80,7 @@ GET /creditnote/list
 GET /creditnote/list
 GET /creditnote/list?supplier_type=Vendor&status=pending
 GET /creditnote/list?tender_id=TND-001&from_date=2025-04-01&to_date=2026-03-31
+GET /creditnote/list?page=2&limit=10
 ```
 
 ### Success Response `200`
@@ -105,7 +108,13 @@ GET /creditnote/list?tender_id=TND-001&from_date=2025-04-01&to_date=2026-03-31
       "narration":     "3 bags cement returned — damaged",
       "createdAt":     "2026-03-15T10:00:00.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 35,
+    "pages": 2
+  }
 }
 ```
 
@@ -196,7 +205,10 @@ Content-Type: application/json
   "bill_ref":       "67a1b2c3d4e5f6a7b8c9d0e4",
   "bill_no":        "PB/25-26/0001",
 
-  "amount":         1416,
+  "taxable_amount": 1200,
+  "cgst_pct":       9,
+  "sgst_pct":       9,
+  "igst_pct":       0,
 
   "entries": [
     { "dr_cr": "Dr", "account_name": "ABC Suppliers Pvt Ltd", "debit_amt": 1416, "credit_amt": 0 },
@@ -225,7 +237,7 @@ Content-Type: application/json
 | `sales_type` | `string` | No | `Local` / `Interstate` / `Export` / `SEZ` / `Exempt` |
 | `adj_type` | `string` | No | `Against Bill` / `Advance Adjustment` / `On Account` |
 | `tax_type` | `string` | No | `GST` / `NonGST` / `Exempt` |
-| `rev_charge` | `boolean` | No | Reverse Charge Mechanism — default `false` |
+| `rev_charge` | `boolean` | No | Reverse Charge Mechanism — default `false`. When `true`, use RCM accounts (CGST_RCM/SGST_RCM/IGST_RCM codes 2160/2170/2180) in the entries lines |
 | `supplier_type` | `"Vendor" \| "Contractor"` | **Yes** | Type of supplier |
 | `supplier_id` | `string` | **Yes** | Business key — used to auto-fill all supplier fields |
 | `supplier_ref` | — | — | **Auto-filled** — do not send |
@@ -236,9 +248,19 @@ Content-Type: application/json
 | `tender_name` | `string` | No | Snapshot |
 | `bill_ref` | `ObjectId` | No | Linked PurchaseBill `_id` |
 | `bill_no` | `string` | No | Snapshot of bill doc_id |
-| `amount` | `number` | No | Total CN value |
+| `taxable_amount` | `number` | No | Base amount before GST. Defaults to `amount` for backward compatibility |
+| `cgst_pct` | `number` | No | CGST rate % |
+| `sgst_pct` | `number` | No | SGST rate % |
+| `igst_pct` | `number` | No | IGST rate % |
+| `cgst_amt` | — | — | **Server-computed** by pre-save hook — do not send |
+| `sgst_amt` | — | — | **Server-computed** by pre-save hook — do not send |
+| `igst_amt` | — | — | **Server-computed** by pre-save hook — do not send |
+| `total_tax` | — | — | **Server-computed** by pre-save hook — do not send |
+| `amount` | `number` | No | **Auto-set by hook** to `taxable_amount + total_tax`. Can be sent directly if not using tax breakup fields |
 | `narration` | `string` | No | Free text note |
 | `status` | `string` | No | `draft` / `pending` (default) — use `approved` to auto-post ledger on create |
+
+> **Tax hook:** Server computes `cgst_amt = taxable_amount × cgst_pct / 100`, `sgst_amt = taxable_amount × sgst_pct / 100`, `igst_amt = taxable_amount × igst_pct / 100`, `total_tax = cgst_amt + sgst_amt + igst_amt`, and `amount = taxable_amount + total_tax`.
 
 #### `entries[]` — minimum 1 required
 
@@ -269,6 +291,11 @@ If `status` is `"approved"` at creation (or after `PATCH /approve`):
     "supplier_id":   "VND-002",
     "supplier_name": "ABC Suppliers Pvt Ltd",
     "supplier_gstin":"27AABCU9603R1ZX",
+    "taxable_amount": 1200,
+    "cgst_pct": 9, "cgst_amt": 108,
+    "sgst_pct": 9, "sgst_amt": 108,
+    "igst_pct": 0, "igst_amt": 0,
+    "total_tax": 216,
     "amount":        1416,
     "status":        "pending",
     "createdAt":     "2026-03-15T10:00:00.000Z"
@@ -299,7 +326,7 @@ Moves a `pending` credit note to `approved` and auto-posts the Dr ledger entry.
 PATCH /creditnote/approve/:id
 ```
 
-**Auth required:** No (dev) / `finance > creditnote > edit` (prod)
+**Auth required:** `finance > creditnote > edit`
 
 ### Example Request
 
@@ -330,6 +357,96 @@ PATCH /creditnote/approve/67a1b2c3d4e5f6a7b8c9d0e1
 
 ---
 
+## 7. Get Credit Note by ID
+
+```
+GET /creditnote/:id
+```
+
+**Auth required:** `finance > creditnote > read`
+
+Returns the full credit note detail.
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "data": { ...full CN fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `404` | `id` not found | `"Credit note not found"` |
+
+---
+
+## 8. Update Credit Note
+
+```
+PATCH /creditnote/update/:id
+Content-Type: application/json
+```
+
+**Auth required:** `finance > creditnote > edit`
+
+Only `draft` or `pending` CNs can be updated. Approved CNs are blocked.
+
+**Updatable top-level fields:** `cn_date`, `reference_no`, `reference_date`, `location`, `sales_type`, `adj_type`, `tax_type`, `rev_charge`, `tender_id`, `tender_ref`, `tender_name`, `bill_ref`, `bill_no`, `amount`, `taxable_amount`, `cgst_pct`, `sgst_pct`, `igst_pct`, `narration`
+
+> If `entries[]` is sent, the **entire entries array is replaced** and balance is re-validated (Σ Dr = Σ Cr).
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "message": "Credit note updated",
+  "data": { ...updated CN fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | CN is approved | `"Cannot edit an approved credit note"` |
+| `404` | `id` not found | `"Credit note not found"` |
+
+---
+
+## 9. Delete Credit Note
+
+```
+DELETE /creditnote/delete/:id
+```
+
+**Auth required:** `finance > creditnote > delete`
+
+Only `draft` or `pending` CNs can be deleted. Approved CNs are blocked.
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "message": "Credit note deleted",
+  "data": { ...deleted CN fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | CN is approved | `"Cannot delete an approved credit note"` |
+| `404` | `id` not found | `"Credit note not found"` |
+
+---
+
 ## Workflow
 
 ```
@@ -339,8 +456,9 @@ PATCH /creditnote/approve/67a1b2c3d4e5f6a7b8c9d0e1
 2. Select Supplier (Vendor or Contractor) + Tender + linked Bill
    → supplier_name, gstin auto-filled on create
 
-3. Fill voucher entries (Dr/Cr lines) + amount + narration
+3. Fill taxable_amount + GST percentages + voucher entries (Dr/Cr lines) + narration
    POST /creditnote/create              → saved as "pending"
+                                        → server computes cgst_amt, sgst_amt, igst_amt, total_tax, amount
 
 4. Finance manager reviews and approves
    PATCH /creditnote/approve/:id        → status = "approved"

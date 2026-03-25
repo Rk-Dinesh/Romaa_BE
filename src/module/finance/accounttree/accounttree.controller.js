@@ -1,5 +1,16 @@
 import AccountTreeService from "./accounttree.service.js";
 
+// GET /accounttree/:id
+export const getById = async (req, res) => {
+  try {
+    const data = await AccountTreeService.getById(req.params.id);
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    const code = error.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
 // GET /accounttree/list
 // ?account_type=&account_subtype=&parent_code=&is_group=&is_posting_account=&is_bank_cash=&is_personal=&is_active=&tax_type=
 export const getAll = async (req, res) => {

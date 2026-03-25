@@ -2,7 +2,7 @@
 
 **Base URL:** `/debitnote`
 **Module:** `finance → debitnote`
-**Auth:** JWT cookie or `Authorization: Bearer <token>` (currently commented out during development)
+**Auth:** JWT cookie or `Authorization: Bearer <token>`
 
 ---
 
@@ -31,7 +31,7 @@ Returns the `dn_no` to assign to the next debit note. Call before opening the Cr
 GET /debitnote/next-no
 ```
 
-**Auth required:** No (dev) / `finance > debitnote > read` (prod)
+**Auth required:** `finance > debitnote > read`
 
 ### Success Response `200`
 
@@ -73,6 +73,8 @@ GET /debitnote/list
 | `dn_no` | `string` | Exact match |
 | `from_date` | `YYYY-MM-DD` | `dn_date ≥ from_date` |
 | `to_date` | `YYYY-MM-DD` | `dn_date ≤ to_date` |
+| `page` | `number` | Page number (1-based). Default: `1` |
+| `limit` | `number` | Records per page. Default: `20` |
 
 ### Example Requests
 
@@ -80,6 +82,7 @@ GET /debitnote/list
 GET /debitnote/list
 GET /debitnote/list?supplier_type=Contractor&status=pending
 GET /debitnote/list?tender_id=TND-001&from_date=2025-04-01&to_date=2026-03-31
+GET /debitnote/list?page=2&limit=10
 ```
 
 ### Success Response `200`
@@ -108,7 +111,13 @@ GET /debitnote/list?tender_id=TND-001&from_date=2025-04-01&to_date=2026-03-31
       "narration":     "Penalty for 5-day delay @ ₹500/day",
       "createdAt":     "2026-03-18T09:00:00.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 18,
+    "pages": 1
+  }
 }
 ```
 
@@ -201,6 +210,11 @@ Content-Type: application/json
   "bill_ref":       "67a1b2c3d4e5f6a7b8c9d0e5",
   "bill_no":        "WB/25-26/0001",
 
+  "taxable_amount": 2500,
+  "cgst_pct":       0,
+  "sgst_pct":       0,
+  "igst_pct":       0,
+
   "amount":         2500,
   "service_amt":    0,
 
@@ -229,7 +243,7 @@ Content-Type: application/json
 | `sales_type` | `string` | No | `Local` / `Interstate` / `Export` / `SEZ` / `Exempt` |
 | `adj_type` | `string` | No | `Against Bill` / `Advance Adjustment` / `On Account` |
 | `tax_type` | `string` | No | `GST` / `NonGST` / `Exempt` |
-| `rev_charge` | `boolean` | No | Reverse Charge Mechanism — default `false` |
+| `rev_charge` | `boolean` | No | Reverse Charge Mechanism — default `false`. When `true`, use RCM accounts (CGST_RCM/SGST_RCM/IGST_RCM codes 2160/2170/2180) in the entries lines |
 | `supplier_type` | `"Vendor" \| "Contractor"` | **Yes** | Type of supplier |
 | `supplier_id` | `string` | **Yes** | Business key — used to auto-fill all supplier fields |
 | `supplier_ref` | — | — | **Auto-filled** — do not send |
@@ -240,10 +254,20 @@ Content-Type: application/json
 | `tender_name` | `string` | No | Snapshot |
 | `bill_ref` | `ObjectId` | No | Linked bill `_id` (PurchaseBill or WeeklyBill) |
 | `bill_no` | `string` | No | Snapshot of bill number |
-| `amount` | `number` | No | Total DN value |
+| `taxable_amount` | `number` | No | Base amount before GST. Defaults to `amount` for backward compatibility |
+| `cgst_pct` | `number` | No | CGST rate % |
+| `sgst_pct` | `number` | No | SGST rate % |
+| `igst_pct` | `number` | No | IGST rate % |
+| `cgst_amt` | — | — | **Server-computed** by pre-save hook — do not send |
+| `sgst_amt` | — | — | **Server-computed** by pre-save hook — do not send |
+| `igst_amt` | — | — | **Server-computed** by pre-save hook — do not send |
+| `total_tax` | — | — | **Server-computed** by pre-save hook — do not send |
+| `amount` | `number` | No | **Auto-set by hook** to `taxable_amount + total_tax`. Can be sent directly if not using tax breakup fields |
 | `service_amt` | `number` | No | Service portion of the amount (if applicable) |
 | `narration` | `string` | No | Free text — describe the reason for deduction |
 | `status` | `string` | No | `draft` / `pending` (default) — use `approved` to auto-post ledger on create |
+
+> **Tax hook:** Server computes `cgst_amt = taxable_amount × cgst_pct / 100`, `sgst_amt = taxable_amount × sgst_pct / 100`, `igst_amt = taxable_amount × igst_pct / 100`, `total_tax = cgst_amt + sgst_amt + igst_amt`, and `amount = taxable_amount + total_tax`.
 
 #### `entries[]` — minimum 1 required
 
@@ -274,6 +298,11 @@ If `status` is `"approved"` at creation (or after `PATCH /approve`):
     "supplier_id":   "CON-001",
     "supplier_name": "Sri Krishna Enterprises",
     "supplier_gstin":"29AABCK1234R1ZX",
+    "taxable_amount": 2500,
+    "cgst_pct": 0, "cgst_amt": 0,
+    "sgst_pct": 0, "sgst_amt": 0,
+    "igst_pct": 0, "igst_amt": 0,
+    "total_tax": 0,
     "amount":        2500,
     "service_amt":   0,
     "status":        "pending",
@@ -305,7 +334,7 @@ Moves a `pending` debit note to `approved` and auto-posts the Dr ledger entry.
 PATCH /debitnote/approve/:id
 ```
 
-**Auth required:** No (dev) / `finance > debitnote > edit` (prod)
+**Auth required:** `finance > debitnote > edit`
 
 ### Example Request
 
@@ -336,6 +365,96 @@ PATCH /debitnote/approve/67a1b2c3d4e5f6a7b8c9d0f1
 
 ---
 
+## 7. Get Debit Note by ID
+
+```
+GET /debitnote/:id
+```
+
+**Auth required:** `finance > debitnote > read`
+
+Returns the full debit note detail.
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "data": { ...full DN fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `404` | `id` not found | `"Debit note not found"` |
+
+---
+
+## 8. Update Debit Note
+
+```
+PATCH /debitnote/update/:id
+Content-Type: application/json
+```
+
+**Auth required:** `finance > debitnote > edit`
+
+Only `draft` or `pending` DNs can be updated. Approved DNs are blocked.
+
+**Updatable top-level fields:** `dn_date`, `reference_no`, `reference_date`, `location`, `sales_type`, `adj_type`, `tax_type`, `rev_charge`, `tender_id`, `tender_ref`, `tender_name`, `bill_ref`, `bill_no`, `amount`, `taxable_amount`, `cgst_pct`, `sgst_pct`, `igst_pct`, `service_amt`, `narration`
+
+> If `entries[]` is sent, the **entire entries array is replaced** and balance is re-validated (Σ Dr = Σ Cr).
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "message": "Debit note updated",
+  "data": { ...updated DN fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | DN is approved | `"Cannot edit an approved debit note"` |
+| `404` | `id` not found | `"Debit note not found"` |
+
+---
+
+## 9. Delete Debit Note
+
+```
+DELETE /debitnote/delete/:id
+```
+
+**Auth required:** `finance > debitnote > delete`
+
+Only `draft` or `pending` DNs can be deleted. Approved DNs are blocked.
+
+### Success Response `200`
+
+```json
+{
+  "status": true,
+  "message": "Debit note deleted",
+  "data": { ...deleted DN fields... }
+}
+```
+
+### Error Responses
+
+| Status | Condition | Message |
+|---|---|---|
+| `400` | DN is approved | `"Cannot delete an approved debit note"` |
+| `404` | `id` not found | `"Debit note not found"` |
+
+---
+
 ## Workflow
 
 ```
@@ -345,8 +464,9 @@ PATCH /debitnote/approve/67a1b2c3d4e5f6a7b8c9d0f1
 2. Select Supplier (Vendor or Contractor) + Tender + linked Bill
    → supplier_name, gstin auto-filled on create
 
-3. Fill voucher entries (Dr/Cr lines) + amount + narration
+3. Fill taxable_amount + GST percentages (if applicable) + voucher entries + narration
    POST /debitnote/create               → saved as "pending"
+                                        → server computes cgst_amt, sgst_amt, igst_amt, total_tax, amount
 
 4. Finance manager reviews and approves
    PATCH /debitnote/approve/:id         → status = "approved"

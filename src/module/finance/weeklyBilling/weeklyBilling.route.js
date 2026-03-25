@@ -7,6 +7,7 @@ import {
   generateBill,
   updateStatus,
 } from "./weeklyBilling.controller.js";
+import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 
 // ──────────────────────────────────────────────────────────────────────────────
 //  GET  /weeklyBilling/api/list/:tenderId
@@ -31,11 +32,11 @@ import {
 
 const weeklyBillingRouter = Router();
 
-weeklyBillingRouter.get("/api/list/:tenderId",                getBillingList);
-weeklyBillingRouter.get("/api/detail/:billNo",                getBillDetail);
-weeklyBillingRouter.get("/api/sub-bill/:subBillNo",           getSubBillTransactions);
-weeklyBillingRouter.get("/api/contractor-summary/:tenderId",      getContractorSummary);
-weeklyBillingRouter.post("/api/generate",                     generateBill);
-weeklyBillingRouter.patch("/api/status/:billId",              updateStatus);
+weeklyBillingRouter.get("/api/list/:tenderId",                verifyJWT, verifyPermission("finance", "weeklybilling", "read"),    getBillingList);
+weeklyBillingRouter.get("/api/detail/:billNo",                verifyJWT, verifyPermission("finance", "weeklybilling", "read"),    getBillDetail);
+weeklyBillingRouter.get("/api/sub-bill/:subBillNo",           verifyJWT, verifyPermission("finance", "weeklybilling", "read"),    getSubBillTransactions);
+weeklyBillingRouter.get("/api/contractor-summary/:tenderId",  verifyJWT, verifyPermission("finance", "weeklybilling", "read"),    getContractorSummary);
+weeklyBillingRouter.post("/api/generate",                     verifyJWT, verifyPermission("finance", "weeklybilling", "create"),  generateBill);
+weeklyBillingRouter.patch("/api/status/:billId",              verifyJWT, verifyPermission("finance", "weeklybilling", "edit"),    updateStatus);
 
 export default weeklyBillingRouter;

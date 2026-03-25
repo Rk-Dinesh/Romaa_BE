@@ -10,14 +10,14 @@ export const getNextCnNo = async (_req, res) => {
   }
 };
 
-// GET /creditnote/list?supplier_type=&supplier_id=&tender_id=&status=&adj_type=&tax_type=&cn_no=&from_date=&to_date=
+// GET /creditnote/list?supplier_type=&supplier_id=&tender_id=&status=&adj_type=&tax_type=&cn_no=&from_date=&to_date=&page=&limit=
 export const getList = async (req, res) => {
   try {
-    const { supplier_type, supplier_id, tender_id, status, adj_type, tax_type, cn_no, from_date, to_date } = req.query;
-    const data = await CreditNoteService.getList({
-      supplier_type, supplier_id, tender_id, status, adj_type, tax_type, cn_no, from_date, to_date,
+    const { supplier_type, supplier_id, tender_id, status, adj_type, tax_type, cn_no, from_date, to_date, page, limit } = req.query;
+    const result = await CreditNoteService.getList({
+      supplier_type, supplier_id, tender_id, status, adj_type, tax_type, cn_no, from_date, to_date, page, limit,
     });
-    res.status(200).json({ status: true, data });
+    res.status(200).json({ status: true, ...result });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -51,6 +51,17 @@ export const getByTender = async (req, res) => {
   }
 };
 
+// GET /creditnote/:id
+export const getById = async (req, res) => {
+  try {
+    const data = await CreditNoteService.getById(req.params.id);
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    const code = error.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
 // POST /creditnote/create
 export const create = async (req, res) => {
   try {
@@ -60,6 +71,28 @@ export const create = async (req, res) => {
     const code = error.message.includes("required") ||
                  error.message.includes("not found") ||
                  error.message.includes("Invalid") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// PATCH /creditnote/update/:id
+export const update = async (req, res) => {
+  try {
+    const data = await CreditNoteService.update(req.params.id, req.body);
+    res.status(200).json({ status: true, message: "Credit note updated", data });
+  } catch (error) {
+    const code = error.message.includes("not found") || error.message.includes("Cannot") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// DELETE /creditnote/delete/:id
+export const deleteDraft = async (req, res) => {
+  try {
+    const data = await CreditNoteService.deleteDraft(req.params.id);
+    res.status(200).json({ status: true, message: "Credit note deleted", data });
+  } catch (error) {
+    const code = error.message.includes("not found") || error.message.includes("Cannot") ? 400 : 500;
     res.status(code).json({ status: false, message: error.message });
   }
 };

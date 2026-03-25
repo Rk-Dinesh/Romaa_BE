@@ -1,6 +1,7 @@
 import IdcodeServices from "../../idcode/idcode.service.js";
 import ContractorModel from "./contractor.model.js";
 import ContractWorkerModel from "../contractemployee/contractemployee.model.js";
+import AccountTreeService from "../../finance/accounttree/accounttree.service.js";
 
 class ContractorService {
   // Create Contractor
@@ -15,7 +16,14 @@ class ContractorService {
       contractor_id,
       ...contractorData,
     });
-    return await contractor.save();
+    const saved = await contractor.save();
+    AccountTreeService.autoCreatePersonalLedger({
+      supplier_id:   saved.contractor_id,
+      supplier_type: "Contractor",
+      supplier_name: saved.contractor_name,
+      supplier_ref:  saved._id,
+    }).catch(() => {}); // fire-and-forget: don't fail contractor creation if ledger creation fails
+    return saved;
   }
 
   // Get all contractors

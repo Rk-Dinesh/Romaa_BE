@@ -12,6 +12,18 @@ function currentFY() {
   return `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`;
 }
 
+// Validate that entries balance: sum of debits must equal sum of credits
+function validateEntriesBalance(entries) {
+  if (!entries || entries.length === 0) return; // entries are optional
+  const totalDr = entries.reduce((s, e) => s + (Number(e.debit_amt)  || 0), 0);
+  const totalCr = entries.reduce((s, e) => s + (Number(e.credit_amt) || 0), 0);
+  if (Math.round((totalDr - totalCr) * 100) !== 0) {
+    throw new Error(
+      `Entry lines do not balance: total debits (${totalDr.toFixed(2)}) ≠ total credits (${totalCr.toFixed(2)})`
+    );
+  }
+}
+
 // ── Auto-fill supplier fields ─────────────────────────────────────────────────
 async function resolveSupplier(supplier_type, supplier_id) {
   if (supplier_type === "Vendor") {
@@ -66,6 +78,10 @@ function buildDoc(payload, dn_no) {
 
     amount:      Number(payload.amount)      || 0,
     service_amt: Number(payload.service_amt) || 0,
+    taxable_amount: Number(payload.taxable_amount) || Number(payload.amount) || 0,
+    cgst_pct:  Number(payload.cgst_pct)  || 0,
+    sgst_pct:  Number(payload.sgst_pct)  || 0,
+    igst_pct:  Number(payload.igst_pct)  || 0,
 
     entries: (payload.entries || []).map((e) => ({
       dr_cr:        e.dr_cr,
@@ -118,9 +134,16 @@ class DebitNoteService {
       }
     }
 
-    return await DebitNoteModel.find(query)
-      .sort({ dn_date: -1, createdAt: -1 })
-      .lean();
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      DebitNoteModel.find(query).sort({ dn_date: -1, createdAt: -1 }).skip(skip).limit(limit).lean(),
+      DebitNoteModel.countDocuments(query),
+    ]);
+
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /debitnote/by-supplier/:supplierId
@@ -149,6 +172,13 @@ class DebitNoteService {
     return await DebitNoteModel.find(query).sort({ dn_date: -1 }).lean();
   }
 
+  // GET /debitnote/:id
+  static async getById(id) {
+    const doc = await DebitNoteModel.findById(id).lean();
+    if (!doc) throw new Error("Debit note not found");
+    return doc;
+  }
+
   // POST /debitnote/create
   static async create(payload) {
     if (!payload.dn_no)         throw new Error("dn_no is required");
@@ -158,6 +188,8 @@ class DebitNoteService {
     // Auto-fill supplier fields from master
     const supplierData = await resolveSupplier(payload.supplier_type, payload.supplier_id);
     Object.assign(payload, supplierData);
+
+    validateEntriesBalance(payload.entries);
 
     const saved = await DebitNoteModel.create(buildDoc(payload, payload.dn_no));
 
@@ -182,6 +214,33 @@ class DebitNoteService {
     }
 
     return saved;
+  }
+
+  // PATCH /debitnote/update/:id
+  static async update(id, payload) {
+    const dn = await DebitNoteModel.findById(id);
+    if (!dn) throw new Error("Debit note not found");
+    if (dn.status === "approved") throw new Error("Cannot edit an approved debit note");
+
+    const allowed = [
+      "dn_date", "document_year", "reference_no", "reference_date", "location",
+      "sales_type", "adj_type", "tax_type", "rev_charge", "bill_ref", "bill_no",
+      "amount", "service_amt", "entries", "narration", "tender_id", "tender_ref", "tender_name",
+    ];
+    for (const field of allowed) {
+      if (payload[field] !== undefined) dn[field] = payload[field];
+    }
+    await dn.save();
+    return dn;
+  }
+
+  // DELETE /debitnote/delete/:id
+  static async deleteDraft(id) {
+    const dn = await DebitNoteModel.findById(id);
+    if (!dn) throw new Error("Debit note not found");
+    if (dn.status === "approved") throw new Error("Cannot delete an approved debit note");
+    await dn.deleteOne();
+    return { deleted: true, dn_no: dn.dn_no };
   }
 
   // PATCH /debitnote/approve/:id

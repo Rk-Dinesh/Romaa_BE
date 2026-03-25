@@ -2,7 +2,7 @@
 
 **Base URL:** `/accounttree`
 **Module:** `finance → accounttree`
-**Auth:** JWT cookie or `Authorization: Bearer <token>` (currently commented out during development)
+**Auth:** JWT cookie or `Authorization: Bearer <token>`
 
 ---
 
@@ -140,7 +140,7 @@ GET /accounttree/posting-accounts?tax_type=CGST_Input
       "account_code": "5100",
       "account_name": "Material Cost",
       "account_type": "Expense",
-      "account_subtype": "Direct Expense",
+      "account_subtype": "Direct Cost",
       "normal_balance": "Dr",
       "description": "Cost of materials consumed on site"
     }
@@ -336,6 +336,30 @@ GET /accounttree/by-supplier/CTR-002
 
 ---
 
+### 6b. Get Account by ID
+
+```
+GET /accounttree/:id
+```
+
+**Auth required:** `finance > accounttree > read`
+
+> **Note:** This route must be placed last in the route file — after all named paths — to avoid `:id` matching route names like `list`, `tree`, `search`, etc.
+
+**Success Response `200`**
+
+```json
+{ "status": true, "data": { ...account fields... } }
+```
+
+**Error Responses**
+
+| Status | Condition | Message |
+|---|---|---|
+| `404` | `id` not found | `"Account not found"` |
+
+---
+
 ### 7. Create Account
 
 ```
@@ -343,7 +367,7 @@ POST /accounttree/create
 Content-Type: application/json
 ```
 
-**Auth required:** No (dev) / `finance > accounttree > create` (prod)
+**Auth required:** `finance > accounttree > create`
 
 **Request Body**
 
@@ -353,7 +377,7 @@ Content-Type: application/json
   "account_name":       "Site Temporary Works",
   "description":        "Temporary structures, formwork, scaffolding",
   "account_type":       "Expense",
-  "account_subtype":    "Direct Expense",
+  "account_subtype":    "Site Overhead",
   "parent_code":        "5000",
   "level":              2,
   "is_group":           false,
@@ -383,14 +407,31 @@ Content-Type: application/json
 | `opening_balance` | `number` | No | Historical opening balance |
 | `opening_balance_type` | `"Dr" \| "Cr"` | No | Side of the opening balance |
 | `opening_balance_date` | `date` | No | Date of opening balance entry |
+| `bank_details` | `object` | No | Bank details — only relevant when `is_bank_cash: true` (see below) |
 
 **`account_subtype` values**
 
-`Current Asset`, `Fixed Asset`, `Bank`, `Cash`, `Current Liability`, `Long-term Liability`, `GST Liability`, `TDS Liability`, `Equity Capital`, `Retained Earnings`, `Direct Income`, `Indirect Income`, `Direct Expense`, `Indirect Expense`, `Depreciation`
+`Current Asset`, `Fixed Asset`, `Contra Asset`, `Current Liability`, `Tax Liability`, `Long-term Liability`, `Capital`, `Reserves`, `Operating Income`, `Other Income`, `Direct Cost`, `Site Overhead`, `Admin Expense`, `Financial Expense`, `Depreciation`, `Other`
 
 **`tax_type` values**
 
-`None`, `CGST_Input`, `SGST_Input`, `IGST_Input`, `CGST_Output`, `SGST_Output`, `IGST_Output`, `TDS`, `ITC_Reversal`
+`None`, `CGST_Input`, `SGST_Input`, `IGST_Input`, `CGST_Output`, `SGST_Output`, `IGST_Output`, `CGST_RCM`, `SGST_RCM`, `IGST_RCM`, `TDS`, `ITC_Reversal`
+
+> **RCM types:** `CGST_RCM`, `SGST_RCM`, `IGST_RCM` are used for Reverse Charge Mechanism payable accounts — seeded as account codes `2160`, `2170`, `2180` respectively.
+
+**`bank_details` fields** — send only when `is_bank_cash: true`
+
+| Field | Type | Description |
+|---|---|---|
+| `bank_details.bank_name` | `string` | Bank name e.g. `SBI`, `HDFC` |
+| `bank_details.account_no` | `string` | Bank account number |
+| `bank_details.ifsc_code` | `string` | Branch IFSC code |
+| `bank_details.bank_address` | `string` | Branch address |
+| `bank_details.account_type` | `string` | `Savings` / `Current` / `OD` / `CC` / `Fixed Deposit` |
+| `bank_details.interest_pct` | `number` | Interest % on OD/CC accounts |
+| `bank_details.credit_limit` | `number` | Sanctioned credit limit |
+| `bank_details.debit_limit` | `number` | Max daily debit limit |
+| `bank_details.discount_limit` | `number` | Bill discounting limit |
 
 **Success Response `201`**
 
@@ -430,11 +471,13 @@ PATCH /accounttree/update/:id
 Content-Type: application/json
 ```
 
-**Auth required:** No (dev) / `finance > accounttree > edit` (prod)
+**Auth required:** `finance > accounttree > edit`
 
 Only the following fields can be changed:
 
-`account_name`, `description`, `account_subtype`, `parent_code`, `is_group`, `is_posting_account`, `is_bank_cash`, `is_active`, `tax_type`, `opening_balance`, `opening_balance_type`, `opening_balance_date`
+`account_name`, `description`, `account_subtype`, `parent_code`, `is_group`, `is_posting_account`, `is_bank_cash`, `is_active`, `tax_type`, `opening_balance`, `opening_balance_type`, `opening_balance_date`, `bank_details`
+
+> **`bank_details`** supports partial update — send only the fields you want to change (e.g. `{ "bank_details": { "credit_limit": 5000000 } }` updates just the credit limit).
 
 > **System accounts** (`is_system: true`) cannot have `account_code`, `account_type`, `normal_balance`, or `is_system` changed.
 
@@ -472,7 +515,7 @@ Only the following fields can be changed:
 DELETE /accounttree/delete/:id
 ```
 
-**Auth required:** No (dev) / `finance > accounttree > delete` (prod)
+**Auth required:** `finance > accounttree > delete`
 
 Sets `is_deleted: true` and `is_active: false`. The account is hidden from all queries but preserved for historical reference.
 
@@ -509,7 +552,7 @@ POST /accounttree/seed
 
 Seeds the standard Indian construction ERP chart of accounts. **Idempotent** — safe to call multiple times, only missing accounts are inserted.
 
-**Auth required:** No (dev) / `finance > accounttree > create` (prod)
+**Auth required:** `finance > accounttree > create`
 **Request Body:** None
 
 **Seeded accounts include:**
@@ -517,7 +560,8 @@ Seeds the standard Indian construction ERP chart of accounts. **Idempotent** —
 | Range | Type | Examples |
 |---|---|---|
 | 1000–1199 | Asset | Cash, Bank, Advances (Vendor/Contractor/EMD/SD), Material Inventory, CGST/SGST/IGST Input ITC, Plant & Machinery, Accumulated Depreciation |
-| 2000–2150 | Liability | Vendor Payables group, Contractor Payables group, Advances from Clients, CGST/SGST/IGST Output, TDS Payable, PF & ESI |
+| 2000–2180 | Liability | Vendor Payables group, Contractor Payables group, Advances from Clients, CGST/SGST/IGST Output, TDS Payable, PF & ESI, CGST/SGST/IGST Payable (RCM) |
+| 2160–2180 | Liability | **RCM accounts** — CGST Payable (RCM) `2160`, SGST Payable (RCM) `2170`, IGST Payable (RCM) `2180` — Reverse Charge Mechanism payable accounts |
 | 3000–3030 | Equity | Capital, Retained Earnings, Current Year P&L |
 | 4000–4050 | Income | Project Revenue, Equipment Hire, Penalties Recovered |
 | 5000–5430 | Expense | Material Cost, Contract Labour, Site Overheads, Admin, Depreciation |

@@ -1,5 +1,7 @@
 import BillingModel from "./billing.model.js";
 import BidModel from "../../../tender/bid/bid.model.js";
+import TenderModel from "../../../tender/tender/tender.model.js";
+import LedgerService from "../../../finance/ledger/ledger.service.js";
 import mongoose from "mongoose";
 import NotificationService from "../../../notifications/notification.service.js";
 
@@ -154,6 +156,48 @@ static async createBill({ tender_id, bill_sequence, bill_id, items, abstract_nam
         throw new Error(`Failed to process Bill: ${error.message}`);
     }
 }
+
+  // --- Approve Bill — posts a receivable entry to the client ledger ---
+  // Allowed transitions: Draft/Submitted/Checked → Approved
+  static async approveBill(id) {
+    const bill = await BillingModel.findById(id);
+    if (!bill) throw new Error("Bill not found");
+    if (bill.status === "Approved" || bill.status === "Paid") {
+      throw new Error(`Bill is already ${bill.status} — cannot approve again`);
+    }
+    if (bill.status === "Rejected") {
+      throw new Error("Rejected bills cannot be approved");
+    }
+
+    // Look up tender for client details
+    const tender = await TenderModel.findOne({ tender_id: bill.tender_id })
+      .select("client_id client_name")
+      .lean();
+    if (!tender || !tender.client_id) {
+      throw new Error(`No client linked to tender ${bill.tender_id}`);
+    }
+
+    bill.status = "Approved";
+    const saved = await bill.save();
+
+    // Post Cr entry: client owes us (receivable increases)
+    // credit_amt > 0 = receivable/payable increases (positive = outstanding balance)
+    await LedgerService.postEntry({
+      supplier_type:  "Client",
+      supplier_id:    tender.client_id,
+      supplier_name:  tender.client_name || tender.client_id,
+      vch_date:       bill.bill_date || new Date(),
+      vch_no:         bill.bill_id,
+      vch_type:       "ClientBill",
+      vch_ref:        bill._id,
+      particulars:    `Client Bill ${bill.bill_id} — RA #${bill.bill_sequence} for ${bill.tender_id}`,
+      tender_id:      bill.tender_id,
+      credit_amt:     bill.grand_total,
+      debit_amt:      0,
+    });
+
+    return saved;
+  }
 
   // --- Get History (Timeline View) ---
   static async getBillHistory(tender_id) {

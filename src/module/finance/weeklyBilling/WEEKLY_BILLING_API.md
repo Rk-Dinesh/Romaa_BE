@@ -2,7 +2,7 @@
 
 **Base URL:** `/weeklybilling`
 **Module:** `finance → weeklyBilling`
-**Auth:** JWT cookie or `Authorization: Bearer <token>` (currently commented out during development)
+**Auth:** JWT cookie or `Authorization: Bearer <token>`
 
 ---
 
@@ -36,7 +36,14 @@ When a bill is set to `Approved`, a **Credit entry** is automatically posted to 
 GET /weeklybilling/api/list/:tenderId
 ```
 
-**Auth required:** No (dev) / `finance > weeklyBilling > read` (prod)
+**Auth required:** `finance > weeklyBilling > read`
+
+**Query Parameters**
+
+| Param | Type | Description |
+|---|---|---|
+| `page` | `number` | Page number (1-based). Default: `1` |
+| `limit` | `number` | Records per page. Default: `20` |
 
 **Success Response `200`**
 ```json
@@ -64,13 +71,29 @@ GET /weeklybilling/api/list/:tenderId
       ],
       "base_amount": 5000,
       "gst_pct": 18,
+      "tax_mode": "instate",
+      "cgst_pct": 9,
+      "sgst_pct": 9,
+      "igst_pct": 0,
+      "cgst_amt": 450,
+      "sgst_amt": 450,
+      "igst_amt": 0,
       "gst_amount": 900,
+      "retention_pct": 5,
+      "retention_amt": 295,
       "total_amount": 5900,
+      "net_payable": 5605,
       "status": "Generated",
       "created_by": "Site Engineer",
       "createdAt": "2025-03-17T10:30:00.000Z"
     }
-  ]
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 8,
+    "pages": 1
+  }
 }
 ```
 
@@ -104,6 +127,7 @@ GET /weeklybilling/api/detail/WB%2FTND-001%2F25-26%2F0001
     "base_amount": 5000,
     "gst_amount": 900,
     "total_amount": 5900,
+    "net_payable": 5605,
     "status": "Generated",
     "sub_bills": [
       {
@@ -240,7 +264,7 @@ POST /weeklybilling/api/generate
 Content-Type: application/json
 ```
 
-**Auth required:** No (dev) / `finance > weeklyBilling > create` (prod)
+**Auth required:** `finance > weeklyBilling > create`
 
 **Request Body**
 
@@ -252,6 +276,8 @@ Content-Type: application/json
   "from_date":       "2025-03-10",
   "to_date":         "2025-03-17",
   "gst_pct":         18,
+  "tax_mode":        "instate",
+  "retention_pct":   5,
   "created_by":      "Site Engineer",
   "sub_bills": [
     {
@@ -312,6 +338,8 @@ Content-Type: application/json
 | `from_date` | `string` (date) | Yes | |
 | `to_date` | `string` (date) | Yes | Must be ≥ `from_date` |
 | `gst_pct` | `number` | No | Default `0` |
+| `tax_mode` | `"instate" \| "otherstate"` | No | Determines CGST+SGST split vs IGST. Default: `"instate"` |
+| `retention_pct` | `number` | No | Retention % held back from payment. e.g. `5` means 5%. Default `0` |
 | `created_by` | `string` | No | Default `"Site Engineer"` |
 | `fin_year` | — | — | **Auto-set by server** — do not send |
 | `sub_bills` | `array` | Yes | Min 1 item |
@@ -328,6 +356,15 @@ Content-Type: application/json
 | `items[].quoted_rate` | `number` | No | |
 | `items[].amount` | `number` | No | `quantity × quoted_rate` |
 
+**Server-computed fields based on `tax_mode`:**
+
+- **instate:** `cgst_pct = gst_pct / 2`, `sgst_pct = gst_pct / 2`, `cgst_amt = base_amount × cgst_pct / 100`, `sgst_amt = base_amount × sgst_pct / 100`, `igst_amt = 0`
+- **otherstate:** `igst_pct = gst_pct`, `igst_amt = base_amount × igst_pct / 100`, `cgst_amt = sgst_amt = 0`
+- `gst_amount = cgst_amt + sgst_amt + igst_amt`
+- `total_amount = base_amount + gst_amount`
+- `retention_amt = total_amount × retention_pct / 100`
+- `net_payable = total_amount − retention_amt`
+
 **Success Response `201`**
 ```json
 {
@@ -338,8 +375,18 @@ Content-Type: application/json
     "bill_no": "WB/TND-001/25-26/0001",
     "fin_year": "25-26",
     "base_amount": 12000,
+    "tax_mode": "instate",
+    "cgst_pct": 9,
+    "sgst_pct": 9,
+    "igst_pct": 0,
+    "cgst_amt": 1080,
+    "sgst_amt": 1080,
+    "igst_amt": 0,
     "gst_amount": 2160,
     "total_amount": 14160,
+    "retention_pct": 5,
+    "retention_amt": 708,
+    "net_payable": 13452,
     "status": "Generated"
   }
 }
@@ -366,7 +413,7 @@ Content-Type: application/json
 
 > Use the MongoDB `_id` of the bill (not `bill_no`).
 
-**Auth required:** No (dev) / `finance > weeklyBilling > edit` (prod)
+**Auth required:** `finance > weeklyBilling > edit`
 
 **Request Body**
 ```json
@@ -380,7 +427,7 @@ Content-Type: application/json
 | `Generated` | Bill created, not yet submitted | None |
 | `Pending` | Submitted, awaiting approval | None |
 | `Approved` | Approved by finance | **Posts Cr entry to contractor ledger** |
-| `Cancelled` | Bill voided | None |
+| `Cancelled` | Bill voided | **Posts Dr reversal entry** to contractor ledger (vch_no: `{bill_no}/CANCEL`) — negates the prior Cr entry from Approval |
 
 **Ledger Effect on `Approved`**
 
@@ -393,6 +440,20 @@ credit_amt    : total_amount    ← Cr entry — liability created (you owe the 
 debit_amt     : 0
 particulars   : "Weekly Bill WB/TND-001/25-26/0001 (2025-03-10 – 2025-03-17)"
 ```
+
+**Ledger Effect on `Cancelled`**
+
+When status is set to `Cancelled` (after a prior Approval), a reversal `LedgerEntry` is posted:
+
+```
+supplier_type : "Contractor"
+vch_type      : "WeeklyBill"
+vch_no        : "{bill_no}/CANCEL"
+debit_amt     : total_amount    ← Dr reversal — negates the prior Cr entry
+credit_amt    : 0
+```
+
+> Net ledger effect = 0 (Cr from Approved + Dr from Cancelled cancel out).
 
 > Duplicate protection is built in — if the same bill is accidentally set to Approved twice, the second attempt throws `500 postEntry: duplicate`.
 
@@ -430,7 +491,7 @@ particulars   : "Weekly Bill WB/TND-001/25-26/0001 (2025-03-10 – 2025-03-17)"
    → Populate contractor dropdown from response
 3. User selects a contractor
    → Show sub_bills table (one row per work_order_id)
-   → Show grand total (base_amount, gst_pct input, computed total)
+   → Show grand total (base_amount, gst_pct input, tax_mode, retention_pct, computed total)
 4. User confirms
    → POST /weeklybilling/api/generate with the selected contractor's data
    → Show generated bill_no on success (status = "Generated")
@@ -450,6 +511,11 @@ particulars   : "Weekly Bill WB/TND-001/25-26/0001 (2025-03-10 – 2025-03-17)"
 7. View updated ledger
    GET /ledger/supplier/CTR-001            → contractor ledger with new entry
    GET /ledger/balance/CTR-001             → updated outstanding balance
+
+If bill is cancelled:
+   PATCH /weeklybilling/api/status/:billId  { "status": "Cancelled" }
+   → Reversal Dr ledger entry posted (amount = total_amount, vch_no = {bill_no}/CANCEL)
+   → Net ledger effect = 0 (Cr from Approved + Dr from Cancelled cancel out)
 ```
 
 ---

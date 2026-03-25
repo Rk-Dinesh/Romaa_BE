@@ -44,10 +44,19 @@ function buildSubBillNo(billNo, subIdx) {
 class WeeklyBillingService {
 
   // ── 1. List all bills for a tender ──────────────────────────────────────────
-  static async getBillingList(tenderId) {
-    return await WeeklyBillingModel.find({ tender_id: tenderId })
-      .sort({ createdAt: -1 })
-      .lean();
+  static async getBillingList(tenderId, filters = {}) {
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const query = { tender_id: tenderId };
+
+    const [data, total] = await Promise.all([
+      WeeklyBillingModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      WeeklyBillingModel.countDocuments(query),
+    ]);
+
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // ── 2. Get a single bill with its line-item transactions ─────────────────────
@@ -276,8 +285,29 @@ class WeeklyBillingService {
       }
     });
 
-    const gst_amount   = parseFloat(((base_amount * Number(gst_pct)) / 100).toFixed(2));
-    const total_amount = parseFloat((base_amount + gst_amount).toFixed(2));
+    const r2          = (n) => Math.round((n ?? 0) * 100) / 100;
+    const tax_mode    = payload.tax_mode || "instate";
+    const retention_pct = Number(payload.retention_pct) || 0;
+
+    const gst_amount   = r2(base_amount * Number(gst_pct) / 100);
+    const total_amount = r2(base_amount + gst_amount);
+
+    // GST split
+    let cgst_pct = 0, sgst_pct = 0, igst_pct = 0;
+    let cgst_amt = 0, sgst_amt = 0, igst_amt = 0;
+    if (tax_mode === "instate") {
+      cgst_pct = r2(Number(gst_pct) / 2);
+      sgst_pct = r2(Number(gst_pct) / 2);
+      cgst_amt = r2(base_amount * cgst_pct / 100);
+      sgst_amt = r2(base_amount * sgst_pct / 100);
+    } else {
+      igst_pct = Number(gst_pct);
+      igst_amt = gst_amount;
+    }
+
+    // Retention
+    const retention_amt = r2(total_amount * retention_pct / 100);
+    const net_payable   = r2(total_amount - retention_amt);
 
     // Save the bill header (fin_year is auto-set by model pre-save hook)
     const bill = await new WeeklyBillingModel({
@@ -293,6 +323,12 @@ class WeeklyBillingService {
       gst_pct:      Number(gst_pct),
       gst_amount,
       total_amount,
+      tax_mode,
+      cgst_pct,  sgst_pct,  igst_pct,
+      cgst_amt,  sgst_amt,  igst_amt,
+      retention_pct,
+      retention_amt,
+      net_payable,
       created_by,
     }).save();
 
@@ -328,8 +364,8 @@ class WeeklyBillingService {
         { status }
       );
 
-      // Post to ledger when a bill is approved
-      // WeeklyBill = Cr entry (liability created — you owe the contractor)
+      // Post to ledger when a bill is approved (Cr: liability created)
+      // or cancelled (Dr: reverse the original Cr)
       if (status === "Approved") {
         const contractor = await ContractorModel.findOne(
           { contractor_id: updated.contractor_id }
@@ -349,7 +385,29 @@ class WeeklyBillingService {
           tender_ref:    null,
           tender_name:   "",
           debit_amt:     0,
-          credit_amt:    updated.total_amount,  // Cr entry: payable to contractor
+          credit_amt:    updated.total_amount,
+        });
+      } else if (status === "Cancelled") {
+        // Reverse the original Cr with a Dr entry
+        const contractor = await ContractorModel.findOne(
+          { contractor_id: updated.contractor_id }
+        ).lean();
+
+        await LedgerService.postEntry({
+          supplier_type: "Contractor",
+          supplier_id:   updated.contractor_id,
+          supplier_ref:  contractor?._id || null,
+          supplier_name: updated.contractor_name,
+          vch_date:      new Date(),
+          vch_no:        `${updated.bill_no}/CANCEL`,
+          vch_type:      "WeeklyBill",
+          vch_ref:       null,
+          particulars:   `Cancellation of Weekly Bill ${updated.bill_no}`,
+          tender_id:     updated.tender_id,
+          tender_ref:    null,
+          tender_name:   "",
+          debit_amt:     updated.total_amount,
+          credit_amt:    0,
         });
       }
     }

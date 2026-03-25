@@ -550,6 +550,53 @@ const DEFAULT_ACCOUNTS = [
     description:     "ITC reversed when material is returned (Credit Note) or used for exempt supplies",
   },
 
+  // ── RCM (Reverse Charge Mechanism) payable accounts ──────────────────────
+  // Used when Rev-Chrg = Y on Credit Note / Debit Note / Journal Entry.
+  // RCM flow: Dr ITC account (1080-CGST/SGST/IGST) + Cr RCM Payable below.
+  // On paying RCM tax: Dr RCM Payable, Cr Bank.
+  {
+    account_code:    "2160",
+    account_name:    "CGST Payable (RCM)",
+    account_type:    "Liability",
+    account_subtype: "Tax Liability",
+    normal_balance:  "Cr",
+    parent_code:     "2100",
+    level:           2,
+    is_group:        false,
+    is_posting_account: true,
+    tax_type:        "CGST_RCM",
+    is_system:       true,
+    description:     "CGST liability under Reverse Charge (intra-state inward supply from unregistered/specified vendor)",
+  },
+  {
+    account_code:    "2170",
+    account_name:    "SGST Payable (RCM)",
+    account_type:    "Liability",
+    account_subtype: "Tax Liability",
+    normal_balance:  "Cr",
+    parent_code:     "2100",
+    level:           2,
+    is_group:        false,
+    is_posting_account: true,
+    tax_type:        "SGST_RCM",
+    is_system:       true,
+    description:     "SGST liability under Reverse Charge (intra-state inward supply from unregistered/specified vendor)",
+  },
+  {
+    account_code:    "2180",
+    account_name:    "IGST Payable (RCM)",
+    account_type:    "Liability",
+    account_subtype: "Tax Liability",
+    normal_balance:  "Cr",
+    parent_code:     "2100",
+    level:           2,
+    is_group:        false,
+    is_posting_account: true,
+    tax_type:        "IGST_RCM",
+    is_system:       true,
+    description:     "IGST liability under Reverse Charge (inter-state inward supply from unregistered/specified vendor)",
+  },
+
 
   // ╔══════════════════════════════════════════════════════════════╗
   // ║  3000 — EQUITY / CAPITAL                                     ║

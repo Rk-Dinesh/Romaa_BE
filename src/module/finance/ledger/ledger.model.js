@@ -16,7 +16,7 @@ import mongoose from "mongoose";
 //   Journal      → Dr or Cr  (manual adjustment / opening balance)
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-const SUPPLIER_TYPES = ["Vendor", "Contractor"];
+const SUPPLIER_TYPES = ["Vendor", "Contractor", "Client"];
 
 const VCH_TYPES = [
   "PurchaseBill",   // PB — raises payable
@@ -25,6 +25,7 @@ const VCH_TYPES = [
   "DebitNote",      // DN — reduces payable
   "Payment",        // PY — clears payable
   "Receipt",        // RE — reduces payable
+  "ClientBill",     // CB — raises receivable (client owes us)
   "Journal",        // JOUR — manual / opening balance
 ];
 

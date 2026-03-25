@@ -42,6 +42,7 @@ import AttendanceRoute from './src/module/hr/userAttendance/userAttendance.route
 import CalendarRoute from './src/module/hr/holidays/holiday.route.js';
 import LeaveRoute from './src/module/hr/leave/leaverequest.route.js';
 import { startAbsenteeismCron } from './utils/dailyAbsenteeism.js';
+import cron from 'node-cron';
 import hsnSacRouter from './src/module/master/hsnmaster/hsnsac.router.js';
 import notificationRoute from './src/module/notifications/notification.route.js';
 import dashboardRoute from './src/module/dashboard/dashboard.route.js';
@@ -58,6 +59,7 @@ import paymentVoucherRouter from './src/module/finance/paymentvoucher/paymentvou
 import receiptVoucherRouter from './src/module/finance/receiptvoucher/receiptvoucher.route.js';
 import accountTreeRouter from './src/module/finance/accounttree/accounttree.route.js';
 import journalEntryRouter from './src/module/finance/journalentry/journalentry.route.js';
+import JournalEntryService from './src/module/finance/journalentry/journalentry.service.js';
 
 
 
@@ -68,6 +70,16 @@ const PORT = process.env.PORT;
 const app = express();
 connectDB();
 startAbsenteeismCron();
+
+// Daily: process journal entries scheduled for auto-reversal
+cron.schedule('0 1 * * *', async () => {
+  try {
+    await JournalEntryService.processAutoReversals();
+    logger.info('Auto-reversal cron: completed');
+  } catch (err) {
+    logger.error('Auto-reversal cron error:', err.message);
+  }
+});
 
 
 //middleware

@@ -34,3 +34,16 @@ export const getDetails = async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 };
+
+// Approve Bill — posts to client receivable ledger
+export const approveBill = async (req, res) => {
+  try {
+    const bill = await BillingService.approveBill(req.params.id);
+    res.status(200).json({ status: true, message: "Bill approved", data: bill });
+  } catch (error) {
+    const code = error.message.includes("not found") ? 404
+               : error.message.includes("already") || error.message.includes("cannot") ? 400
+               : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
