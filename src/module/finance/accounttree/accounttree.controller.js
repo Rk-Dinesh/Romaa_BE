@@ -128,3 +128,14 @@ export const seedAccounts = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
+
+// POST /accounttree/migrate-available-balance
+// One-time migration: copies opening_balance → available_balance for existing accounts.
+export const migrateAvailableBalance = async (_req, res) => {
+  try {
+    const result = await AccountTreeService.migrateAvailableBalance();
+    res.status(200).json({ status: true, ...result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};

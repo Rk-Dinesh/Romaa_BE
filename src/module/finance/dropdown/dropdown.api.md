@@ -42,8 +42,10 @@ Use `account_category` to distinguish between bank and cash entries.
       "custodian_name": "",
       "location": "",
       "cash_limit": 0,
-      "opening_balance": 490000,
+      "opening_balance": 500000,
       "opening_balance_type": "Dr",
+      "available_balance": 490000,
+      "available_balance_type": "Dr",
       "current_balance": 490000
     },
     {
@@ -60,8 +62,10 @@ Use `account_category` to distinguish between bank and cash entries.
       "custodian_name": "Raj Kumar",
       "location": "Head Office",
       "cash_limit": 50000,
-      "opening_balance": 25000,
+      "opening_balance": 30000,
       "opening_balance_type": "Dr",
+      "available_balance": 25000,
+      "available_balance_type": "Dr",
       "current_balance": 25000
     }
   ]
@@ -76,13 +80,18 @@ Use `account_category` to distinguish between bank and cash entries.
 |---|---|
 | `account_category` | `"bank"` or `"cash"` — use to render differently in the dropdown |
 | `account_code` | Store as `bank_account_code` on PV/RV — used for balance updates |
-| `current_balance` | Live running balance from `AccountTree.opening_balance` |
+| `opening_balance` | Static starting balance set at migration time — not changed by transactions |
+| `opening_balance_type` | `"Dr"` or `"Cr"` — opening balance side |
+| `available_balance` | Live running balance — updated on every approved transaction |
+| `available_balance_type` | `"Dr"` or `"Cr"` — available balance side |
+| `current_balance` | Signed value of `available_balance` (Dr = positive, Cr = negative) |
 | `custodian_name` | Cash only — person managing the cash |
 | `location` | Cash only — physical location |
 
 **Balance logic:**
-- `opening_balance` on AccountTree is a **live running balance** updated by `AccountTreeService.applyBalanceLines()` on every PV / RV / JE approval
-- `current_balance` = `opening_balance` (Dr positive, Cr negative)
+- `available_balance` on AccountTree is the **live running balance** updated by `AccountTreeService.applyBalanceLines()` on every PV / RV / JE approval
+- `opening_balance` on AccountTree is the **static starting balance** set at migration time — not changed by transactions
+- `current_balance` = `available_balance` (Dr positive, Cr negative)
 - No separate JE aggregation (avoids double-counting)
 
 ---

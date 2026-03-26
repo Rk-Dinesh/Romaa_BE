@@ -24,18 +24,18 @@ class AccountTreeService {
       .lean();
   }
 
-  // ── Apply Dr/Cr movements to opening_balance for a set of lines ─────────
+  // ── Apply Dr/Cr movements to available_balance for a set of lines ───────
   // Shared utility called by JournalEntry, PaymentVoucher, ReceiptVoucher on
-  // approval so that AccountTree.opening_balance stays as a live running balance.
+  // approval so that AccountTree.available_balance stays as a live running balance.
   //
   // lines: Array of { account_code, debit_amt, credit_amt }
   //
   // For every unique account_code in lines:
   //   net = Σ debit_amt − Σ credit_amt  (positive = net Dr movement)
-  //   signed_current = opening_balance_type==="Dr" ? +ob : -ob
+  //   signed_current = available_balance_type==="Dr" ? +ab : -ab
   //   signed_new     = signed_current + net
-  //   opening_balance_type = signed_new >= 0 ? "Dr" : "Cr"
-  //   opening_balance      = |signed_new|
+  //   available_balance_type = signed_new >= 0 ? "Dr" : "Cr"
+  //   available_balance      = |signed_new|
   static async applyBalanceLines(lines = []) {
     const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -52,24 +52,24 @@ class AccountTreeService {
 
     const nodes = await AccountTreeModel
       .find({ account_code: { $in: codes }, is_deleted: false })
-      .select("account_code opening_balance opening_balance_type")
+      .select("account_code available_balance available_balance_type")
       .lean();
 
     if (!nodes.length) return;
 
     const bulkOps = nodes.map((node) => {
-      const net     = netMap[node.account_code] || 0;
-      const ob      = node.opening_balance      || 0;
-      const obType  = node.opening_balance_type || "Dr";
-      const signed  = obType === "Dr" ? ob : -ob;
-      const newSig  = r2(signed + net);
+      const net    = netMap[node.account_code] || 0;
+      const ab     = node.available_balance      || 0;
+      const abType = node.available_balance_type || "Dr";
+      const signed = abType === "Dr" ? ab : -ab;
+      const newSig = r2(signed + net);
       return {
         updateOne: {
           filter: { account_code: node.account_code },
           update: {
             $set: {
-              opening_balance:      Math.abs(newSig),
-              opening_balance_type: newSig >= 0 ? "Dr" : "Cr",
+              available_balance:      Math.abs(newSig),
+              available_balance_type: newSig >= 0 ? "Dr" : "Cr",
             },
           },
         },
@@ -89,7 +89,7 @@ class AccountTreeService {
 
     return await AccountTreeModel.find(query)
       .sort({ account_code: 1 })
-      .select("account_code account_name account_type account_subtype normal_balance description")
+      .select("account_code account_name account_type account_subtype normal_balance description available_balance available_balance_type")
       .lean();
   }
 
@@ -177,6 +177,12 @@ class AccountTreeService {
       payload.is_posting_account = false;
     }
 
+    // Initialize available_balance from opening_balance if not explicitly set
+    if (payload.available_balance === undefined) {
+      payload.available_balance      = payload.opening_balance      || 0;
+      payload.available_balance_type = payload.opening_balance_type || "";
+    }
+
     return await AccountTreeModel.create(payload);
   }
 
@@ -199,9 +205,17 @@ class AccountTreeService {
       "account_name", "description", "account_subtype", "parent_code",
       "is_group", "is_posting_account", "is_bank_cash", "is_active",
       "tax_type", "opening_balance", "opening_balance_type", "opening_balance_date",
+      "available_balance", "available_balance_type",
     ];
     for (const field of allowed) {
       if (payload[field] !== undefined) acc[field] = payload[field];
+    }
+
+    // When opening_balance is reset (migration adjustment), also reset available_balance
+    // unless the caller explicitly provided a new available_balance value.
+    if (payload.opening_balance !== undefined && payload.available_balance === undefined) {
+      acc.available_balance      = payload.opening_balance      || 0;
+      acc.available_balance_type = payload.opening_balance_type || acc.opening_balance_type || "";
     }
 
     // Keep in sync
@@ -254,6 +268,36 @@ class AccountTreeService {
       skipped:  existing.length,
       message:  `Seeded ${toInsert.length} accounts (${existing.length} already existed)`,
     };
+  }
+
+  // ── POST /accounttree/migrate-available-balance ───────────────────────────
+  // One-time migration: copies opening_balance → available_balance for all
+  // accounts that still have available_balance = 0 (i.e., pre-existing data).
+  // Safe to call multiple times — skips accounts where available_balance != 0.
+  static async migrateAvailableBalance() {
+    const accounts = await AccountTreeModel
+      .find({ is_deleted: false, available_balance: 0 })
+      .select("account_code opening_balance opening_balance_type")
+      .lean();
+
+    if (!accounts.length) {
+      return { migrated: 0, message: "No accounts need migration" };
+    }
+
+    const bulkOps = accounts.map((acc) => ({
+      updateOne: {
+        filter: { account_code: acc.account_code },
+        update: {
+          $set: {
+            available_balance:      acc.opening_balance      || 0,
+            available_balance_type: acc.opening_balance_type || "",
+          },
+        },
+      },
+    }));
+
+    await AccountTreeModel.bulkWrite(bulkOps);
+    return { migrated: accounts.length, message: `Migrated ${accounts.length} accounts` };
   }
 
   // ── Internal: auto-create personal ledger for a new vendor/contractor ─────

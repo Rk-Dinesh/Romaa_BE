@@ -11,6 +11,7 @@ import {
   update,
   softDelete,
   seedAccounts,
+  migrateAvailableBalance,
 } from "./accounttree.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 
@@ -82,6 +83,13 @@ accountTreeRouter.post(
   verifyJWT,
  // verifyPermission("finance", "accounttree", "create"),
   seedAccounts
+);
+
+// POST /accounttree/migrate-available-balance  ← one-time migration
+accountTreeRouter.post(
+  "/migrate-available-balance",
+  verifyJWT,
+  migrateAvailableBalance
 );
 
 // PATCH /accounttree/update/:id

@@ -154,10 +154,18 @@ const AccountTreeSchema = new mongoose.Schema(
 
     // ── Opening balance (migration from prior system) ─────────────────────
     // Used to set the starting balance when migrating from manual books.
-    // Not used for ongoing transactions — those go through vouchers.
+    // This is the STATIC starting point — set once and not changed by transactions.
     opening_balance:      { type: Number, default: 0 },
     opening_balance_type: { type: String, enum: ["Dr", "Cr", ""], default: "" },
     opening_balance_date: { type: Date, default: null },
+
+    // ── Available balance (live running balance) ───────────────────────────
+    // Starts equal to opening_balance on account creation/update.
+    // Updated automatically by AccountTreeService.applyBalanceLines() on every
+    // approved transaction (JournalEntry, PaymentVoucher, ReceiptVoucher, etc.).
+    // This is the field to use for current account balance display.
+    available_balance:      { type: Number, default: 0 },
+    available_balance_type: { type: String, enum: ["Dr", "Cr", ""], default: "" },
 
     // ── Bank details ──────────────────────────────────────────────────────
     // Physical bank account details are stored in the CompanyBankAccount

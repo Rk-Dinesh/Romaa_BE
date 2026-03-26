@@ -19,8 +19,8 @@ class DropdownService {
   // GET /finance-dropdown/bank-accounts
   //       ?type=bank          (optional — "bank" | "cash", omit for both)
   //
-  // current_balance = AccountTree.opening_balance (live running balance).
-  // opening_balance is updated in-place by AccountTreeService.applyBalanceLines()
+  // current_balance = AccountTree.available_balance (live running balance).
+  // available_balance is updated in-place by AccountTreeService.applyBalanceLines()
   // on every approval: JournalEntry, PaymentVoucher, ReceiptVoucher.
   static async getBankAccounts(type) {
     const results = [];
@@ -89,27 +89,34 @@ class DropdownService {
 
     const treeNodes = await AccountTreeModel
       .find({ account_code: { $in: codes }, is_deleted: false })
-      .select("account_code opening_balance opening_balance_type")
+      .select("account_code opening_balance opening_balance_type available_balance available_balance_type")
       .lean();
 
     const balMap = {};
     for (const n of treeNodes) {
-      const ob  = n.opening_balance      || 0;
-      const typ = n.opening_balance_type || "Dr";
+      const ab  = n.available_balance      || 0;
+      const typ = n.available_balance_type || "Dr";
       balMap[n.account_code] = {
-        opening_balance:      ob,
-        opening_balance_type: typ,
-        current_balance:      r2(typ === "Dr" ? ob : -ob),
+        opening_balance:        n.opening_balance      || 0,
+        opening_balance_type:   n.opening_balance_type || "",
+        available_balance:      ab,
+        available_balance_type: typ,
+        current_balance:        r2(typ === "Dr" ? ab : -ab),
       };
     }
 
     return results.map((r) => {
-      const bal = balMap[r.account_code] || { opening_balance: 0, opening_balance_type: "Dr", current_balance: 0 };
+      const bal = balMap[r.account_code] || {
+        opening_balance: 0, opening_balance_type: "",
+        available_balance: 0, available_balance_type: "Dr", current_balance: 0,
+      };
       return {
         ...r,
-        opening_balance:      bal.opening_balance,
-        opening_balance_type: bal.opening_balance_type,
-        current_balance:      bal.current_balance,
+        opening_balance:        bal.opening_balance,
+        opening_balance_type:   bal.opening_balance_type,
+        available_balance:      bal.available_balance,
+        available_balance_type: bal.available_balance_type,
+        current_balance:        bal.current_balance,
       };
     });
   }
