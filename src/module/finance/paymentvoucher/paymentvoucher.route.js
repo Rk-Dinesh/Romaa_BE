@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { getNextPvNo, getList, getBySupplier, getByTender, getById, create, approve, update, deleteDraft } from "./paymentvoucher.controller.js";
+import { getNextPvNo, getList, getListCash, getListBank, getBySupplier, getByTender, getById, create, approve, update, deleteDraft } from "./paymentvoucher.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 
 const paymentVoucherRouter = Router();
@@ -18,6 +18,20 @@ paymentVoucherRouter.get(
   verifyJWT,
 //  verifyPermission("finance", "paymentvoucher", "read"),
   getList
+);
+
+// GET /paymentvoucher/list/cash  ← cash-mode vouchers only
+paymentVoucherRouter.get(
+  "/list/cash",
+  verifyJWT,
+  getListCash
+);
+
+// GET /paymentvoucher/list/bank  ← bank-mode vouchers (Cheque/NEFT/RTGS/UPI/DD)
+paymentVoucherRouter.get(
+  "/list/bank",
+  verifyJWT,
+  getListBank
 );
 
 // GET /paymentvoucher/by-supplier/:supplierId

@@ -195,7 +195,14 @@ class PaymentVoucherService {
     if (filters.supplier_id)   query.supplier_id   = filters.supplier_id;
     if (filters.tender_id)     query.tender_id     = filters.tender_id;
     if (filters.status)        query.status        = filters.status;
-    if (filters.payment_mode)  query.payment_mode  = filters.payment_mode;
+    if (filters.payment_mode) {
+      // "bank" is a virtual keyword → match all non-cash modes
+      if (filters.payment_mode === "bank") {
+        query.payment_mode = { $in: ["Cheque", "NEFT", "RTGS", "UPI", "DD"] };
+      } else {
+        query.payment_mode = filters.payment_mode;
+      }
+    }
     if (filters.pv_no)         query.pv_no         = filters.pv_no;
 
     if (filters.from_date || filters.to_date) {

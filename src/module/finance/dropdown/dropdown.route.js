@@ -1,7 +1,11 @@
 import { Router } from "express";
 import {
   getBankAccounts,
+  getBankOnly,
+  getCashOnly,
   getPayableBills,
+  getVendorPayableBills,
+  getContractorPayableBills,
   getPartiesByTender,
 } from "./dropdown.controller.js";
 import { verifyJWT } from "../../../common/Auth.middlware.js";
@@ -33,9 +37,35 @@ dropdownRouter.get(
 );
 
 dropdownRouter.get(
+  "/bank-only",
+  verifyJWT,
+  getBankOnly
+);
+
+dropdownRouter.get(
+  "/cash-only",
+  verifyJWT,
+  getCashOnly
+);
+
+dropdownRouter.get(
   "/payable-bills",
   verifyJWT,
   getPayableBills
+);
+
+// Dedicated: vendor bills only (for bank payment)
+dropdownRouter.get(
+  "/payable-bills/vendor",
+  verifyJWT,
+  getVendorPayableBills
+);
+
+// Dedicated: contractor bills only (for cash payment)
+dropdownRouter.get(
+  "/payable-bills/contractor",
+  verifyJWT,
+  getContractorPayableBills
 );
 
 dropdownRouter.get(

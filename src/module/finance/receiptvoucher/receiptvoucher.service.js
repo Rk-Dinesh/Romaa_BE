@@ -138,7 +138,14 @@ class ReceiptVoucherService {
     if (filters.supplier_id)   query.supplier_id   = filters.supplier_id;
     if (filters.tender_id)     query.tender_id     = filters.tender_id;
     if (filters.status)        query.status        = filters.status;
-    if (filters.receipt_mode)  query.receipt_mode  = filters.receipt_mode;
+    if (filters.receipt_mode) {
+      // "bank" is a virtual keyword → match all non-cash modes
+      if (filters.receipt_mode === "bank") {
+        query.receipt_mode = { $in: ["Cheque", "NEFT", "RTGS", "UPI", "DD"] };
+      } else {
+        query.receipt_mode = filters.receipt_mode;
+      }
+    }
     if (filters.rv_no)         query.rv_no         = filters.rv_no;
 
     if (filters.from_date || filters.to_date) {

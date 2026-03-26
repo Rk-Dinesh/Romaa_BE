@@ -1,6 +1,6 @@
 # Finance Dropdown APIs
 
-Three read-only endpoints that power the dropdowns on Payment Voucher,
+Five read-only endpoints that power the dropdowns on Payment Voucher,
 Credit Note, Debit Note, and Receipt Voucher forms.
 
 Base prefix: `/finance-dropdown`
@@ -10,14 +10,18 @@ Base prefix: `/finance-dropdown`
 ## 1. Company Bank + Cash Accounts with Balance
 
 ```
-GET /finance-dropdown/bank-accounts
-GET /finance-dropdown/bank-accounts?type=bank     ← bank only
-GET /finance-dropdown/bank-accounts?type=cash     ← cash only
+GET /finance-dropdown/bank-accounts               ← bank + cash combined
+GET /finance-dropdown/bank-accounts?type=bank     ← bank only (via query param)
+GET /finance-dropdown/bank-accounts?type=cash     ← cash only (via query param)
+GET /finance-dropdown/bank-only                   ← bank only (dedicated endpoint)
+GET /finance-dropdown/cash-only                   ← cash only (dedicated endpoint)
 Authorization: Bearer <token>
 ```
 
-Returns all active **bank accounts** (from `CompanyBankAccount`) and **cash accounts**
+Returns all active **bank accounts** (from `CompanyBankAccount`) and/or **cash accounts**
 (from `CompanyCashAccount`) with their live `current_balance` from AccountTree.
+
+Use `bank-only` / `cash-only` when you need a clean single-type dropdown without passing query params.
 
 Use `account_category` to distinguish between bank and cash entries.
 
@@ -99,15 +103,26 @@ Use `account_category` to distinguish between bank and cash entries.
 ## 2. Payable Bills (for Payment Voucher settlement)
 
 ```
-GET /finance-dropdown/payable-bills
+GET /finance-dropdown/payable-bills                    ← vendor + contractor combined
     ?supplier_id=VND-001          (optional)
     &supplier_type=Vendor         (optional — "Vendor" | "Contractor", omit for both)
     &tender_id=TND-001            (optional)
+
+GET /finance-dropdown/payable-bills/vendor             ← vendor PurchaseBills only (bank payment)
+    ?supplier_id=VND-001          (optional)
+    &tender_id=TND-001            (optional)
+
+GET /finance-dropdown/payable-bills/contractor         ← contractor WeeklyBillings only (cash payment)
+    ?supplier_id=CTR-001          (optional)
+    &tender_id=TND-001            (optional)
+
 Authorization: Bearer <token>
 ```
 
-Returns all **approved, unpaid / partially-paid** bills from both
-`PurchaseBill` (vendor) and `WeeklyBilling` (contractor) combined.
+Returns **approved, unpaid / partially-paid** bills:
+- `/payable-bills` — both `PurchaseBill` (vendor) and `WeeklyBilling` (contractor) combined
+- `/payable-bills/vendor` — only vendor `PurchaseBill` entries; use when paying via bank account
+- `/payable-bills/contractor` — only contractor `WeeklyBilling` entries; use when paying via cash account
 
 Sorted: overdue first (due_date ASC), then by bill_date ASC, nulls last.
 

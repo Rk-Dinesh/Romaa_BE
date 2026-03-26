@@ -23,6 +23,36 @@ export const getList = async (req, res) => {
   }
 };
 
+// GET /paymentvoucher/list/cash
+// Payment vouchers where payment_mode = "Cash". Supports same filters except payment_mode.
+export const getListCash = async (req, res) => {
+  try {
+    const { supplier_type, supplier_id, tender_id, status, pv_no, from_date, to_date, page, limit } = req.query;
+    const result = await PaymentVoucherService.getList({
+      supplier_type, supplier_id, tender_id, status, pv_no, from_date, to_date, page, limit,
+      payment_mode: "Cash",
+    });
+    res.status(200).json({ status: true, ...result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// GET /paymentvoucher/list/bank
+// Payment vouchers where payment_mode is Cheque / NEFT / RTGS / UPI / DD. Supports same filters.
+export const getListBank = async (req, res) => {
+  try {
+    const { supplier_type, supplier_id, tender_id, status, pv_no, from_date, to_date, page, limit } = req.query;
+    const result = await PaymentVoucherService.getList({
+      supplier_type, supplier_id, tender_id, status, pv_no, from_date, to_date, page, limit,
+      payment_mode: "bank",
+    });
+    res.status(200).json({ status: true, ...result });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // GET /paymentvoucher/by-supplier/:supplierId?supplier_type=&status=&from_date=&to_date=&page=&limit=
 export const getBySupplier = async (req, res) => {
   try {

@@ -13,6 +13,28 @@ export const getBankAccounts = async (req, res) => {
   }
 };
 
+// ── GET /finance-dropdown/bank-only ───────────────────────────────────────────
+// Returns only company bank accounts (no cash). Shortcut for ?type=bank.
+export const getBankOnly = async (_req, res) => {
+  try {
+    const data = await DropdownService.getBankAccounts("bank");
+    res.status(200).json({ status: true, count: data.length, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// ── GET /finance-dropdown/cash-only ───────────────────────────────────────────
+// Returns only company cash accounts (no bank). Shortcut for ?type=cash.
+export const getCashOnly = async (_req, res) => {
+  try {
+    const data = await DropdownService.getBankAccounts("cash");
+    res.status(200).json({ status: true, count: data.length, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // ── GET /finance-dropdown/payable-bills ───────────────────────────────────────
 // Query params (all optional):
 //   supplier_id   — vendor_id or contractor_id
@@ -26,6 +48,36 @@ export const getPayableBills = async (req, res) => {
     const { supplier_id, supplier_type, tender_id } = req.query;
     const data = await DropdownService.getPayableBills({
       supplier_id, supplier_type, tender_id,
+    });
+    res.status(200).json({ status: true, count: data.length, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// ── GET /finance-dropdown/payable-bills/vendor ────────────────────────────────
+// Only vendor PurchaseBills (supplier_type=Vendor). Used when payment mode is bank transfer.
+// Supports same optional query params: supplier_id, tender_id
+export const getVendorPayableBills = async (req, res) => {
+  try {
+    const { supplier_id, tender_id } = req.query;
+    const data = await DropdownService.getPayableBills({
+      supplier_id, tender_id, supplier_type: "Vendor",
+    });
+    res.status(200).json({ status: true, count: data.length, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// ── GET /finance-dropdown/payable-bills/contractor ────────────────────────────
+// Only contractor WeeklyBillings (supplier_type=Contractor). Used when payment mode is cash.
+// Supports same optional query params: supplier_id, tender_id
+export const getContractorPayableBills = async (req, res) => {
+  try {
+    const { supplier_id, tender_id } = req.query;
+    const data = await DropdownService.getPayableBills({
+      supplier_id, tender_id, supplier_type: "Contractor",
     });
     res.status(200).json({ status: true, count: data.length, data });
   } catch (error) {
