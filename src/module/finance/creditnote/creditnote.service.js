@@ -5,7 +5,6 @@ import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
 import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
-import JournalEntryService from "../journalentry/journalentry.service.js";
 
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -217,46 +216,6 @@ async function markBillAdjusted(cn) {
   await bill.save();
 }
 
-// ── Auto-create JE for a CreditNote ──────────────────────────────────────────
-// Dr supplier AP account      = cn.amount  (reduces payable)
-// Cr 1040 / 5030 (cost acct)  = taxable_amount (reverses the original cost)
-// Cr 1080-CGST/SGST/IGST      = tax amounts (reverses ITC)
-async function createCNJournalEntry(cn) {
-  const r2     = (n) => Math.round((n ?? 0) * 100) / 100;
-  const apCode = await JournalEntryService.getSupplierAccountCode(cn.supplier_type, cn.supplier_id);
-  if (!apCode) return;
-
-  const cgstAmt = r2(cn.cgst_amt || 0);
-  const sgstAmt = r2(cn.sgst_amt || 0);
-  const igstAmt = r2(cn.igst_amt || 0);
-  // Credit the cost account: vendor → material (1040), contractor → subcontract (5030)
-  const costCode   = cn.supplier_type === "Contractor" ? "5030" : "1040";
-  const baseCr     = r2(cn.amount - cgstAmt - sgstAmt - igstAmt);
-
-  const jeLines = [
-    { account_code: apCode,    dr_cr: "Dr", debit_amt: r2(cn.amount), credit_amt: 0, narration: `CN reduces payable — ${cn.supplier_name}` },
-    { account_code: costCode,  dr_cr: "Cr", debit_amt: 0, credit_amt: baseCr,         narration: "Material/service return" },
-  ];
-  if (cgstAmt > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Cr", debit_amt: 0, credit_amt: cgstAmt, narration: "CGST ITC reversal" });
-  if (sgstAmt > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Cr", debit_amt: 0, credit_amt: sgstAmt, narration: "SGST ITC reversal" });
-  if (igstAmt > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Cr", debit_amt: 0, credit_amt: igstAmt, narration: "IGST ITC reversal" });
-
-  const je = await JournalEntryService.createFromVoucher(jeLines, {
-    je_type:     "Credit Note",
-    je_date:     cn.cn_date,
-    narration:   `Credit Note ${cn.cn_no} — ${cn.supplier_name}${cn.narration ? ": " + cn.narration : ""}`,
-    tender_id:   cn.tender_id,
-    tender_ref:  cn.tender_ref,
-    tender_name: cn.tender_name,
-    source_ref:  cn._id,
-    source_type: "CreditNote",
-    source_no:   cn.cn_no,
-  });
-  if (je) {
-    await CreditNoteModel.findByIdAndUpdate(cn._id, { je_ref: je._id, je_no: je.je_no });
-  }
-}
-
 // ── Full approval flow ────────────────────────────────────────────────────────
 async function approveCN(cn) {
   // 1. Post to supplier sub-ledger (Dr entry — reduces payable)
@@ -264,11 +223,6 @@ async function approveCN(cn) {
 
   // 2. If "Against Bill", adjust the linked bill
   await markBillAdjusted(cn);
-
-  // 3. Auto-create Journal Entry — this is now the single source of GL truth.
-  //    It calls applyBalanceLines internally, so updateAccountBalances(entries)
-  //    is intentionally NOT called here to prevent double-counting.
-  await createCNJournalEntry(cn);
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────

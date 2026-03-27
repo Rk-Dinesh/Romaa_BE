@@ -1,6 +1,6 @@
 import BankTransferModel from "./banktransfer.model.js";
 import AccountTreeModel from "../accounttree/accounttree.model.js";
-import JournalEntryService from "../journalentry/journalentry.service.js";
+import AccountTreeService from "../accounttree/accounttree.service.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -169,9 +169,7 @@ class BankTransferService {
   //
   // On approval:
   //   1. Validate from/to accounts
-  //   2. Create a JournalEntry (Dr to_account, Cr from_account) as auto-approved
-  //      → JE approval triggers applyBalanceLines() → both account balances update
-  //   3. Save je_ref on BankTransfer
+  //   2. Update account balances (Dr to_account, Cr from_account)
   static async approve(id, approvedBy = null) {
     const bt = await BankTransferModel.findById(id);
     if (!bt)                       throw new Error("Bank transfer not found");
@@ -182,38 +180,14 @@ class BankTransferService {
     await validateBankCashAccount(bt.from_account_code, "Source");
     await validateBankCashAccount(bt.to_account_code, "Destination");
 
-    // Get next JE number
-    const { je_no } = await JournalEntryService.getNextJeNo();
+    // Update account balances: Dr to_account, Cr from_account
+    await AccountTreeService.applyBalanceLines([
+      { account_code: bt.to_account_code,   debit_amt: bt.amount, credit_amt: 0 },
+      { account_code: bt.from_account_code, debit_amt: 0,         credit_amt: bt.amount },
+    ]);
 
-    // Create auto-approved JE: Dr to_account, Cr from_account
-    // JE approval triggers applyBalanceLines → both balances update
-    const je = await JournalEntryService.create({
-      je_no,
-      je_date:    bt.transfer_date,
-      je_type:    "Inter-Account Transfer",
-      narration:  `${bt.transfer_no}: ${bt.narration || `Transfer from ${bt.from_account_name} to ${bt.to_account_name}`}`,
-      tender_id:  bt.tender_id  || "",
-      tender_name: bt.tender_name || "",
-      lines: [
-        {
-          account_code: bt.to_account_code,
-          debit_amt:    bt.amount,
-          credit_amt:   0,
-        },
-        {
-          account_code: bt.from_account_code,
-          debit_amt:    0,
-          credit_amt:   bt.amount,
-        },
-      ],
-      status:     "approved",
-      created_by: approvedBy,
-    });
-
-    // Mark transfer as approved and link the JE
+    // Mark transfer as approved
     bt.status      = "approved";
-    bt.je_ref      = je._id;
-    bt.je_no       = je.je_no;
     bt.approved_by = approvedBy;
     bt.approved_at = new Date();
     await bt.save();

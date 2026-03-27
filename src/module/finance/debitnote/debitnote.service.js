@@ -5,7 +5,6 @@ import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
 import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
-import JournalEntryService from "../journalentry/journalentry.service.js";
 
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -216,44 +215,6 @@ async function markBillAdjusted(dn) {
   await bill.save();
 }
 
-// ── Auto-create JE for a DebitNote ───────────────────────────────────────────
-// Dr supplier AP account     = dn.amount  (reduces payable — penalty/price diff)
-// Cr 4030 (Penalties Income) = amount - tax
-// Cr 1080-CGST/SGST/IGST     = tax amounts (if any GST on penalty)
-async function createDNJournalEntry(dn) {
-  const r2     = (n) => Math.round((n ?? 0) * 100) / 100;
-  const apCode = await JournalEntryService.getSupplierAccountCode(dn.supplier_type, dn.supplier_id);
-  if (!apCode) return;
-
-  const cgstAmt = r2(dn.cgst_amt || 0);
-  const sgstAmt = r2(dn.sgst_amt || 0);
-  const igstAmt = r2(dn.igst_amt || 0);
-  const baseCr  = r2(dn.amount - cgstAmt - sgstAmt - igstAmt);
-
-  const jeLines = [
-    { account_code: apCode,  dr_cr: "Dr", debit_amt: r2(dn.amount), credit_amt: 0, narration: `DN reduces payable — ${dn.supplier_name}` },
-    { account_code: "4030",  dr_cr: "Cr", debit_amt: 0, credit_amt: baseCr,        narration: "Penalty / price adjustment recovered" },
-  ];
-  if (cgstAmt > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Cr", debit_amt: 0, credit_amt: cgstAmt, narration: "CGST on penalty" });
-  if (sgstAmt > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Cr", debit_amt: 0, credit_amt: sgstAmt, narration: "SGST on penalty" });
-  if (igstAmt > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Cr", debit_amt: 0, credit_amt: igstAmt, narration: "IGST on penalty" });
-
-  const je = await JournalEntryService.createFromVoucher(jeLines, {
-    je_type:     "Debit Note",
-    je_date:     dn.dn_date,
-    narration:   `Debit Note ${dn.dn_no} — ${dn.supplier_name}${dn.narration ? ": " + dn.narration : ""}`,
-    tender_id:   dn.tender_id,
-    tender_ref:  dn.tender_ref,
-    tender_name: dn.tender_name,
-    source_ref:  dn._id,
-    source_type: "DebitNote",
-    source_no:   dn.dn_no,
-  });
-  if (je) {
-    await DebitNoteModel.findByIdAndUpdate(dn._id, { je_ref: je._id, je_no: je.je_no });
-  }
-}
-
 // ── Full approval flow ────────────────────────────────────────────────────────
 async function approveDN(dn) {
   // 1. Post to supplier sub-ledger (Dr entry — reduces payable)
@@ -261,11 +222,6 @@ async function approveDN(dn) {
 
   // 2. If "Against Bill", adjust the linked bill
   await markBillAdjusted(dn);
-
-  // 3. Auto-create Journal Entry — this is now the single source of GL truth.
-  //    It calls applyBalanceLines internally, so updateAccountBalances(entries)
-  //    is intentionally NOT called here to prevent double-counting.
-  await createDNJournalEntry(dn);
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
