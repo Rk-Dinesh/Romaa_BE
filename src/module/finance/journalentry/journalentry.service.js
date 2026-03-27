@@ -3,6 +3,48 @@ import AccountTreeModel from "../accounttree/accounttree.model.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
 import LedgerService from "../ledger/ledger.service.js";
 
+// ── Supplier AP account lookup ────────────────────────────────────────────────
+// Returns the personal ledger account code for a supplier (e.g. "2010-VND-001").
+// Falls back to null if no personal account is linked yet.
+async function getSupplierAccountCode(supplier_type, supplier_id) {
+  const acc = await AccountTreeModel.findOne({
+    linked_supplier_id:   supplier_id,
+    linked_supplier_type: supplier_type,
+    is_deleted: false,
+  }, { account_code: 1 }).lean();
+  return acc ? acc.account_code : null;
+}
+
+// ── Enrich lines with account names from AccountTree ─────────────────────────
+// Lighter than enrichAndValidateLines — does NOT reject group accounts because
+// these lines are built internally and account codes are already validated by design.
+async function enrichLines(rawLines) {
+  const codes    = [...new Set(rawLines.map((l) => l.account_code).filter(Boolean))];
+  const accounts = await AccountTreeModel.find(
+    { account_code: { $in: codes }, is_deleted: false },
+    { account_code: 1, account_name: 1, account_type: 1, linked_supplier_id: 1, linked_supplier_type: 1, linked_supplier_ref: 1 }
+  ).lean();
+
+  const map = {};
+  for (const a of accounts) map[a.account_code] = a;
+
+  return rawLines.map((line) => {
+    const acc = map[line.account_code] || {};
+    return {
+      account_code:  line.account_code,
+      account_name:  acc.account_name  || line.account_code,
+      account_type:  acc.account_type  || "",
+      dr_cr:         line.dr_cr || (line.debit_amt > 0 ? "Dr" : "Cr"),
+      debit_amt:     round2(Number(line.debit_amt)  || 0),
+      credit_amt:    round2(Number(line.credit_amt) || 0),
+      narration:     line.narration || "",
+      supplier_id:   acc.linked_supplier_id   || line.supplier_id   || null,
+      supplier_type: acc.linked_supplier_type || line.supplier_type || null,
+      supplier_ref:  acc.linked_supplier_ref  || line.supplier_ref  || null,
+    };
+  });
+}
+
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
@@ -374,6 +416,74 @@ class JournalEntryService {
     if (je.status === "approved") throw new Error("Cannot delete an approved journal entry — create a reversal instead");
     await je.deleteOne();
     return { deleted: true, je_no: je.je_no };
+  }
+
+  // ── Internal: auto-create an approved JE from a voucher approval ─────────
+  // Called by PurchaseBillService, WeeklyBillingService, PaymentVoucherService,
+  // ReceiptVoucherService, CreditNoteService, DebitNoteService on their approve().
+  //
+  // rawLines: Array of { account_code, dr_cr, debit_amt, credit_amt, narration? }
+  // meta:     { je_type, je_date, narration, tender_id, tender_ref, tender_name,
+  //             source_ref, source_type, source_no, created_by? }
+  //
+  // Returns the saved JournalEntry or null if lines are empty / unbalanced.
+  // Never throws — a JE failure must NOT roll back the voucher approval.
+  static async createFromVoucher(rawLines, meta) {
+    try {
+      if (!rawLines || rawLines.length < 2) return null;
+
+      // Validate balance
+      const totalDr = round2(rawLines.reduce((s, l) => s + (Number(l.debit_amt)  || 0), 0));
+      const totalCr = round2(rawLines.reduce((s, l) => s + (Number(l.credit_amt) || 0), 0));
+      if (totalDr !== totalCr) {
+        console.warn(`[JE] Auto-JE skipped for ${meta.source_no}: Dr ₹${totalDr} ≠ Cr ₹${totalCr}`);
+        return null;
+      }
+
+      const { je_no } = await JournalEntryService.getNextJeNo();
+      const je_date   = meta.je_date ? new Date(meta.je_date) : new Date();
+      const fy        = getFY(je_date);
+
+      const enriched = await enrichLines(rawLines);
+
+      const saved = await JournalEntryModel.create({
+        je_no,
+        je_date,
+        document_year:  fy,
+        financial_year: fy,
+        je_type:        meta.je_type    || "Adjustment",
+        narration:      meta.narration  || `Auto-JE for ${meta.source_no}`,
+        lines:          enriched,
+        tender_id:      meta.tender_id  || "",
+        tender_ref:     meta.tender_ref || null,
+        tender_name:    meta.tender_name || "",
+        source_ref:     meta.source_ref  || null,
+        source_type:    meta.source_type || "",
+        source_no:      meta.source_no   || "",
+        status:         "approved",
+        is_posted:      true,
+        approved_at:    new Date(),
+        created_by:     meta.created_by  || null,
+      });
+
+      // Cross-post supplier lines to LedgerEntry
+      await crossPostToSupplierLedger(saved);
+
+      // Update AccountTree available_balance for all touched accounts
+      await AccountTreeService.applyBalanceLines(saved.lines);
+
+      return saved;
+    } catch (err) {
+      // Log but never fail the parent voucher approval
+      console.error(`[JE] createFromVoucher failed for ${meta?.source_no}: ${err.message}`);
+      return null;
+    }
+  }
+
+  // ── Internal: look up supplier's personal AP account code ────────────────
+  // Exposed so voucher services can call it without re-importing AccountTreeModel.
+  static async getSupplierAccountCode(supplier_type, supplier_id) {
+    return getSupplierAccountCode(supplier_type, supplier_id);
   }
 }
 

@@ -1,7 +1,13 @@
 import DebitNoteModel from "./debitnote.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
+import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
+import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 import LedgerService from "../ledger/ledger.service.js";
+import AccountTreeService from "../accounttree/accounttree.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
+
+const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -14,7 +20,7 @@ function currentFY() {
 
 // Validate that entries balance: sum of debits must equal sum of credits
 function validateEntriesBalance(entries) {
-  if (!entries || entries.length === 0) return; // entries are optional
+  if (!entries || entries.length === 0) return;
   const totalDr = entries.reduce((s, e) => s + (Number(e.debit_amt)  || 0), 0);
   const totalCr = entries.reduce((s, e) => s + (Number(e.credit_amt) || 0), 0);
   if (Math.round((totalDr - totalCr) * 100) !== 0) {
@@ -22,6 +28,39 @@ function validateEntriesBalance(entries) {
       `Entry lines do not balance: total debits (${totalDr.toFixed(2)}) ≠ total credits (${totalCr.toFixed(2)})`
     );
   }
+}
+
+// ── Resolve bill ObjectId from bill_no string ─────────────────────────────────
+async function resolveBillRef(bill_no, supplier_type) {
+  if (!bill_no) return null;
+  if (supplier_type === "Vendor") {
+    const bill = await PurchaseBillModel.findOne({ doc_id: bill_no }, { _id: 1 }).lean();
+    return bill ? bill._id : null;
+  }
+  if (supplier_type === "Contractor") {
+    const bill = await WeeklyBillingModel.findOne({ bill_no }, { _id: 1 }).lean();
+    return bill ? bill._id : null;
+  }
+  return null;
+}
+
+// ── Split gst_percent into CGST/SGST/IGST based on sales_type ────────────────
+function resolveGstRates(payload) {
+  let cgst_pct = Number(payload.cgst_pct) || 0;
+  let sgst_pct = Number(payload.sgst_pct) || 0;
+  let igst_pct = Number(payload.igst_pct) || 0;
+
+  if (!cgst_pct && !sgst_pct && !igst_pct && payload.gst_percent) {
+    const gp = Number(payload.gst_percent);
+    if (payload.sales_type === "Interstate") {
+      igst_pct = gp;
+    } else {
+      cgst_pct = gp / 2;
+      sgst_pct = gp / 2;
+    }
+  }
+
+  return { cgst_pct, sgst_pct, igst_pct };
 }
 
 // ── Auto-fill supplier fields ─────────────────────────────────────────────────
@@ -51,6 +90,8 @@ async function resolveSupplier(supplier_type, supplier_id) {
 
 // ── Build document from payload ───────────────────────────────────────────────
 function buildDoc(payload, dn_no) {
+  const { cgst_pct, sgst_pct, igst_pct } = resolveGstRates(payload);
+
   return {
     dn_no,
     dn_date:        payload.dn_date        ? new Date(payload.dn_date)        : new Date(),
@@ -76,15 +117,17 @@ function buildDoc(payload, dn_no) {
     bill_ref: payload.bill_ref || null,
     bill_no:  payload.bill_no  || "",
 
-    amount:      Number(payload.amount)      || 0,
-    service_amt: Number(payload.service_amt) || 0,
+    amount:         Number(payload.amount)         || 0,
+    service_amt:    Number(payload.service_amt)    || 0,
+    round_off:      Number(payload.round_off)      || 0,
     taxable_amount: Number(payload.taxable_amount) || Number(payload.amount) || 0,
-    cgst_pct:  Number(payload.cgst_pct)  || 0,
-    sgst_pct:  Number(payload.sgst_pct)  || 0,
-    igst_pct:  Number(payload.igst_pct)  || 0,
+    cgst_pct,
+    sgst_pct,
+    igst_pct,
 
     entries: (payload.entries || []).map((e) => ({
       dr_cr:        e.dr_cr,
+      account_code: e.account_code || "",
       account_name: e.account_name || "",
       debit_amt:    Number(e.debit_amt)  || 0,
       credit_amt:   Number(e.credit_amt) || 0,
@@ -93,6 +136,136 @@ function buildDoc(payload, dn_no) {
     narration: payload.narration || "",
     status:    payload.status    || "pending",
   };
+}
+
+// ── Post DN to supplier ledger on approval ────────────────────────────────────
+// Single Dr entry for the header amount — reduces supplier payable.
+async function postDNToLedger(dn) {
+  await LedgerService.postEntry({
+    supplier_type: dn.supplier_type,
+    supplier_id:   dn.supplier_id,
+    supplier_ref:  dn.supplier_ref,
+    supplier_name: dn.supplier_name,
+    vch_date:      dn.dn_date,
+    vch_no:        dn.dn_no,
+    vch_type:      "DebitNote",
+    vch_ref:       dn._id,
+    tender_id:     dn.tender_id,
+    tender_ref:    dn.tender_ref,
+    tender_name:   dn.tender_name,
+    particulars:   `Debit Note ${dn.dn_no}${dn.narration ? " - " + dn.narration : ""}`,
+    debit_amt:     dn.amount,
+    credit_amt:    0,
+  });
+}
+
+// ── Update AccountTree balances from entry lines ──────────────────────────────
+async function updateAccountBalances(entries) {
+  const lines = (entries || [])
+    .filter((e) => e.account_code)
+    .map((e) => ({
+      account_code: e.account_code,
+      debit_amt:    Number(e.debit_amt)  || 0,
+      credit_amt:   Number(e.credit_amt) || 0,
+    }));
+  if (lines.length > 0) {
+    await AccountTreeService.applyBalanceLines(lines);
+  }
+}
+
+// ── Adjust linked bill when DN is "Against Bill" ──────────────────────────────
+async function markBillAdjusted(dn) {
+  if (dn.adj_type !== "Against Bill" || !dn.bill_ref) return;
+
+  const Model = dn.supplier_type === "Contractor"
+    ? WeeklyBillingModel
+    : PurchaseBillModel;
+
+  const bill = await Model.findById(dn.bill_ref);
+  if (!bill) return;
+
+  // Append DN adjustment record
+  bill.adjustment_refs.push({
+    adj_type: "DebitNote",
+    adj_ref:  dn._id,
+    adj_no:   dn.dn_no,
+    adj_amt:  dn.amount,
+    adj_date: dn.dn_date || new Date(),
+  });
+
+  // Accumulate DN amount
+  bill.dn_amount = round2((bill.dn_amount || 0) + dn.amount);
+
+  // Recompute paid_status: consider payments + CN + DN
+  const billTotal = dn.supplier_type === "Contractor"
+    ? (bill.net_payable || bill.total_amount)
+    : bill.net_amount;
+
+  const totalSettled = round2(
+    (bill.amount_paid || 0) + (bill.cn_amount || 0) + (bill.dn_amount || 0)
+  );
+
+  if (totalSettled >= billTotal) {
+    bill.paid_status = "paid";
+  } else if (totalSettled > 0) {
+    bill.paid_status = "partial";
+  } else {
+    bill.paid_status = "unpaid";
+  }
+
+  await bill.save();
+}
+
+// ── Auto-create JE for a DebitNote ───────────────────────────────────────────
+// Dr supplier AP account     = dn.amount  (reduces payable — penalty/price diff)
+// Cr 4030 (Penalties Income) = amount - tax
+// Cr 1080-CGST/SGST/IGST     = tax amounts (if any GST on penalty)
+async function createDNJournalEntry(dn) {
+  const r2     = (n) => Math.round((n ?? 0) * 100) / 100;
+  const apCode = await JournalEntryService.getSupplierAccountCode(dn.supplier_type, dn.supplier_id);
+  if (!apCode) return;
+
+  const cgstAmt = r2(dn.cgst_amt || 0);
+  const sgstAmt = r2(dn.sgst_amt || 0);
+  const igstAmt = r2(dn.igst_amt || 0);
+  const baseCr  = r2(dn.amount - cgstAmt - sgstAmt - igstAmt);
+
+  const jeLines = [
+    { account_code: apCode,  dr_cr: "Dr", debit_amt: r2(dn.amount), credit_amt: 0, narration: `DN reduces payable — ${dn.supplier_name}` },
+    { account_code: "4030",  dr_cr: "Cr", debit_amt: 0, credit_amt: baseCr,        narration: "Penalty / price adjustment recovered" },
+  ];
+  if (cgstAmt > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Cr", debit_amt: 0, credit_amt: cgstAmt, narration: "CGST on penalty" });
+  if (sgstAmt > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Cr", debit_amt: 0, credit_amt: sgstAmt, narration: "SGST on penalty" });
+  if (igstAmt > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Cr", debit_amt: 0, credit_amt: igstAmt, narration: "IGST on penalty" });
+
+  const je = await JournalEntryService.createFromVoucher(jeLines, {
+    je_type:     "Debit Note",
+    je_date:     dn.dn_date,
+    narration:   `Debit Note ${dn.dn_no} — ${dn.supplier_name}${dn.narration ? ": " + dn.narration : ""}`,
+    tender_id:   dn.tender_id,
+    tender_ref:  dn.tender_ref,
+    tender_name: dn.tender_name,
+    source_ref:  dn._id,
+    source_type: "DebitNote",
+    source_no:   dn.dn_no,
+  });
+  if (je) {
+    await DebitNoteModel.findByIdAndUpdate(dn._id, { je_ref: je._id, je_no: je.je_no });
+  }
+}
+
+// ── Full approval flow ────────────────────────────────────────────────────────
+async function approveDN(dn) {
+  // 1. Post to supplier sub-ledger (Dr entry — reduces payable)
+  await postDNToLedger(dn);
+
+  // 2. If "Against Bill", adjust the linked bill
+  await markBillAdjusted(dn);
+
+  // 3. Auto-create Journal Entry — this is now the single source of GL truth.
+  //    It calls applyBalanceLines internally, so updateAccountBalances(entries)
+  //    is intentionally NOT called here to prevent double-counting.
+  await createDNJournalEntry(dn);
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -185,32 +358,20 @@ class DebitNoteService {
     if (!payload.supplier_id)   throw new Error("supplier_id is required");
     if (!payload.supplier_type) throw new Error("supplier_type is required");
 
-    // Auto-fill supplier fields from master
     const supplierData = await resolveSupplier(payload.supplier_type, payload.supplier_id);
     Object.assign(payload, supplierData);
+
+    if (payload.bill_no && !payload.bill_ref) {
+      payload.bill_ref = await resolveBillRef(payload.bill_no, payload.supplier_type);
+    }
 
     validateEntriesBalance(payload.entries);
 
     const saved = await DebitNoteModel.create(buildDoc(payload, payload.dn_no));
 
-    // Auto-post ledger entry if created directly as approved
+    // Full approval flow if created directly as approved
     if (saved.status === "approved") {
-      await LedgerService.postEntry({
-        supplier_type: saved.supplier_type,
-        supplier_id:   saved.supplier_id,
-        supplier_ref:  saved.supplier_ref,
-        supplier_name: saved.supplier_name,
-        vch_date:      saved.dn_date,
-        vch_no:        saved.dn_no,
-        vch_type:      "DebitNote",
-        vch_ref:       saved._id,
-        particulars:   `Debit Note ${saved.dn_no}${saved.narration ? " - " + saved.narration : ""}`,
-        tender_id:     saved.tender_id,
-        tender_ref:    saved.tender_ref,
-        tender_name:   saved.tender_name,
-        debit_amt:     saved.amount,  // DN = Dr entry (reduces payable)
-        credit_amt:    0,
-      });
+      await approveDN(saved);
     }
 
     return saved;
@@ -252,23 +413,8 @@ class DebitNoteService {
     dn.status = "approved";
     await dn.save();
 
-    // Post to ledger on approval
-    await LedgerService.postEntry({
-      supplier_type: dn.supplier_type,
-      supplier_id:   dn.supplier_id,
-      supplier_ref:  dn.supplier_ref,
-      supplier_name: dn.supplier_name,
-      vch_date:      dn.dn_date,
-      vch_no:        dn.dn_no,
-      vch_type:      "DebitNote",
-      vch_ref:       dn._id,
-      particulars:   `Debit Note ${dn.dn_no}${dn.narration ? " - " + dn.narration : ""}`,
-      tender_id:     dn.tender_id,
-      tender_ref:    dn.tender_ref,
-      tender_name:   dn.tender_name,
-      debit_amt:     dn.amount,  // DN = Dr entry (reduces payable)
-      credit_amt:    0,
-    });
+    // Full approval flow: supplier ledger + GL + bill adjustment
+    await approveDN(dn);
 
     return dn;
   }

@@ -17,7 +17,8 @@ Suppliers can be **Vendors** (material supply) or **Contractors** (labour/work).
 - Short supply deduction
 - Quality rejection at site
 
-On **approval**, a `Dr` ledger entry is auto-posted → reduces the supplier's balance in the ledger.
+On **approval**, one `LedgerEntry` row is posted **per `entries[]` line** (each Dr/Cr side of the voucher).
+If `entries` is empty, a single header-level `Dr` entry is posted for `amount` as fallback.
 
 > **DN vs CN:** Both reduce payable. CN is typically initiated by the supplier (they issue it to you). DN is typically initiated by you (you raise it against the supplier). Both have the same ledger effect.
 
@@ -94,22 +95,23 @@ GET /debitnote/list?page=2&limit=10
     {
       "_id":           "67a1b2c3d4e5f6a7b8c9d0f1",
       "dn_no":         "DN/25-26/0001",
-      "dn_date":       "2026-03-18T00:00:00.000Z",
+      "dn_date":       "2026-03-27T00:00:00.000Z",
       "document_year": "25-26",
       "reference_no":  "",
       "supplier_type": "Contractor",
-      "supplier_id":   "CON-001",
-      "supplier_name": "Sri Krishna Enterprises",
-      "tender_id":     "TND-001",
-      "tender_name":   "INFRA Road Project Phase 1",
-      "bill_no":       "WB/25-26/0001",
-      "amount":        2500,
-      "service_amt":   0,
+      "supplier_id":   "C-0004",
+      "supplier_name": "XYZ Contractors",
+      "tender_id":     "TND-2025-001",
+      "tender_name":   "Highway Project Phase 1",
+      "bill_no":       "WB/25-26/0012",
+      "amount":        12500,
+      "service_amt":   5000,
+      "round_off":     0,
       "adj_type":      "Against Bill",
-      "tax_type":      "NonGST",
+      "tax_type":      "GST",
       "status":        "pending",
-      "narration":     "Penalty for 5-day delay @ ₹500/day",
-      "createdAt":     "2026-03-18T09:00:00.000Z"
+      "narration":     "Penalty for 5-day delay in supply @ ₹2500/day",
+      "createdAt":     "2026-03-27T09:00:00.000Z"
     }
   ],
   "pagination": {
@@ -179,6 +181,7 @@ GET /debitnote/by-tender/TND-001?supplier_id=CON-001&status=approved
 ## 5. Create Debit Note
 
 Creates a new debit note. Supplier name, GSTIN, and ref are **auto-filled** from the master using `supplier_id` + `supplier_type`.
+`bill_ref` (ObjectId) is **auto-resolved** from `bill_no` — no need to send it.
 
 ```
 POST /debitnote/create
@@ -190,40 +193,36 @@ Content-Type: application/json
 ```json
 {
   "dn_no":          "DN/25-26/0001",
-  "dn_date":        "2026-03-18",
-  "document_year":  "25-26",
-  "reference_no":   "",
-  "reference_date": null,
-  "location":       "Mumbai",
+  "dn_date":        "2026-03-27",
+  "service_amt":    5000.00,
+
+  "reference_no":   "REF-002",
+  "reference_date": "2026-03-20",
+  "location":       "Mumbai, Maharashtra",
+
   "sales_type":     "Local",
   "adj_type":       "Against Bill",
-  "tax_type":       "NonGST",
+  "tax_type":       "GST",
+  "gst_percent":    18,
   "rev_charge":     false,
 
   "supplier_type":  "Contractor",
-  "supplier_id":    "CON-001",
+  "supplier_id":    "C-0004",
+  "tender_id":      "TND-2025-001",
+  "tender_ref":     "<mongo _id of tender>",
+  "tender_name":    "Highway Project Phase 1",
 
-  "tender_id":      "TND-001",
-  "tender_ref":     "67a1b2c3d4e5f6a7b8c9d0e0",
-  "tender_name":    "INFRA Road Project Phase 1",
+  "bill_no":        "WB/25-26/0012",
 
-  "bill_ref":       "67a1b2c3d4e5f6a7b8c9d0e5",
-  "bill_no":        "WB/25-26/0001",
-
-  "taxable_amount": 2500,
-  "cgst_pct":       0,
-  "sgst_pct":       0,
-  "igst_pct":       0,
-
-  "amount":         2500,
-  "service_amt":    0,
+  "round_off":      0,
+  "amount":         12500.00,
 
   "entries": [
-    { "dr_cr": "Dr", "account_name": "Sri Krishna Enterprises", "debit_amt": 2500, "credit_amt": 0 },
-    { "dr_cr": "Cr", "account_name": "Penalty Recovery",        "debit_amt": 0,    "credit_amt": 2500 }
+    { "dr_cr": "Dr", "account_name": "C-0004 – XYZ Contractors", "debit_amt": 12500, "credit_amt": 0 },
+    { "dr_cr": "Cr", "account_name": "Steel TMT 500D 12mm",       "debit_amt": 0,    "credit_amt": 12500 }
   ],
 
-  "narration": "Penalty for 5-day delay in supply @ ₹500/day",
+  "narration": "Penalty for 5-day delay in supply @ ₹2500/day",
   "status":    "pending"
 }
 ```
@@ -234,7 +233,7 @@ Content-Type: application/json
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `dn_no` | `string` | **Yes** | From `GET /next-no` |
+| `dn_no` | `string` | **Yes** | From `GET /debitnote/next-no` |
 | `dn_date` | `date` | No | Defaults to today |
 | `document_year` | `string` | No | e.g. `"25-26"` — defaults to current FY |
 | `reference_no` | `string` | No | Supplier's own DN reference (if any) |
@@ -243,7 +242,11 @@ Content-Type: application/json
 | `sales_type` | `string` | No | `Local` / `Interstate` / `Export` / `SEZ` / `Exempt` |
 | `adj_type` | `string` | No | `Against Bill` / `Advance Adjustment` / `On Account` |
 | `tax_type` | `string` | No | `GST` / `NonGST` / `Exempt` |
-| `rev_charge` | `boolean` | No | Reverse Charge Mechanism — default `false`. When `true`, use RCM accounts (CGST_RCM/SGST_RCM/IGST_RCM codes 2160/2170/2180) in the entries lines |
+| `gst_percent` | `number` | No | **Shorthand GST rate.** For `Local` → splits into `cgst_pct = gst_percent/2`, `sgst_pct = gst_percent/2`. For `Interstate` → sets `igst_pct = gst_percent`. Ignored if explicit `cgst_pct`/`sgst_pct`/`igst_pct` are sent |
+| `cgst_pct` | `number` | No | CGST rate % — overrides `gst_percent` if provided |
+| `sgst_pct` | `number` | No | SGST rate % — overrides `gst_percent` if provided |
+| `igst_pct` | `number` | No | IGST rate % — overrides `gst_percent` if provided |
+| `rev_charge` | `boolean` | No | Reverse Charge Mechanism — default `false` |
 | `supplier_type` | `"Vendor" \| "Contractor"` | **Yes** | Type of supplier |
 | `supplier_id` | `string` | **Yes** | Business key — used to auto-fill all supplier fields |
 | `supplier_ref` | — | — | **Auto-filled** — do not send |
@@ -252,38 +255,42 @@ Content-Type: application/json
 | `tender_id` | `string` | No | Tender business key |
 | `tender_ref` | `ObjectId` | No | Tender `_id` |
 | `tender_name` | `string` | No | Snapshot |
-| `bill_ref` | `ObjectId` | No | Linked bill `_id` (PurchaseBill or WeeklyBill) |
-| `bill_no` | `string` | No | Snapshot of bill number |
-| `taxable_amount` | `number` | No | Base amount before GST. Defaults to `amount` for backward compatibility |
-| `cgst_pct` | `number` | No | CGST rate % |
-| `sgst_pct` | `number` | No | SGST rate % |
-| `igst_pct` | `number` | No | IGST rate % |
+| `bill_no` | `string` | No | Bill number — **auto-resolves `bill_ref`** (looks up PurchaseBill `doc_id` for Vendor, WeeklyBilling `bill_no` for Contractor) |
+| `bill_ref` | `ObjectId` | No | Optional explicit bill `_id` — skipped if `bill_no` is sent |
+| `amount` | `number` | **Yes** | Total note value (gross). **Auto-recomputed** by pre-save hook when `taxable_amount + gst` fields are set |
+| `service_amt` | `number` | No | Service portion of the amount (DN-specific) |
+| `round_off` | `number` | No | Rounding difference (max ±₹1). `0` when Dr/Cr sides balance exactly |
+| `taxable_amount` | `number` | No | Base amount before GST. Defaults to `amount` |
 | `cgst_amt` | — | — | **Server-computed** by pre-save hook — do not send |
 | `sgst_amt` | — | — | **Server-computed** by pre-save hook — do not send |
 | `igst_amt` | — | — | **Server-computed** by pre-save hook — do not send |
 | `total_tax` | — | — | **Server-computed** by pre-save hook — do not send |
-| `amount` | `number` | No | **Auto-set by hook** to `taxable_amount + total_tax`. Can be sent directly if not using tax breakup fields |
-| `service_amt` | `number` | No | Service portion of the amount (if applicable) |
-| `narration` | `string` | No | Free text — describe the reason for deduction |
-| `status` | `string` | No | `draft` / `pending` (default) — use `approved` to auto-post ledger on create |
+| `narration` | `string` | No | Free text — describe the reason for the deduction |
+| `status` | `string` | No | `draft` / `pending` (default). Use `approved` to auto-post ledger on create |
 
-> **Tax hook:** Server computes `cgst_amt = taxable_amount × cgst_pct / 100`, `sgst_amt = taxable_amount × sgst_pct / 100`, `igst_amt = taxable_amount × igst_pct / 100`, `total_tax = cgst_amt + sgst_amt + igst_amt`, and `amount = taxable_amount + total_tax`.
+> **GST hook:** When `taxable_amount > 0` and any GST % is set, server computes `cgst_amt`, `sgst_amt`, `igst_amt`, `total_tax`, and overrides `amount = taxable_amount + total_tax`.
 
 #### `entries[]` — minimum 1 required
 
-| Field | Type | Description |
-|---|---|---|
-| `dr_cr` | `"Dr" \| "Cr"` | Entry side |
-| `account_name` | `string` | Ledger account head (e.g. supplier name, "Penalty Recovery") |
-| `debit_amt` | `number` | Amount on debit side (0 if Cr entry) |
-| `credit_amt` | `number` | Amount on credit side (0 if Dr entry) |
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `dr_cr` | `"Dr" \| "Cr"` | **Yes** | Entry side |
+| `account_name` | `string` | **Yes** | Ledger account head (supplier row or material/expense row) |
+| `debit_amt` | `number` | **Yes** | Amount on debit side (`0` when side is Cr) |
+| `credit_amt` | `number` | **Yes** | Amount on credit side (`0` when side is Dr) |
 
-### Side Effects
+**DN voucher convention (FE-enforced):**
+- Supplier row → `dr_cr: "Dr"` (auto-set, locked)
+- Material / expense rows → `dr_cr: "Cr"` (user-editable)
+- `|Σ debit_amt − Σ credit_amt| ≤ ₹1` — excess goes into `round_off`
 
-If `status` is `"approved"` at creation (or after `PATCH /approve`):
-- A `Dr` ledger entry is auto-posted to `LedgerEntry` collection
-- `debit_amt = amount`, `vch_type = "DebitNote"`
-- Supplier's outstanding balance is reduced by `amount`
+### Side Effects on Approval
+
+When `status` becomes `"approved"` (via create or `PATCH /approve`):
+- **One `LedgerEntry` is posted per `entries[]` row** — each row's `debit_amt` / `credit_amt` is written as-is
+- First entry row holds the `vch_ref` (DN `_id`) for dedup protection; subsequent rows use `null` (sparse index permits)
+- If `entries` is empty, a single fallback `Dr` entry is posted for `amount`
+- Supplier's outstanding balance in the ledger reflects all rows combined
 
 ### Success Response `201`
 
@@ -292,21 +299,28 @@ If `status` is `"approved"` at creation (or after `PATCH /approve`):
   "status":  true,
   "message": "Debit note created",
   "data": {
-    "dn_no":         "DN/25-26/0001",
-    "dn_date":       "2026-03-18T00:00:00.000Z",
-    "supplier_type": "Contractor",
-    "supplier_id":   "CON-001",
-    "supplier_name": "Sri Krishna Enterprises",
-    "supplier_gstin":"29AABCK1234R1ZX",
-    "taxable_amount": 2500,
-    "cgst_pct": 0, "cgst_amt": 0,
-    "sgst_pct": 0, "sgst_amt": 0,
+    "dn_no":          "DN/25-26/0001",
+    "dn_date":        "2026-03-27T00:00:00.000Z",
+    "supplier_type":  "Contractor",
+    "supplier_id":    "C-0004",
+    "supplier_name":  "XYZ Contractors",
+    "supplier_gstin": "29AABCK1234R1ZX",
+    "bill_no":        "WB/25-26/0012",
+    "bill_ref":       "67a1b2c3d4e5f6a7b8c9d0e5",
+    "amount":         12500,
+    "service_amt":    5000,
+    "round_off":      0,
+    "taxable_amount": 12500,
+    "cgst_pct": 9, "cgst_amt": 0,
+    "sgst_pct": 9, "sgst_amt": 0,
     "igst_pct": 0, "igst_amt": 0,
     "total_tax": 0,
-    "amount":        2500,
-    "service_amt":   0,
-    "status":        "pending",
-    "createdAt":     "2026-03-18T09:00:00.000Z"
+    "status":         "pending",
+    "entries": [
+      { "dr_cr": "Dr", "account_name": "C-0004 – XYZ Contractors", "debit_amt": 12500, "credit_amt": 0 },
+      { "dr_cr": "Cr", "account_name": "Steel TMT 500D 12mm",       "debit_amt": 0,    "credit_amt": 12500 }
+    ],
+    "createdAt": "2026-03-27T09:00:00.000Z"
   }
 }
 ```
@@ -318,9 +332,10 @@ If `status` is `"approved"` at creation (or after `PATCH /approve`):
 | `400` | `dn_no` missing | `"dn_no is required"` |
 | `400` | `supplier_id` missing | `"supplier_id is required"` |
 | `400` | `supplier_type` missing | `"supplier_type is required"` |
-| `400` | Vendor not found | `"Vendor 'VND-XXX' not found"` |
-| `400` | Contractor not found | `"Contractor 'CON-XXX' not found"` |
+| `400` | Vendor not found | `"Vendor 'V-XXX' not found"` |
+| `400` | Contractor not found | `"Contractor 'C-XXX' not found"` |
 | `400` | Invalid supplier_type | `"Invalid supplier_type '...'. Must be Vendor or Contractor"` |
+| `400` | Entries don't balance | `"Entry lines do not balance: total debits (...) ≠ total credits (...)"` |
 | `400` | No entries | `"A debit note must have at least one entry line"` |
 | `500` | DB / duplicate dn_no | `error.message` |
 
@@ -328,7 +343,7 @@ If `status` is `"approved"` at creation (or after `PATCH /approve`):
 
 ## 6. Approve Debit Note
 
-Moves a `pending` debit note to `approved` and auto-posts the Dr ledger entry.
+Moves a `pending` debit note to `approved` and posts ledger entries.
 
 ```
 PATCH /debitnote/approve/:id
@@ -351,7 +366,7 @@ PATCH /debitnote/approve/67a1b2c3d4e5f6a7b8c9d0f1
   "data": {
     "dn_no":   "DN/25-26/0001",
     "status":  "approved",
-    "amount":  2500
+    "amount":  12500
   }
 }
 ```
@@ -371,16 +386,14 @@ PATCH /debitnote/approve/67a1b2c3d4e5f6a7b8c9d0f1
 GET /debitnote/:id
 ```
 
-**Auth required:** `finance > debitnote > read`
-
-Returns the full debit note detail.
+Returns the full debit note document.
 
 ### Success Response `200`
 
 ```json
 {
   "status": true,
-  "data": { ...full DN fields... }
+  "data": { "...full DN fields..." }
 }
 ```
 
@@ -399,13 +412,11 @@ PATCH /debitnote/update/:id
 Content-Type: application/json
 ```
 
-**Auth required:** `finance > debitnote > edit`
-
 Only `draft` or `pending` DNs can be updated. Approved DNs are blocked.
 
-**Updatable top-level fields:** `dn_date`, `reference_no`, `reference_date`, `location`, `sales_type`, `adj_type`, `tax_type`, `rev_charge`, `tender_id`, `tender_ref`, `tender_name`, `bill_ref`, `bill_no`, `amount`, `taxable_amount`, `cgst_pct`, `sgst_pct`, `igst_pct`, `service_amt`, `narration`
+**Updatable fields:** `dn_date`, `reference_no`, `reference_date`, `location`, `sales_type`, `adj_type`, `tax_type`, `rev_charge`, `tender_id`, `tender_ref`, `tender_name`, `bill_ref`, `bill_no`, `amount`, `service_amt`, `entries`, `narration`
 
-> If `entries[]` is sent, the **entire entries array is replaced** and balance is re-validated (Σ Dr = Σ Cr).
+> If `entries[]` is sent, the **entire entries array is replaced**.
 
 ### Success Response `200`
 
@@ -413,7 +424,7 @@ Only `draft` or `pending` DNs can be updated. Approved DNs are blocked.
 {
   "status": true,
   "message": "Debit note updated",
-  "data": { ...updated DN fields... }
+  "data": { "...updated DN fields..." }
 }
 ```
 
@@ -422,7 +433,7 @@ Only `draft` or `pending` DNs can be updated. Approved DNs are blocked.
 | Status | Condition | Message |
 |---|---|---|
 | `400` | DN is approved | `"Cannot edit an approved debit note"` |
-| `404` | `id` not found | `"Debit note not found"` |
+| `400` | `id` not found | `"Debit note not found"` |
 
 ---
 
@@ -432,8 +443,6 @@ Only `draft` or `pending` DNs can be updated. Approved DNs are blocked.
 DELETE /debitnote/delete/:id
 ```
 
-**Auth required:** `finance > debitnote > delete`
-
 Only `draft` or `pending` DNs can be deleted. Approved DNs are blocked.
 
 ### Success Response `200`
@@ -442,7 +451,7 @@ Only `draft` or `pending` DNs can be deleted. Approved DNs are blocked.
 {
   "status": true,
   "message": "Debit note deleted",
-  "data": { ...deleted DN fields... }
+  "data": { "deleted": true, "dn_no": "DN/25-26/0001" }
 }
 ```
 
@@ -451,7 +460,19 @@ Only `draft` or `pending` DNs can be deleted. Approved DNs are blocked.
 | Status | Condition | Message |
 |---|---|---|
 | `400` | DN is approved | `"Cannot delete an approved debit note"` |
-| `404` | `id` not found | `"Debit note not found"` |
+| `400` | `id` not found | `"Debit note not found"` |
+
+---
+
+## Related Endpoints
+
+| Hook | Endpoint | Notes |
+|---|---|---|
+| Tender dropdown | `GET /tender/gettendersid` | Returns `tender_id`, `tender_project_name`, `tender_location` |
+| Vendor list | `GET /permittedvendor/getvendor/:tenderId` | Returns permitted vendors for a tender |
+| Contractor list | `GET /contractor/getbytender/:tenderId` | Returns contractors for a tender |
+| Payable bills | `GET /finance/payable-bills?supplier_id=&supplier_type=&tender_id=` | Unpaid/partial bills for the linked-bill selector |
+| Material list | `GET /material/list/:tenderId` | Material descriptions for voucher entry dropdown |
 
 ---
 
@@ -461,21 +482,21 @@ Only `draft` or `pending` DNs can be deleted. Approved DNs are blocked.
 1. Open Create DN form
    GET /debitnote/next-no               → pre-fill DN number
 
-2. Select Supplier (Vendor or Contractor) + Tender + linked Bill
-   → supplier_name, gstin auto-filled on create
+2. Select Supplier + Tender
+   GET /finance/payable-bills?supplier_id=C-0004&supplier_type=Contractor&tender_id=TND-001
+                                        → pick linked bill (bill_no saved; bill_ref auto-resolved on create)
 
-3. Fill taxable_amount + GST percentages (if applicable) + voucher entries + narration
-   POST /debitnote/create               → saved as "pending"
-                                        → server computes cgst_amt, sgst_amt, igst_amt, total_tax, amount
+3. Fill entries (Dr/Cr lines), service_amt, round_off, narration
+   Supplier row is auto-set to Dr; material/penalty rows are Cr.
+   FE validates |ΣDr − ΣCr| ≤ ₹1; excess goes in round_off.
 
-4. Finance manager reviews and approves
+4. POST /debitnote/create               → saved as "pending"
+   Server: auto-fills supplier, resolves bill_ref, splits gst_percent, computes tax amounts
+
+5. Finance manager approves
    PATCH /debitnote/approve/:id         → status = "approved"
-                                        → Dr ledger entry auto-posted
-                                        → supplier balance reduced
-
-5. View DNs for a supplier or tender
-   GET /debitnote/by-supplier/:id
-   GET /debitnote/by-tender/:tenderId
+                                        → one LedgerEntry posted per entries[] row
+                                        → supplier balance updated
 ```
 
 ---
@@ -489,4 +510,44 @@ Only `draft` or `pending` DNs can be deleted. Approved DNs are blocked.
 | **Initiated by** | Supplier (sends to you) | You (raise against supplier) |
 | **Common reason** | Material return, overbilling | Penalty, price diff, short supply |
 | **Extra field** | — | `service_amt` |
-| **Ledger effect** | Dr entry — reduces payable | Dr entry — reduces payable |
+| **Supplier row** | Auto-set `Cr` (FE-locked) | Auto-set `Dr` (FE-locked) |
+| **Material rows** | `Dr` (user-editable) | `Cr` (user-editable) |
+| **Ledger effect** | One entry per row posted | One entry per row posted |
+
+---
+
+## Model Fields Reference
+
+| Field | Type | Description |
+|---|---|---|
+| `dn_no` | `String` | Unique — `DN/25-26/XXXX` |
+| `dn_date` | `Date` | Note date |
+| `document_year` | `String` | FY label e.g. `"25-26"` |
+| `reference_no` | `String` | Supplier's own reference |
+| `reference_date` | `Date` | Date on supplier's document |
+| `location` | `String` | Branch / site |
+| `sales_type` | `String` | `Local` / `Interstate` / `Export` / `SEZ` / `Exempt` |
+| `adj_type` | `String` | `Against Bill` / `Advance Adjustment` / `On Account` |
+| `tax_type` | `String` | `GST` / `NonGST` / `Exempt` |
+| `rev_charge` | `Boolean` | Reverse charge flag |
+| `supplier_type` | `String` | `Vendor` / `Contractor` |
+| `supplier_id` | `String` | Business key |
+| `supplier_ref` | `ObjectId` | Vendor/Contractor `_id` |
+| `supplier_name` | `String` | Snapshot |
+| `supplier_gstin` | `String` | Snapshot |
+| `tender_id` | `String` | Tender business key |
+| `tender_ref` | `ObjectId` | Tenders `_id` |
+| `tender_name` | `String` | Snapshot |
+| `bill_ref` | `ObjectId` | PurchaseBill or WeeklyBilling `_id` |
+| `bill_no` | `String` | Snapshot of bill number |
+| `amount` | `Number` | Gross total |
+| `service_amt` | `Number` | Service portion (DN-specific) |
+| `round_off` | `Number` | Rounding diff (max ±₹1) |
+| `taxable_amount` | `Number` | Base before GST |
+| `cgst_pct` / `cgst_amt` | `Number` | CGST rate and computed amount |
+| `sgst_pct` / `sgst_amt` | `Number` | SGST rate and computed amount |
+| `igst_pct` / `igst_amt` | `Number` | IGST rate and computed amount |
+| `total_tax` | `Number` | `cgst_amt + sgst_amt + igst_amt` |
+| `entries` | `Array` | Voucher Dr/Cr lines |
+| `narration` | `String` | Free text |
+| `status` | `String` | `draft` / `pending` / `approved` |

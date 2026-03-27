@@ -14,6 +14,7 @@ const TAX_TYPES     = ["GST", "NonGST", "Exempt"];
 const EntryLineSchema = new mongoose.Schema(
   {
     dr_cr:        { type: String, enum: ["Dr", "Cr"], required: true },
+    account_code: { type: String, default: "" }, // AccountTree.account_code (e.g. "2020-CTR-001", "5410")
     account_name: { type: String, default: "" }, // ledger account head
     debit_amt:    { type: Number, default: 0 },
     credit_amt:   { type: Number, default: 0 },
@@ -57,8 +58,9 @@ const DebitNoteSchema = new mongoose.Schema(
     bill_no:  { type: String, default: "" },   // snapshot of PurchaseBill.doc_id
 
     // ── Amounts (header-level) ────────────────────────────────────────────
-    amount:      { type: Number, default: 0 }, // total debit note value
+    amount:      { type: Number, default: 0 }, // total debit note value (gross)
     service_amt: { type: Number, default: 0 }, // service amount (visible in DN screen)
+    round_off:   { type: Number, default: 0 }, // rounding diff sent by FE (max ±₹1)
 
     // ── Tax breakup ───────────────────────────────────────────────────────
     // taxable_amount = base value before GST (pre-save sets amount = taxable_amount + total_tax)
@@ -89,6 +91,11 @@ const DebitNoteSchema = new mongoose.Schema(
       enum: ["draft", "pending", "approved"],
       default: "pending",
     },
+
+    // ── Journal Entry link ────────────────────────────────────────────────
+    // Set on approval — points to the auto-created double-entry JournalEntry.
+    je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
+    je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
   },
   { timestamps: true }
 );

@@ -36,6 +36,13 @@ const JE_TYPES = [
   "Reversal",              // Correction: reverses a prior approved JE entry-for-entry
   "Adjustment",            // General period-end or audit adjustment
   "Other",                 // Miscellaneous
+  // ── Auto-generated from voucher approvals ─────────────────────────────────
+  "Purchase Invoice",      // Auto-created on PurchaseBill approval
+  "Contractor Bill",       // Auto-created on WeeklyBilling approval
+  "Payment",               // Auto-created on PaymentVoucher approval
+  "Receipt",               // Auto-created on ReceiptVoucher approval
+  "Credit Note",           // Auto-created on CreditNote approval
+  "Debit Note",            // Auto-created on DebitNote approval
 ];
 
 // ── Entry line schema ─────────────────────────────────────────────────────────
@@ -120,6 +127,15 @@ const JournalEntrySchema = new mongoose.Schema(
     auto_reverse_date: { type: Date, default: null },
     auto_reversed:     { type: Boolean, default: false }, // true once the auto-reversal JE is created
 
+    // ── Source voucher (for auto-generated JEs) ───────────────────────
+    // When a JE is auto-created by a voucher approval (PurchaseBill, Payment, etc.)
+    // these fields link back to the originating document for audit traceability.
+    //   source_type: "PurchaseBill" | "WeeklyBilling" | "PaymentVoucher" |
+    //                "ReceiptVoucher" | "CreditNote" | "DebitNote"
+    source_ref:  { type: mongoose.Schema.Types.ObjectId, default: null },
+    source_type: { type: String, default: "" },   // model name of originating document
+    source_no:   { type: String, default: "" },   // doc_id / bill_no / pv_no / rv_no / cn_no / dn_no
+
     // ── Posted flag ───────────────────────────────────────────────────
     // true once this JE has been approved and all LedgerEntry cross-posts are done.
     is_posted: { type: Boolean, default: false },
@@ -155,6 +171,7 @@ JournalEntrySchema.index({ is_reversal: 1 });                          // find a
 JournalEntrySchema.index({ reversal_of: 1 });                          // find reversal of a JE
 JournalEntrySchema.index({ "lines.account_code": 1 });                 // find JEs by account
 JournalEntrySchema.index({ auto_reverse_date: 1, auto_reversed: 1 });  // pending auto-reversals
+JournalEntrySchema.index({ source_ref: 1, source_type: 1 });           // find JE for a voucher
 
 const JournalEntryModel = mongoose.model("JournalEntry", JournalEntrySchema);
 export default JournalEntryModel;

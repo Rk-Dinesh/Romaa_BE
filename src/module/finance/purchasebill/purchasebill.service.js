@@ -2,6 +2,7 @@ import PurchaseBillModel from "./purchasebill.model.js";
 import MaterialTransactionModel from "../../tender/materials/materialTransaction.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import LedgerService from "../ledger/ledger.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
 
 // ── Build document from payload ───────────────────────────────────────────────
 // Only source fields are mapped here.
@@ -101,6 +102,46 @@ async function markGRNsBilled(line_items, doc_id) {
     filter,
     { $set: { is_bill_generated: true, purchase_bill_id: doc_id } }
   );
+}
+
+// ── Build double-entry lines for a PurchaseBill JE ───────────────────────────
+// Dr  1040 (Material at Site)           = grand_total + net additional charges
+// Dr  1080-CGST                          = total CGST  [if > 0]
+// Dr  1080-SGST                          = total SGST  [if > 0]
+// Dr  1080-IGST                          = total IGST  [if > 0]
+// Cr  2010-VND-xxx (Vendor AP account)   = net_amount
+//
+// Total Dr = net_amount = Total Cr — always balanced.
+async function buildPurchaseBillJeLines(bill) {
+  const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
+
+  // Find vendor's personal AP account in AccountTree
+  const apCode = await JournalEntryService.getSupplierAccountCode("Vendor", bill.vendor_id);
+  if (!apCode) return null; // no personal account → skip JE
+
+  // Sum GST from tax_groups
+  let totalCgst = 0, totalSgst = 0, totalIgst = 0;
+  for (const g of bill.tax_groups || []) {
+    totalCgst += g.cgst_amt || 0;
+    totalSgst += g.sgst_amt || 0;
+    totalIgst += g.igst_amt || 0;
+  }
+  totalCgst = r2(totalCgst);
+  totalSgst = r2(totalSgst);
+  totalIgst = r2(totalIgst);
+
+  // Base Dr = net_amount minus tax components (absorbs round-off + additional charges)
+  const baseDr = r2(bill.net_amount - totalCgst - totalSgst - totalIgst);
+
+  const lines = [
+    { account_code: "1040", dr_cr: "Dr", debit_amt: baseDr,   credit_amt: 0, narration: "Material purchase" },
+  ];
+  if (totalCgst > 0) lines.push({ account_code: "1080-CGST", dr_cr: "Dr", debit_amt: totalCgst, credit_amt: 0, narration: "CGST Input ITC" });
+  if (totalSgst > 0) lines.push({ account_code: "1080-SGST", dr_cr: "Dr", debit_amt: totalSgst, credit_amt: 0, narration: "SGST Input ITC" });
+  if (totalIgst > 0) lines.push({ account_code: "1080-IGST", dr_cr: "Dr", debit_amt: totalIgst, credit_amt: 0, narration: "IGST Input ITC" });
+  lines.push({ account_code: apCode, dr_cr: "Cr", debit_amt: 0, credit_amt: bill.net_amount, narration: `Payable — ${bill.vendor_name}` });
+
+  return lines;
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
@@ -356,9 +397,27 @@ class PurchaseBillService {
     // Mark every linked GRN transaction as billed
     await markGRNsBilled(saved.line_items, saved.doc_id);
 
-    // Auto-post to ledger if created directly as approved
+    // Auto-post to ledger + JE if created directly as approved
     if (saved.status === "approved") {
       await postToLedger(saved);
+
+      const jeLines = await buildPurchaseBillJeLines(saved);
+      if (jeLines) {
+        const je = await JournalEntryService.createFromVoucher(jeLines, {
+          je_type:     "Purchase Invoice",
+          je_date:     saved.doc_date,
+          narration:   `Purchase Bill ${saved.doc_id} — ${saved.vendor_name}${saved.narration ? ": " + saved.narration : ""}`,
+          tender_id:   saved.tender_id,
+          tender_ref:  saved.tender_ref,
+          tender_name: saved.tender_name,
+          source_ref:  saved._id,
+          source_type: "PurchaseBill",
+          source_no:   saved.doc_id,
+        });
+        if (je) {
+          await PurchaseBillModel.findByIdAndUpdate(saved._id, { je_ref: je._id, je_no: je.je_no });
+        }
+      }
     }
 
     return saved;
@@ -373,7 +432,27 @@ class PurchaseBillService {
     bill.status = "approved";
     await bill.save();
 
+    // 1. Post to supplier sub-ledger (Cr: liability created — payable to vendor)
     await postToLedger(bill);
+
+    // 2. Auto-create Journal Entry for GL impact (Dr Material, Dr ITC, Cr AP)
+    const jeLines = await buildPurchaseBillJeLines(bill);
+    if (jeLines) {
+      const je = await JournalEntryService.createFromVoucher(jeLines, {
+        je_type:     "Purchase Invoice",
+        je_date:     bill.doc_date,
+        narration:   `Purchase Bill ${bill.doc_id} — ${bill.vendor_name}${bill.narration ? ": " + bill.narration : ""}`,
+        tender_id:   bill.tender_id,
+        tender_ref:  bill.tender_ref,
+        tender_name: bill.tender_name,
+        source_ref:  bill._id,
+        source_type: "PurchaseBill",
+        source_no:   bill.doc_id,
+      });
+      if (je) {
+        await PurchaseBillModel.findByIdAndUpdate(bill._id, { je_ref: je._id, je_no: je.je_no });
+      }
+    }
 
     return bill;
   }

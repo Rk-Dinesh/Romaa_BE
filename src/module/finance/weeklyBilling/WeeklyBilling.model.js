@@ -82,6 +82,27 @@ const WeeklyBillingSchema = new mongoose.Schema(
         paid_date: { type: Date,   default: null },
       },
     ],
+
+    // ── CN/DN adjustment tracking ───────────────────────────────────────────
+    // Populated automatically when a CreditNote/DebitNote "Against Bill" is approved.
+    cn_amount: { type: Number, default: 0 },  // cumulative Credit Note adjustments
+    dn_amount: { type: Number, default: 0 },  // cumulative Debit Note adjustments
+    adjustment_refs: [
+      {
+        adj_type:     { type: String, enum: ["CreditNote", "DebitNote"] },
+        adj_ref:      { type: mongoose.Schema.Types.ObjectId, default: null },
+        adj_no:       { type: String, default: "" },
+        adj_amt:      { type: Number, default: 0 },
+        adj_date:     { type: Date,   default: null },
+      },
+    ],
+    // balance_due = (net_payable || total_amount) - amount_paid - cn_amount - dn_amount
+    balance_due: { type: Number, default: 0 },
+
+    // ── Journal Entry link ────────────────────────────────────────────────────
+    // Set on approval — points to the auto-created double-entry JournalEntry.
+    je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
+    je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
   },
   { timestamps: true }
 );
@@ -90,15 +111,21 @@ const WeeklyBillingSchema = new mongoose.Schema(
 // Mar 2026 → "25-26"   Apr 2026 → "26-27"
 // Computed from bill_date (or current date) so the frontend never needs to send it.
 WeeklyBillingSchema.pre("save", function (next) {
-  if (this.fin_year) return next(); // already set (e.g. re-save)
+  const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
-  const ref  = this.bill_date ? new Date(this.bill_date) : new Date();
-  const yr   = ref.getFullYear();
-  const mo   = ref.getMonth() + 1; // 1-12
+  // Auto fin_year from bill_date
+  if (!this.fin_year) {
+    const ref  = this.bill_date ? new Date(this.bill_date) : new Date();
+    const yr   = ref.getFullYear();
+    const mo   = ref.getMonth() + 1; // 1-12
+    this.fin_year = mo >= 4
+      ? `${String(yr).slice(2)}-${String(yr + 1).slice(2)}`   // "25-26"
+      : `${String(yr - 1).slice(2)}-${String(yr).slice(2)}`;  // "24-25"
+  }
 
-  this.fin_year = mo >= 4
-    ? `${String(yr).slice(2)}-${String(yr + 1).slice(2)}`   // "25-26"
-    : `${String(yr - 1).slice(2)}-${String(yr).slice(2)}`;  // "24-25"
+  // balance_due = billTotal - payments - CN/DN adjustments
+  const billTotal = this.net_payable || this.total_amount || 0;
+  this.balance_due = r2(billTotal - (this.amount_paid || 0) - (this.cn_amount || 0) - (this.dn_amount || 0));
 
   next();
 });

@@ -73,6 +73,11 @@ const ReceiptVoucherSchema = new mongoose.Schema(
       enum: ["draft", "pending", "approved"],
       default: "pending",
     },
+
+    // ── Journal Entry link ────────────────────────────────────────────────
+    // Set on approval — points to the auto-created double-entry JournalEntry.
+    je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
+    je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
   },
   { timestamps: true }
 );

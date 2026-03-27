@@ -143,6 +143,27 @@ const PurchaseBillSchema = new mongoose.Schema(
         paid_date: { type: Date,   default: null },
       },
     ],
+
+    // ── CN/DN adjustment tracking ───────────────────────────────────────────
+    // Populated automatically when a CreditNote/DebitNote "Against Bill" is approved.
+    cn_amount: { type: Number, default: 0 },  // cumulative Credit Note adjustments
+    dn_amount: { type: Number, default: 0 },  // cumulative Debit Note adjustments
+    adjustment_refs: [
+      {
+        adj_type:     { type: String, enum: ["CreditNote", "DebitNote"] },
+        adj_ref:      { type: mongoose.Schema.Types.ObjectId, default: null },
+        adj_no:       { type: String, default: "" },   // CN/DN number snapshot
+        adj_amt:      { type: Number, default: 0 },
+        adj_date:     { type: Date,   default: null },
+      },
+    ],
+    // balance_due = net_amount - amount_paid - cn_amount - dn_amount
+    balance_due: { type: Number, default: 0 },
+
+    // ── Journal Entry link ────────────────────────────────────────────────────
+    // Set on approval — points to the auto-created double-entry JournalEntry.
+    je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
+    je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
   },
   { timestamps: true }
 );
@@ -221,6 +242,11 @@ PurchaseBillSchema.pre("save", function (next) {
     d.setDate(d.getDate() + this.credit_days);
     this.due_date = d;
   }
+
+  // 8. balance_due = net_amount - payments - CN/DN adjustments
+  this.balance_due = round2(
+    this.net_amount - (this.amount_paid || 0) - (this.cn_amount || 0) - (this.dn_amount || 0)
+  );
 
   next();
 });

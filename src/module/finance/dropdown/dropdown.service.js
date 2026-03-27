@@ -148,7 +148,7 @@ class DropdownService {
           "doc_id doc_date invoice_no due_date " +
           "vendor_id vendor_name " +
           "tender_id tender_name " +
-          "net_amount amount_paid paid_status"
+          "net_amount amount_paid cn_amount dn_amount paid_status"
         )
         .sort({ due_date: 1, doc_date: 1 })
         .lean();
@@ -167,8 +167,10 @@ class DropdownService {
           tender_id:     b.tender_id,
           tender_name:   b.tender_name,
           bill_amount:   b.net_amount,
-          amount_paid:   b.amount_paid   || 0,
-          balance_due:   r2(b.net_amount - (b.amount_paid || 0)),
+          amount_paid:   b.amount_paid || 0,
+          cn_amount:     b.cn_amount   || 0,
+          dn_amount:     b.dn_amount   || 0,
+          balance_due:   r2(b.net_amount - (b.amount_paid || 0) - (b.cn_amount || 0) - (b.dn_amount || 0)),
           paid_status:   b.paid_status,
         });
       }
@@ -187,7 +189,7 @@ class DropdownService {
           "bill_no bill_date from_date to_date " +
           "contractor_id contractor_name " +
           "tender_id " +
-          "net_payable total_amount amount_paid paid_status"
+          "net_payable total_amount amount_paid cn_amount dn_amount paid_status"
         )
         .sort({ bill_date: 1 })
         .lean();
@@ -208,7 +210,9 @@ class DropdownService {
           tender_name:   "",
           bill_amount:   billAmt,
           amount_paid:   b.amount_paid || 0,
-          balance_due:   r2(billAmt - (b.amount_paid || 0)),
+          cn_amount:     b.cn_amount   || 0,
+          dn_amount:     b.dn_amount   || 0,
+          balance_due:   r2(billAmt - (b.amount_paid || 0) - (b.cn_amount || 0) - (b.dn_amount || 0)),
           paid_status:   b.paid_status,
         });
       }

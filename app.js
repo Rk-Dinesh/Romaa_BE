@@ -212,6 +212,7 @@ app.use('/companybankaccount', companyBankAccountRouter)
 app.use('/companycashaccount', companyCashAccountRouter)
 app.use('/journalentry', journalEntryRouter)
 app.use('/finance-dropdown', financeDropdownRouter)
+app.use('/finance', financeDropdownRouter)        // alias: /finance/payable-bills, /finance/parties/:tenderId, etc.
 app.use('/banktransfer', bankTransferRouter)
 
 

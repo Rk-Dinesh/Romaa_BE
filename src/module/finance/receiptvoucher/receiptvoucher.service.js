@@ -3,6 +3,7 @@ import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -230,6 +231,21 @@ class ReceiptVoucherService {
         debit_amt:    saved.amount,
         credit_amt:   0,
       }]);
+
+      const apCode = await JournalEntryService.getSupplierAccountCode(saved.supplier_type, saved.supplier_id);
+      if (apCode && saved.bank_account_code) {
+        const jeLines = [
+          { account_code: saved.bank_account_code, dr_cr: "Dr", debit_amt: saved.amount, credit_amt: 0, narration: "Receipt — bank credit" },
+          { account_code: apCode,                  dr_cr: "Cr", debit_amt: 0, credit_amt: saved.amount, narration: `Refund/return from ${saved.supplier_name}` },
+        ];
+        const je = await JournalEntryService.createFromVoucher(jeLines, {
+          je_type: "Receipt", je_date: saved.rv_date,
+          narration: `Receipt Voucher ${saved.rv_no} — ${saved.supplier_name}`,
+          tender_id: saved.tender_id, tender_ref: saved.tender_ref, tender_name: saved.tender_name,
+          source_ref: saved._id, source_type: "ReceiptVoucher", source_no: saved.rv_no,
+        });
+        if (je) await ReceiptVoucherModel.findByIdAndUpdate(saved._id, { je_ref: je._id, je_no: je.je_no });
+      }
     }
 
     return saved;
@@ -282,15 +298,41 @@ class ReceiptVoucherService {
     rv.status = "approved";
     await rv.save();
 
+    // 1. Post to supplier sub-ledger (Dr entry — reduces supplier balance)
     await postToLedger(rv);
 
-    // Increase the receiving bank account's opening_balance in AccountTree
+    // 2. Increase the receiving bank account balance in AccountTree
     // Receipt in = Dr to bank account (Dr normal Asset → balance increases)
     await AccountTreeService.applyBalanceLines([{
       account_code: rv.bank_account_code,
       debit_amt:    rv.amount,
       credit_amt:   0,
     }]);
+
+    // 3. Auto-create Journal Entry:
+    // Dr bank account           = amount
+    // Cr supplier AP account    = amount
+    const apCode = await JournalEntryService.getSupplierAccountCode(rv.supplier_type, rv.supplier_id);
+    if (apCode && rv.bank_account_code) {
+      const jeLines = [
+        { account_code: rv.bank_account_code, dr_cr: "Dr", debit_amt: rv.amount, credit_amt: 0, narration: "Receipt — bank credit" },
+        { account_code: apCode,               dr_cr: "Cr", debit_amt: 0, credit_amt: rv.amount, narration: `Refund/return from ${rv.supplier_name}` },
+      ];
+      const je = await JournalEntryService.createFromVoucher(jeLines, {
+        je_type:     "Receipt",
+        je_date:     rv.rv_date,
+        narration:   `Receipt Voucher ${rv.rv_no} — ${rv.supplier_name}${rv.narration ? ": " + rv.narration : ""}`,
+        tender_id:   rv.tender_id,
+        tender_ref:  rv.tender_ref,
+        tender_name: rv.tender_name,
+        source_ref:  rv._id,
+        source_type: "ReceiptVoucher",
+        source_no:   rv.rv_no,
+      });
+      if (je) {
+        await ReceiptVoucherModel.findByIdAndUpdate(rv._id, { je_ref: je._id, je_no: je.je_no });
+      }
+    }
 
     return rv;
   }

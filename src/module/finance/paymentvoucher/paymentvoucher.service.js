@@ -5,6 +5,7 @@ import LedgerService from "../ledger/ledger.service.js";
 import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
 import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -155,15 +156,21 @@ async function markBillsSettled(pv) {
     // Accumulate paid amount
     bill.amount_paid = Math.round(((bill.amount_paid || 0) + ref.settled_amt) * 100) / 100;
 
-    // Recalculate paid_status against the bill's payable total
+    // Recalculate paid_status: payments + CN/DN adjustments vs bill total
     const billTotal = ref.bill_type === "WeeklyBilling"
       ? (bill.net_payable || bill.total_amount)
       : bill.net_amount;
 
-    if (bill.amount_paid >= billTotal) {
+    const totalSettled = Math.round(
+      ((bill.amount_paid || 0) + (bill.cn_amount || 0) + (bill.dn_amount || 0)) * 100
+    ) / 100;
+
+    if (totalSettled >= billTotal) {
       bill.paid_status = "paid";
-    } else {
+    } else if (totalSettled > 0) {
       bill.paid_status = "partial";
+    } else {
+      bill.paid_status = "unpaid";
     }
 
     await bill.save();
@@ -298,6 +305,26 @@ class PaymentVoucherService {
         debit_amt:    0,
         credit_amt:   saved.amount,
       }]);
+
+      const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
+      const apCode = await JournalEntryService.getSupplierAccountCode(saved.supplier_type, saved.supplier_id);
+      if (apCode && saved.bank_account_code) {
+        const tdsAmt   = r2(saved.tds_amt || 0);
+        const grossAmt = r2(saved.gross_amount || saved.amount);
+        const netAmt   = r2(saved.amount);
+        const jeLines  = [
+          { account_code: apCode, dr_cr: "Dr", debit_amt: grossAmt, credit_amt: 0, narration: `Payment to ${saved.supplier_name}` },
+        ];
+        if (tdsAmt > 0) jeLines.push({ account_code: "2140", dr_cr: "Cr", debit_amt: 0, credit_amt: tdsAmt, narration: `TDS deducted (${saved.tds_section})` });
+        jeLines.push({ account_code: saved.bank_account_code, dr_cr: "Cr", debit_amt: 0, credit_amt: netAmt, narration: "Bank payment" });
+        const je = await JournalEntryService.createFromVoucher(jeLines, {
+          je_type: "Payment", je_date: saved.pv_date,
+          narration: `Payment Voucher ${saved.pv_no} — ${saved.supplier_name}`,
+          tender_id: saved.tender_id, tender_ref: saved.tender_ref, tender_name: saved.tender_name,
+          source_ref: saved._id, source_type: "PaymentVoucher", source_no: saved.pv_no,
+        });
+        if (je) await PaymentVoucherModel.findByIdAndUpdate(saved._id, { je_ref: je._id, je_no: je.je_no });
+      }
     }
 
     return saved;
@@ -350,19 +377,52 @@ class PaymentVoucherService {
     pv.status = "approved";
     await pv.save();
 
-    // Post to supplier ledger (Dr entry — clears payable)
+    // 1. Post to supplier sub-ledger (Dr entry — clears payable)
     await postToLedger(pv);
 
-    // Update every referenced bill with this PV's payment details
+    // 2. Update every referenced bill with this PV's payment details
     await markBillsSettled(pv);
 
-    // Reduce the paying bank account's opening_balance in AccountTree
+    // 3. Reduce the paying bank account balance in AccountTree
     // Payment out = Cr to bank account (Dr normal Asset → balance decreases)
     await AccountTreeService.applyBalanceLines([{
       account_code: pv.bank_account_code,
       debit_amt:    0,
       credit_amt:   pv.amount,
     }]);
+
+    // 4. Auto-create Journal Entry:
+    // Dr supplier AP account  = gross_amount
+    // Cr TDS Payable (2140)   = tds_amt      [if > 0]
+    // Cr bank account         = amount (net)
+    const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
+    const apCode = await JournalEntryService.getSupplierAccountCode(pv.supplier_type, pv.supplier_id);
+    if (apCode && pv.bank_account_code) {
+      const tdsAmt     = r2(pv.tds_amt || 0);
+      const grossAmt   = r2(pv.gross_amount || pv.amount);
+      const netAmt     = r2(pv.amount);
+
+      const jeLines = [
+        { account_code: apCode, dr_cr: "Dr", debit_amt: grossAmt, credit_amt: 0, narration: `Payment to ${pv.supplier_name}` },
+      ];
+      if (tdsAmt > 0) jeLines.push({ account_code: "2140", dr_cr: "Cr", debit_amt: 0, credit_amt: tdsAmt, narration: `TDS deducted (${pv.tds_section})` });
+      jeLines.push({ account_code: pv.bank_account_code, dr_cr: "Cr", debit_amt: 0, credit_amt: netAmt, narration: "Bank payment" });
+
+      const je = await JournalEntryService.createFromVoucher(jeLines, {
+        je_type:     "Payment",
+        je_date:     pv.pv_date,
+        narration:   `Payment Voucher ${pv.pv_no} — ${pv.supplier_name}${pv.narration ? ": " + pv.narration : ""}`,
+        tender_id:   pv.tender_id,
+        tender_ref:  pv.tender_ref,
+        tender_name: pv.tender_name,
+        source_ref:  pv._id,
+        source_type: "PaymentVoucher",
+        source_no:   pv.pv_no,
+      });
+      if (je) {
+        await PaymentVoucherModel.findByIdAndUpdate(pv._id, { je_ref: je._id, je_no: je.je_no });
+      }
+    }
 
     return pv;
   }
