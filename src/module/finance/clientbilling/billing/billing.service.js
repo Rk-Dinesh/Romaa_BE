@@ -1,7 +1,7 @@
 import BillingModel from "./billing.model.js";
 import BidModel from "../../../tender/bid/bid.model.js";
 import TenderModel from "../../../tender/tender/tender.model.js";
-import LedgerService from "../../../finance/ledger/ledger.service.js";
+import LedgerService from "../../ledger/ledger.service.js";
 import mongoose from "mongoose";
 import NotificationService from "../../../notifications/notification.service.js";
 

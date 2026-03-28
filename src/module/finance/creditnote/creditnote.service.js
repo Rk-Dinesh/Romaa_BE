@@ -4,7 +4,6 @@ import ContractorModel from "../../hr/contractors/contractor.model.js";
 import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
 import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 import LedgerService from "../ledger/ledger.service.js";
-import AccountTreeService from "../accounttree/accounttree.service.js";
 
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -15,18 +14,6 @@ function currentFY() {
   const year  = now.getFullYear();
   const start = month >= 4 ? year : year - 1;
   return `${String(start).slice(-2)}-${String(start + 1).slice(-2)}`; // "25-26"
-}
-
-// Validate that entries balance: sum of debits must equal sum of credits
-function validateEntriesBalance(entries) {
-  if (!entries || entries.length === 0) return;
-  const totalDr = entries.reduce((s, e) => s + (Number(e.debit_amt)  || 0), 0);
-  const totalCr = entries.reduce((s, e) => s + (Number(e.credit_amt) || 0), 0);
-  if (Math.round((totalDr - totalCr) * 100) !== 0) {
-    throw new Error(
-      `Entry lines do not balance: total debits (${totalDr.toFixed(2)}) ≠ total credits (${totalCr.toFixed(2)})`
-    );
-  }
 }
 
 // ── Resolve bill ObjectId from bill_no string ─────────────────────────────────
@@ -118,7 +105,7 @@ function buildDoc(payload, cn_no) {
 
     amount:         Number(payload.amount)         || 0,
     round_off:      Number(payload.round_off)      || 0,
-    taxable_amount: Number(payload.taxable_amount) || Number(payload.amount) || 0,
+    taxable_amount: Number(payload.taxable_amount) || 0,
     cgst_pct,
     sgst_pct,
     igst_pct,
@@ -155,21 +142,6 @@ async function postCNToLedger(cn) {
     debit_amt:     cn.amount,
     credit_amt:    0,
   });
-}
-
-// ── Update AccountTree balances from entry lines ──────────────────────────────
-// Each entry line with an account_code updates that account's available_balance.
-async function updateAccountBalances(entries) {
-  const lines = (entries || [])
-    .filter((e) => e.account_code)
-    .map((e) => ({
-      account_code: e.account_code,
-      debit_amt:    Number(e.debit_amt)  || 0,
-      credit_amt:   Number(e.credit_amt) || 0,
-    }));
-  if (lines.length > 0) {
-    await AccountTreeService.applyBalanceLines(lines);
-  }
 }
 
 // ── Adjust linked bill when CN is "Against Bill" ──────────────────────────────
@@ -323,8 +295,6 @@ class CreditNoteService {
     if (payload.bill_no && !payload.bill_ref) {
       payload.bill_ref = await resolveBillRef(payload.bill_no, payload.supplier_type);
     }
-
-    validateEntriesBalance(payload.entries);
 
     const saved = await CreditNoteModel.create(buildDoc(payload, payload.cn_no));
 

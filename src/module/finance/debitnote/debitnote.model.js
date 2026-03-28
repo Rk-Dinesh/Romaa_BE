@@ -74,14 +74,7 @@ const DebitNoteSchema = new mongoose.Schema(
     total_tax:  { type: Number, default: 0 }, // computed by pre-save
 
     // ── Double-entry lines ────────────────────────────────────────────────
-    entries: {
-      type: [EntryLineSchema],
-      validate: {
-        validator: (val) => Array.isArray(val) && val.length > 0,
-        message: "A debit note must have at least one entry line",
-      },
-      default: [],
-    },
+    entries: { type: [EntryLineSchema], default: [] },
 
     narration: { type: String, default: "" },
 

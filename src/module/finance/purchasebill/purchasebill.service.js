@@ -79,14 +79,12 @@ async function postToLedger(bill) {
   });
 }
 
-// ── Mark linked GRN transactions as billed ────────────────────────────────────
-
-async function markGRNsBilled(line_items, doc_id) {
-  if (!line_items || line_items.length === 0) return;
-
+// ── Build GRN filter from line items ─────────────────────────────────────────
+function buildGRNFilter(line_items) {
+  if (!line_items || line_items.length === 0) return null;
   const refs  = line_items.map((r) => r.grn_ref).filter(Boolean);
   const names = line_items.map((r) => r.grn_no).filter(Boolean);
-  if (refs.length === 0 && names.length === 0) return;
+  if (refs.length === 0 && names.length === 0) return null;
 
   const filter = { type: "IN" };
   if (refs.length && names.length) {
@@ -96,10 +94,26 @@ async function markGRNsBilled(line_items, doc_id) {
   } else {
     filter.grn_bill_no = { $in: names };
   }
+  return filter;
+}
 
+// ── Mark linked GRN transactions as billed (called on approval) ──────────────
+async function markGRNsBilled(line_items, doc_id) {
+  const filter = buildGRNFilter(line_items);
+  if (!filter) return;
   await MaterialTransactionModel.updateMany(
     filter,
     { $set: { is_bill_generated: true, purchase_bill_id: doc_id } }
+  );
+}
+
+// ── Unmark linked GRN transactions (called on delete of pending bill) ─────────
+async function unmarkGRNsBilled(line_items) {
+  const filter = buildGRNFilter(line_items);
+  if (!filter) return;
+  await MaterialTransactionModel.updateMany(
+    filter,
+    { $set: { is_bill_generated: false, purchase_bill_id: "" } }
   );
 }
 
@@ -312,10 +326,12 @@ class PurchaseBillService {
     if (!bill) throw new Error("Purchase bill not found");
     if (bill.status === "approved") throw new Error("Cannot edit an approved purchase bill");
 
-    const allowed = ["doc_date", "invoice_no", "invoice_date", "credit_days", "narration", "line_items", "additional_charges", "tax_mode", "place_of_supply"];
+    const allowed = ["doc_date", "invoice_no", "invoice_date", "credit_days", "narration", "line_items", "additional_charges", "place_of_supply"];
     for (const field of allowed) {
       if (payload[field] !== undefined) bill[field] = payload[field];
     }
+    // Always derive tax_mode from place_of_supply — never accept it from the client directly
+    bill.tax_mode = bill.place_of_supply === "InState" ? "instate" : "otherstate";
 
     await bill.save(); // triggers pre-save hook — recomputes all tax/total fields
     return bill;
@@ -326,6 +342,8 @@ class PurchaseBillService {
     const bill = await PurchaseBillModel.findById(id);
     if (!bill) throw new Error("Purchase bill not found");
     if (bill.status === "approved") throw new Error("Cannot delete an approved purchase bill");
+    // Release GRN locks so they can be picked by a new bill
+    await unmarkGRNsBilled(bill.line_items);
     await bill.deleteOne();
     return { deleted: true, doc_id: bill.doc_id };
   }
@@ -347,18 +365,17 @@ class PurchaseBillService {
     payload.vendor_name     = vendor.company_name;
     payload.vendor_gstin    = vendor.gstin    || "";
     payload.place_of_supply = vendor.place_of_supply || "InState";
+    payload.tax_mode        = payload.place_of_supply === "InState" ? "instate" : "otherstate";
     // Auto-fill credit_days from vendor master if not explicitly provided
     if (!payload.credit_days) payload.credit_days = vendor.credit_day || 0;
 
     // create() triggers the pre-save hook which computes all derived fields
     const saved = await PurchaseBillModel.create(buildDoc(payload, payload.doc_id));
 
-    // Mark every linked GRN transaction as billed
-    await markGRNsBilled(saved.line_items, saved.doc_id);
-
-    // Auto-post to ledger if created directly as approved
+    // Auto-approve flow if created directly as approved
     if (saved.status === "approved") {
       await postToLedger(saved);
+      await markGRNsBilled(saved.line_items, saved.doc_id);
     }
 
     return saved;
@@ -373,8 +390,11 @@ class PurchaseBillService {
     bill.status = "approved";
     await bill.save();
 
-    // Post to supplier sub-ledger (Cr: liability created — payable to vendor)
+    // 1. Post Cr entry to vendor sub-ledger (liability created — payable to vendor)
     await postToLedger(bill);
+
+    // 2. Lock all linked GRNs — mark them as billed so they can't be picked again
+    await markGRNsBilled(bill.line_items, bill.doc_id);
 
     return bill;
   }

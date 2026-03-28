@@ -34,9 +34,9 @@ import siteoverheadrouter from './src/module/tender/siteoverheads/siteoverhead.r
 import rateanalysisquantitesrouter from './src/module/tender/rateanalyisquantites/rateanalysisquantites.route.js';
 import scheduleLiteRouter from './src/module/project/scheduleNew/schedulelite/schedulelite.route.js';
 import workOrderDoneRouter from './src/module/site/workorderdone/workorderdone.route.js';
-import billingEstimateRouter from './src/module/project/clientbilling/estimate/billingestimate.route.js';
-import billingRouter from './src/module/project/clientbilling/billing/billing.router.js';
-import steelestimaterouter from './src/module/project/clientbilling/steelestimate/steelestimate.route.js';
+import billingEstimateRouter from './src/module/finance/clientbilling/estimate/billingestimate.route.js';
+import billingRouter from './src/module/finance/clientbilling/billing/billing.router.js';
+import steelestimaterouter from './src/module/finance/clientbilling/steelestimate/steelestimate.route.js';
 import machinerylogrouter from './src/module/assets/machinerylogs/machinerylogs.route.js';
 import AttendanceRoute from './src/module/hr/userAttendance/userAttendance.route.js';
 import CalendarRoute from './src/module/hr/holidays/holiday.route.js';

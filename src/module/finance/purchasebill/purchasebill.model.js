@@ -176,7 +176,16 @@ const PurchaseBillSchema = new mongoose.Schema(
 
 PurchaseBillSchema.pre("save", function (next) {
   // 1. Per-item tax amounts derived from pct × gross_amt
+  //    Enforce tax_mode: instate → CGST+SGST only (zero IGST)
+  //                      otherstate → IGST only (zero CGST+SGST)
+  const isOtherState = this.tax_mode === "otherstate";
   for (const item of this.line_items) {
+    if (isOtherState) {
+      item.cgst_pct = 0;
+      item.sgst_pct = 0;
+    } else {
+      item.igst_pct = 0;
+    }
     item.cgst_amt = round2(item.gross_amt * item.cgst_pct / 100);
     item.sgst_amt = round2(item.gross_amt * item.sgst_pct / 100);
     item.igst_amt = round2(item.gross_amt * item.igst_pct / 100);
