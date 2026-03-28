@@ -1,148 +1,250 @@
 import mongoose from "mongoose";
 import BillingEstimateModel from "./billingestimate.model.js";
-import BillingModel from "../clientbilling/clientbilling.model.js";
+import BillingService from "../clientbilling/clientbilling.service.js";
 
 class BillingEstimateService {
 
-  // ── Hierarchy Level Detector ──────────────────────────────────────────────
-  static getLevelFromCode(code) {
-    if (!code) return 0;
-    code = code.toString().trim();
-    if (/^Day/i.test(code))                   return 1.5; // Day-1
-    if (/^[A-Z]{2,}[\s\-_]?\d+$/i.test(code)) return 1;  // ID001
-    if (/^[A-Z]$/i.test(code))                return 2;  // A, B
-    if (/^\d+(\.\d+)?$/.test(code))           return 3;  // 1, 1.1
-    return 0;
-  }
+    // --- 1. Hierarchy Level Detector ---
+    static getLevelFromCode(code) {
+        if (!code) return 0;
+        code = code.toString().trim();
 
-  // ── Upload CSV estimate and link to an existing bill ──────────────────────
-  // bill_id is REQUIRED — must match an existing client bill (CB/25-26/0001)
-  // abstract_name differentiates estimate types for the same bill
-  static async bulkInsert(csvRows, tender_id, bill_id, abstract_name, created_by_user) {
-    if (!bill_id) throw new Error("bill_id is required — create a Client Bill first, then upload its estimate");
-    if (!abstract_name) throw new Error("abstract_name is required (e.g. 'Abstract Estimate', 'Steel Estimate')");
+        if (/^Day/i.test(code)) return 1.5; // Level 1.5: Day-1
+        if (/^[A-Z]{2,}[\s\-_]?\d+$/i.test(code)) return 1; // Level 1: ID001
+        if (/^[A-Z]$/i.test(code)) return 2; // Level 2: A, B
+        if (/^\d+(\.\d+)?$/.test(code)) return 3; // Level 3: 1, 1.1
 
-    // Verify the bill exists and belongs to this tender
-    const bill = await BillingModel.findOne({ bill_id, tender_id }).lean();
-    if (!bill) {
-      throw new Error(`Bill '${bill_id}' not found for tender '${tender_id}'. Create the bill first.`);
+        return 0;
     }
 
+static async bulkInsert(csvRows, tender_id, bill_id, user_sequence = null, abstract_name, created_by_user) {
     const session = await mongoose.startSession();
     session.startTransaction();
 
     try {
-      // ── CSV Processing ────────────────────────────────────────────────────
-      const getValue = (row, key) =>
-        (row[key] || row[key.toLowerCase()] || row[key.toUpperCase()] || "").toString().trim();
+        // --- Helper 1: Case-Insensitive Data Fetcher ---
+        const getValue = (row, key) => (row[key] || row[key.toLowerCase()] || row[key.toUpperCase()] || "").toString().trim();
 
-      const safeNum = (val) => {
-        if (!val || val === "-" || val === "" || val === ".") return 0;
-        const n = Number(val);
-        return isNaN(n) ? 0 : n;
-      };
+        // --- Helper 2: Safe Number Parser ---
+        const safeParseFloat = (val) => {
+            if (!val || val === "-" || val === "" || val === ".") return 0;
+            const num = Number(val);
+            return isNaN(num) ? 0 : num;
+        };
 
-      const items = [];
-      let currentWorkItem = null;
-      let currentDetail   = null;
-      let activeDay       = "";
+        // --- Logic: Bill ID & Sequence & Target Document ---
+        // Get the last sequence to determine auto-increment if needed
+        const lastBill = await BillingEstimateModel.findOne({ tender_id })
+            .sort({ bill_sequence: -1 })
+            .session(session);
 
-      for (const row of csvRows) {
-        const code = getValue(row, "Code");
-        if (!code) continue;
+        const lastSequence = lastBill ? lastBill.bill_sequence : 0;
 
-        const level = this.getLevelFromCode(code);
-        const desc  = getValue(row, "Description");
-        const unit  = getValue(row, "Unit");
+        let targetDoc = null; 
+        let final_sequence = 0;
+        let final_bill_id = "";
 
-        const nos1 = getValue(row, "Nos1");
-        const x    = getValue(row, "X");
-        const nos2 = getValue(row, "Nos2");
-        const nos  = nos2 ? `${nos1}${x}${nos2}` : nos1;
+            // --- SCENARIO 1: Abstract Estimate ---
+        if (abstract_name === "Abstract Estimate") {
+            
+            // Step A: If user_sequence is provided, try to find the existing document
+            if (user_sequence !== null) {
+                targetDoc = await BillingEstimateModel.findOne({ 
+                    tender_id, 
+                    bill_sequence: user_sequence 
+                }).session(session);
+            }
 
-        const length    = safeNum(getValue(row, "Length"));
-        const breadth   = safeNum(getValue(row, "Breadth"));
-        const depth     = safeNum(getValue(row, "Depth"));
-        const qty       = safeNum(getValue(row, "Quantity"));
-        const mb_book_ref = getValue(row, "Mbook");
+            // Step B: Decision - Update Existing OR Create New
+            if (targetDoc) {
+                // --- UPDATE EXISTING ---
+                // Document found, we will overwrite its items below
+                final_sequence = targetDoc.bill_sequence;
+                final_bill_id = targetDoc.bill_id;
+            } else {
+                // --- CREATE NEW ---
+                // Triggered if: 
+                // 1. user_sequence was null (User wants new)
+                // 2. OR user_sequence was provided but not found in DB
+                
+                final_sequence = lastSequence + 1;
+                final_bill_id = `RA-${String(final_sequence).padStart(2, '0')}`;
 
-        if (level === 1.5) { activeDay = code; continue; }
-
-        if (level === 1) {
-          currentWorkItem = { item_code: code, item_name: desc, day: activeDay, unit, quantity: qty, mb_book_ref, details: [] };
-          items.push(currentWorkItem);
-          currentDetail = null;
-        } else if (level === 2) {
-          if (!currentWorkItem) continue;
-          currentDetail = { description: desc, nos, length, breadth, depth, quantity: qty, details: [] };
-          currentWorkItem.details.push(currentDetail);
-        } else if (level === 3) {
-          const sub = { description: desc, nos, length, breadth, depth, quantity: qty };
-          if (currentDetail) {
-            currentDetail.details.push(sub);
-          } else if (currentWorkItem) {
-            currentDetail = { description: "General", details: [] };
-            currentWorkItem.details.push(currentDetail);
-            currentDetail.details.push(sub);
-          }
+                targetDoc = new BillingEstimateModel({
+                    tender_id,
+                    bill_id: final_bill_id,
+                    bill_sequence: final_sequence,
+                    abstract_name: abstract_name,
+                    created_by_user: created_by_user || "ADMIN",
+                    items: []
+                });
+            }
         }
-      }
 
-      // ── Upsert estimate document ──────────────────────────────────────────
-      let targetDoc = await BillingEstimateModel.findOne({
-        tender_id,
-        bill_id,
-        abstract_name,
-      }).session(session);
+        // --- SCENARIO 2: Other Estimates (Detailed, etc.) ---
 
-      if (targetDoc) {
-        targetDoc.items = items;
+        else {
+            // Validation: Must have Abstract Estimate first to attach details to it
+            if (lastSequence === 0) {
+                throw new Error("No existing records found. Please upload 'Abstract Estimate' first.");
+            }
+
+            // Validation: User Sequence Mandatory for non-Abstract uploads
+            if (user_sequence === null) {
+                throw new Error("Please provide user sequence to link this estimate.");
+            }
+
+            // 1. Check if the Parent Abstract Estimate exists
+            const parentAbstract = await BillingEstimateModel.findOne({ 
+                tender_id, 
+                bill_sequence: user_sequence 
+            }).session(session);
+
+            if (!parentAbstract) {
+                throw new Error(`Abstract Estimate with sequence ${user_sequence} does not exist.`);
+            }
+
+            // 2. Check if THIS specific estimate type already exists for this sequence
+            targetDoc = await BillingEstimateModel.findOne({ 
+                tender_id, 
+                bill_sequence: user_sequence, 
+                abstract_name: abstract_name 
+            }).session(session);
+
+            if (!targetDoc) {
+                // Create New Document linked to the same Bill ID/Sequence
+                final_sequence = parentAbstract.bill_sequence;
+                final_bill_id = parentAbstract.bill_id;
+
+                targetDoc = new BillingEstimateModel({
+                    tender_id,
+                    bill_id: final_bill_id,
+                    bill_sequence: final_sequence,
+                    abstract_name: abstract_name,
+                    created_by_user: created_by_user || "ADMIN",
+                    items: []
+                });
+            } 
+            // Else: targetDoc exists, we will update it below
+        }
+
+        // --- CSV Processing (Common for both scenarios) ---
+
+        const items = [];
+        let currentWorkItem = null;
+        let currentDetail = null;
+        let activeDay = ""; 
+
+        for (const row of csvRows) {
+            const code = getValue(row, "Code");
+            if (!code) continue;
+
+            const level = this.getLevelFromCode(code);
+            const desc = getValue(row, "Description");
+            const unit = getValue(row, "Unit");
+
+            const nos1 = getValue(row, "Nos1");
+            const x = getValue(row, "X");
+            const nos2 = getValue(row, "Nos2");
+            const nos = nos2 ? `${nos1}${x}${nos2}` : nos1;
+
+            const length = safeParseFloat(getValue(row, "Length"));
+            const breadth = safeParseFloat(getValue(row, "Breadth"));
+            const depth = safeParseFloat(getValue(row, "Depth"));
+            const qty = safeParseFloat(getValue(row, "Quantity"));
+            const mb_book_ref = getValue(row, "Mbook");
+
+            // --- Level 1.5: Day ---
+            if (level === 1.5) {
+                activeDay = code;
+                continue;
+            }
+
+            // --- Level 1: Root Item ---
+            if (level === 1) {
+                currentWorkItem = {
+                    item_code: code,
+                    item_name: desc,
+                    day: activeDay,
+                    unit: unit,
+                    quantity: qty,
+                    mb_book_ref: mb_book_ref || "",
+                    details: []
+                };
+                items.push(currentWorkItem);
+                currentDetail = null;
+            }
+            // --- Level 2: Sub-Group ---
+            else if (level === 2) {
+                if (!currentWorkItem) continue;
+                currentDetail = {
+                    description: desc,
+                    nos: nos,
+                    length, breadth, depth,
+                    quantity: qty,
+                    details: []
+                };
+                currentWorkItem.details.push(currentDetail);
+            }
+            // --- Level 3: Measurements ---
+            else if (level === 3) {
+                const subDetail = {
+                    description: desc,
+                    nos: nos,
+                    length, breadth, depth,
+                    quantity: qty
+                };
+
+                if (currentDetail) {
+                    currentDetail.details.push(subDetail);
+                } else if (currentWorkItem) {
+                    // Handle loose level 3 items by wrapping in a general container
+                    currentDetail = { description: "General", details: [] };
+                    currentWorkItem.details.push(currentDetail);
+                    currentDetail.details.push(subDetail);
+                }
+            }
+        }
+
+        // --- Update Items & Save ---
+        targetDoc.items = items; // Overwrite items list with new CSV data
         await targetDoc.save({ session });
-      } else {
-        targetDoc = new BillingEstimateModel({
-          tender_id,
-          bill_id,
-          bill_sequence:  bill.bill_sequence,
-          abstract_name,
-          created_by_user: created_by_user || "",
-          items,
-        });
-        await targetDoc.save({ session });
-      }
 
-      await session.commitTransaction();
-      session.endSession();
+        // --- TRIGGER BILL CREATION (Only for Abstract Estimate) ---
+        if (abstract_name === "Abstract Estimate") {
+            // Create a clean list (Level 1 items only) for the Bill Summary
+            const level1Items = items.map(({ details, ...rest }) => rest);
 
-      return {
-        success: true,
-        message: `'${abstract_name}' uploaded for bill ${bill_id}. Items: ${items.length}`,
-        data: targetDoc,
-      };
+            if (level1Items.length > 0) {
+                await BillingService.createBill({
+                    tender_id: tender_id,
+                    bill_sequence: targetDoc.bill_sequence, // Use the doc's sequence
+                    bill_id: targetDoc.bill_id,             // Use the doc's ID
+                    items: level1Items
+                });
+            }
+        }
+
+        await session.commitTransaction();
+        session.endSession();
+
+        return {
+            success: true,
+            message: `Successfully processed '${abstract_name}' as ${targetDoc.bill_id}. Items: ${items.length}`,
+            data: targetDoc,
+        };
 
     } catch (err) {
-      await session.abortTransaction();
-      session.endSession();
-      throw err;
+        await session.abortTransaction();
+        session.endSession();
+        throw err;
     }
-  }
+}
 
-  // ── Get a specific estimate document ─────────────────────────────────────
-  static async getDetailedBill(tender_id, bill_id, abstract_name, bill_sequence) {
-    return await BillingEstimateModel.findOne({
-      tender_id,
-      bill_id,
-      abstract_name,
-      bill_sequence: Number(bill_sequence),
-    }).lean();
-  }
-
-  // ── List all estimate documents for a bill ────────────────────────────────
-  static async getEstimatesForBill(tender_id, bill_id) {
-    return await BillingEstimateModel.find({ tender_id, bill_id })
-      .select("bill_id bill_sequence abstract_name createdAt")
-      .sort({ abstract_name: 1 })
-      .lean();
-  }
+    static async getDetailedBill(tender_id,bill_id,abstract_name,bill_sequence){
+        const doc = await BillingEstimateModel.findOne({ tender_id, bill_id, abstract_name,bill_sequence });
+        return doc;
+    }
 }
 
 export default BillingEstimateService;

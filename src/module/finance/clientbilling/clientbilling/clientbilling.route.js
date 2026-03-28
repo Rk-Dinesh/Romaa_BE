@@ -1,42 +1,24 @@
 import { Router } from "express";
-import multer from "multer";
+import { createBill, getHistory, getDetails, approveBill } from "./clientbilling.controller.js";
 import { verifyJWT, verifyPermission } from "../../../../common/Auth.middlware.js";
-import {
-  getNextBillId,
-  getList,
-  getHistory,
-  getBillById,
-  getDetails,
-  createBill,
-  updateBill,
-  deleteBill,
-  approveBill,
-  updateStatus,
-  uploadBillCSV,
-} from "./clientbilling.controller.js";
-
-const upload = multer({ dest: "uploads/" });
 
 const billingRouter = Router();
 
-const auth  = verifyJWT;
-const read  = verifyPermission("finance", "clientbilling", "read");
-const create = verifyPermission("finance", "clientbilling", "create");
-const edit  = verifyPermission("finance", "clientbilling", "edit");
-const del   = verifyPermission("finance", "clientbilling", "delete");
+// POST: Create a new bill (RA1, then RA2...)
+billingRouter.post('/api/create', createBill);
 
-billingRouter.get("/next-id",                         auth, read,   getNextBillId);
-billingRouter.get("/list",                            auth, read,   getList);
-billingRouter.get("/history/:tender_id",              auth, read,   getHistory);
-billingRouter.get("/details/:tender_id/:bill_id",     auth, read,   getDetails);
-billingRouter.get("/:id",                             auth, read,   getBillById);
+// GET: View list of all bills for a project (RA1, RA2, RA3...)
+billingRouter.get('/api/history/:tender_id', getHistory);
 
-billingRouter.post("/create",                         auth, create, createBill);
-billingRouter.post("/upload-csv",                     auth, create, upload.single("file"), uploadBillCSV);
-billingRouter.patch("/approve/:id",                   auth, edit,   approveBill);
-billingRouter.patch("/status/:id",                    auth, edit,   updateStatus);
-billingRouter.patch("/update/:id",                    auth, edit,   updateBill);
-billingRouter.delete("/delete/:id",                   auth, del,    deleteBill);
+// GET: View full details (items, measurements) of a specific bill
+billingRouter.get('/api/details/:tender_id/:bill_id', getDetails);
+
+// PATCH: Approve a bill — posts to client receivable ledger
+billingRouter.patch(
+  '/api/approve/:id',
+  verifyJWT,
+  verifyPermission("finance", "clientbilling", "edit"),
+  approveBill
+);
 
 export default billingRouter;
-

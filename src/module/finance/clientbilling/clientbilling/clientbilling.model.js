@@ -194,5 +194,5 @@ BillingSchema.pre("save", function (next) {
 BillingSchema.index({ client_id: 1, bill_date: -1 });
 BillingSchema.index({ status: 1, bill_date: -1 });
 
-const BillingModel = mongoose.model("billing", BillingSchema);
+const BillingModel = mongoose.model("clientbilling", BillingSchema);
 export default BillingModel;

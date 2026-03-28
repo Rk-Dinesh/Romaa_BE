@@ -7,6 +7,6 @@ const steelestimaterouter = Router();
 const upload = multer({ dest: "uploads/" });
 
 steelestimaterouter.post("/upload-csv", upload.single("file"), uploadBillingEstimateCSV);
-steelestimaterouter.get("/details/:tender_id/:bill_id/:abstract_name/:bill_sequence", getDetailedSteelEstimate);
+steelestimaterouter.get("/details/:tender_id/:bill_id/:abstract_name", getDetailedSteelEstimate);
 
 export default steelestimaterouter;

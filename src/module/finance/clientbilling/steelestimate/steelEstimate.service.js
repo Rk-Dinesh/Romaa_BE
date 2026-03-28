@@ -14,7 +14,7 @@ class SteelEstimateService {
         return 0;
     }
 
-    static async bulkInsert(csvRows, tender_id, bill_id, user_sequence, abstract_name, created_by_user) {
+    static async bulkInsert(csvRows, tender_id, bill_id, abstract_name, created_by_user) {
 
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -36,10 +36,9 @@ class SteelEstimateService {
 
             // Attempt to find exact match
             let targetDoc = await SteelEstimateModel.findOne({
-                tender_id: tender_id,
-                abstract_name: abstract_name,
-                bill_sequence: user_sequence,
-                bill_id: bill_id
+                tender_id,
+                bill_id,
+                abstract_name,
             }).session(session);
 
             if (targetDoc) {
@@ -51,10 +50,9 @@ class SteelEstimateService {
                 console.log(`No document found. Creating new for ${bill_id}...`);
 
                 targetDoc = new SteelEstimateModel({
-                    tender_id: tender_id,
-                    bill_id: bill_id,              // User provided
-                    bill_sequence: user_sequence,  // User provided
-                    abstract_name: abstract_name,  // User provided
+                    tender_id,
+                    bill_id,
+                    abstract_name,
                     created_by_user: created_by_user || "ADMIN",
                     items: []
                 });
@@ -159,9 +157,8 @@ class SteelEstimateService {
             throw err;
         }
     }
-    static async getDetailedSteelEstimate(tender_id, bill_id, abstract_name, bill_sequence) {
-        const doc = await SteelEstimateModel.findOne({ tender_id, bill_id, abstract_name, bill_sequence });
-        return doc;
+    static async getDetailedSteelEstimate(tender_id, bill_id, abstract_name) {
+        return await SteelEstimateModel.findOne({ tender_id, bill_id, abstract_name }).lean();
     }
 }
 
