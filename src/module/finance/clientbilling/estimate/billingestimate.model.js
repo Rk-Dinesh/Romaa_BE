@@ -50,28 +50,21 @@ const WorkItemSchema = new mongoose.Schema(
   { _id: true }
 );
 
-// --- LEVEL 1: The Billing Document (The "Root") ---
+// --- Estimate Document — linked to an existing Client Bill via bill_id ---
 const BillingSchema = new mongoose.Schema(
   {
-    tender_id: { 
-      type: String, 
-      required: true, 
-      index: true 
-    },
-    bill_id: { 
-      type: String, 
-      required: true, 
-    },
+    tender_id:    { type: String, required: true, index: true },
+    bill_id:      { type: String, required: true, index: true }, // e.g. CB/25-26/0001
     bill_sequence: { type: Number, default: 1 },
-    abstract_name: { 
-      type: String, 
-      default: "Abstract Estimate" 
-    },
-    items: [WorkItemSchema], 
-    created_by_user: { type: String, default: "ADMIN" },
+    abstract_name: { type: String, default: "Abstract Estimate" },
+    items:         [WorkItemSchema],
+    created_by_user: { type: String, default: "" },
   },
   { timestamps: true }
 );
+
+// One estimate type per bill — same bill can have multiple abstract_names
+BillingSchema.index({ tender_id: 1, bill_id: 1, abstract_name: 1 }, { unique: true });
 
 
 const BillingEstimateModel = mongoose.model("billingestimate", BillingSchema);

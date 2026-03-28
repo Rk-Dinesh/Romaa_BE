@@ -4,7 +4,7 @@ import WorkOrderRequestModel from "../project/workorderReqIssue/workorderReqIssu
 import LeaveRequestModel from "../hr/leave/leaverequest.model.js";
 import UserAttendanceModel from "../hr/userAttendance/userAttendance.model.js";
 import EmployeeModel from "../hr/employee/employee.model.js";
-import BillingModel from "../finance/clientbilling/billing/billing.model.js";
+import BillingModel from "../finance/clientbilling/clientbilling/clientbilling.model.js";
 import MachineryAssetModel from "../assets/machinery/machineryasset.model.js";
 import VendorModel from "../purchase/vendor/vendor.model.js";
 
