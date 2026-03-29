@@ -1,73 +1,70 @@
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
+import express from "express";
+import cors from "cors";
+import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
-import bodyParser from 'body-parser';
-import connectDB from './src/config/db.js';
-import roleRoute from './src/module/role/role.route.js';
-import morgan from 'morgan';
-import logger from './src/config/logger.js';
-import userRoute from './src/module/user/user.route.js';
-import authRoute from './src/module/auth/auth.route.js';
-import clientRoute from './src/module/clients/client.route.js';
-import employeeRoute from './src/module/hr/employee/employee.route.js';
-import vendorRoute from './src/module/purchase/vendor/vendor.route.js';
-import tenderrouter from './src/module/tender/tender/tender.route.js';
-import boqrouter from './src/module/tender/boq/boq.route.js';
-import permittedrouter from './src/module/tender/vendorpermitted/permittedvendor.route.js';
-import emdrouter from './src/module/tender/emd/emd.route.js';
-import contractorRoute from './src/module/hr/contractors/contractor.route.js';
-import contractworkerrouter from './src/module/hr/contractemployee/contractemployee.route.js';
-import permittedcontractworkerrouter from './src/module/tender/contractworker/contractworker.route.js';
-import tenderDocRouter from './src/module/documents/tenderdocuments/tenderdocument.route.js';
-import workOrderDocRouter from './src/module/documents/workorderdocuments/workorderdoc.route.js';
-import penaltyRouter from './src/module/tender/penalties/penalities.route.js';
-import rateanalysisrouter from './src/module/tender/rateAnalysis/rateanalysis.route.js';
-import detailedestrouter from './src/module/tender/detailedestimate/detailedestimate.route.js';
-import bidRouter from './src/module/tender/bid/bid.route.js';
-import schedulerouter from './src/module/project/schedule/schedule.route.js';
-import workOrderRequestrouter from './src/module/project/workorderReqIssue/workorderReqIssue.route.js';
-import materialrouter from './src/module/tender/materials/material.route.js';
-import purhcaseRequestrouter from './src/module/purchase/purchaseorderReqIssue/purchaseReqIssue.route.js';
-import machineryrouter from './src/module/assets/machinery/machineryasset.route.js';
-import siteoverheadrouter from './src/module/tender/siteoverheads/siteoverhead.route.js';
-import rateanalysisquantitesrouter from './src/module/tender/rateanalyisquantites/rateanalysisquantites.route.js';
-import scheduleLiteRouter from './src/module/project/scheduleNew/schedulelite/schedulelite.route.js';
-import workOrderDoneRouter from './src/module/site/workorderdone/workorderdone.route.js';
-import billingEstimateRouter from './src/module/finance/clientbilling/estimate/billingestimate.route.js';
-import billingRouter from './src/module/finance/clientbilling/clientbilling/clientbilling.route.js';
-import clientCNRouter from './src/module/finance/clientbilling/clientcreditnote/clientcreditnote.route.js';
-import steelestimaterouter from './src/module/finance/clientbilling/steelestimate/steelestimate.route.js';
-import machinerylogrouter from './src/module/assets/machinerylogs/machinerylogs.route.js';
-import AttendanceRoute from './src/module/hr/userAttendance/userAttendance.route.js';
-import CalendarRoute from './src/module/hr/holidays/holiday.route.js';
-import LeaveRoute from './src/module/hr/leave/leaverequest.route.js';
-import { startAbsenteeismCron } from './utils/dailyAbsenteeism.js';
-import cron from 'node-cron';
-import hsnSacRouter from './src/module/master/hsnmaster/hsnsac.router.js';
-import notificationRoute from './src/module/notifications/notification.route.js';
-import dashboardRoute from './src/module/dashboard/dashboard.route.js';
-import dlpRouter from './src/module/site/dlp/dlp.route.js';
-import nmrAttendanceRouter from './src/module/hr/nmrAttendance/nmrAttendance.route.js';
-import drawingVsBOQDERouter from './src/module/project/drawingvboqDE/drawingvsboqDE.route.js';
-import workdoneRouter from './src/module/site/workdone/workdone.route.js';
-import purchaseBillRouter from './src/module/finance/purchasebill/purchasebill.route.js';
-import weeklyBillingRouter from './src/module/finance/weeklyBilling/weeklyBilling.route.js';
-import ledgerRouter from './src/module/finance/ledger/ledger.route.js';
-import creditNoteRouter from './src/module/finance/creditnote/creditnote.route.js';
-import debitNoteRouter from './src/module/finance/debitnote/debitnote.route.js';
-import paymentVoucherRouter from './src/module/finance/paymentvoucher/paymentvoucher.route.js';
-import receiptVoucherRouter from './src/module/finance/receiptvoucher/receiptvoucher.route.js';
-import accountTreeRouter from './src/module/finance/accounttree/accounttree.route.js';
-import companyBankAccountRouter from './src/module/finance/companybankaccount/companybankaccount.route.js';
-import companyCashAccountRouter from './src/module/finance/companycashaccount/companycashaccount.route.js';
-import journalEntryRouter from './src/module/finance/journalentry/journalentry.route.js';
-import JournalEntryService from './src/module/finance/journalentry/journalentry.service.js';
-import financeDropdownRouter from './src/module/finance/dropdown/dropdown.route.js';
-import bankTransferRouter from './src/module/finance/banktransfer/banktransfer.route.js';
-
-
-
+import bodyParser from "body-parser";
+import connectDB from "./src/config/db.js";
+import roleRoute from "./src/module/role/role.route.js";
+import morgan from "morgan";
+import logger from "./src/config/logger.js";
+import userRoute from "./src/module/user/user.route.js";
+import authRoute from "./src/module/auth/auth.route.js";
+import clientRoute from "./src/module/clients/client.route.js";
+import employeeRoute from "./src/module/hr/employee/employee.route.js";
+import vendorRoute from "./src/module/purchase/vendor/vendor.route.js";
+import tenderrouter from "./src/module/tender/tender/tender.route.js";
+import boqrouter from "./src/module/tender/boq/boq.route.js";
+import permittedrouter from "./src/module/tender/vendorpermitted/permittedvendor.route.js";
+import emdrouter from "./src/module/tender/emd/emd.route.js";
+import contractorRoute from "./src/module/hr/contractors/contractor.route.js";
+import contractworkerrouter from "./src/module/hr/contractemployee/contractemployee.route.js";
+import permittedcontractworkerrouter from "./src/module/tender/contractworker/contractworker.route.js";
+import tenderDocRouter from "./src/module/documents/tenderdocuments/tenderdocument.route.js";
+import workOrderDocRouter from "./src/module/documents/workorderdocuments/workorderdoc.route.js";
+import penaltyRouter from "./src/module/tender/penalties/penalities.route.js";
+import rateanalysisrouter from "./src/module/tender/rateAnalysis/rateanalysis.route.js";
+import detailedestrouter from "./src/module/tender/detailedestimate/detailedestimate.route.js";
+import bidRouter from "./src/module/tender/bid/bid.route.js";
+import schedulerouter from "./src/module/project/schedule/schedule.route.js";
+import workOrderRequestrouter from "./src/module/project/workorderReqIssue/workorderReqIssue.route.js";
+import materialrouter from "./src/module/tender/materials/material.route.js";
+import purhcaseRequestrouter from "./src/module/purchase/purchaseorderReqIssue/purchaseReqIssue.route.js";
+import machineryrouter from "./src/module/assets/machinery/machineryasset.route.js";
+import siteoverheadrouter from "./src/module/tender/siteoverheads/siteoverhead.route.js";
+import rateanalysisquantitesrouter from "./src/module/tender/rateanalyisquantites/rateanalysisquantites.route.js";
+import scheduleLiteRouter from "./src/module/project/scheduleNew/schedulelite/schedulelite.route.js";
+import workOrderDoneRouter from "./src/module/site/workorderdone/workorderdone.route.js";
+import billingEstimateRouter from "./src/module/project/CBEstimates/estimate/billingestimate.route.js";
+import billingRouter from "./src/module/finance/clientbilling/clientbilling/clientbilling.route.js";
+// import clientCNRouter from './src/module/finance/clientbilling/clientcreditnote/clientcreditnote.route.js';
+import steelestimaterouter from "./src/module/project/CBEstimates/steelestimate/steelestimate.route.js";
+import machinerylogrouter from "./src/module/assets/machinerylogs/machinerylogs.route.js";
+import AttendanceRoute from "./src/module/hr/userAttendance/userAttendance.route.js";
+import CalendarRoute from "./src/module/hr/holidays/holiday.route.js";
+import LeaveRoute from "./src/module/hr/leave/leaverequest.route.js";
+import { startAbsenteeismCron } from "./utils/dailyAbsenteeism.js";
+import cron from "node-cron";
+import hsnSacRouter from "./src/module/master/hsnmaster/hsnsac.router.js";
+import notificationRoute from "./src/module/notifications/notification.route.js";
+import dashboardRoute from "./src/module/dashboard/dashboard.route.js";
+import dlpRouter from "./src/module/site/dlp/dlp.route.js";
+import nmrAttendanceRouter from "./src/module/hr/nmrAttendance/nmrAttendance.route.js";
+import drawingVsBOQDERouter from "./src/module/project/drawingvboqDE/drawingvsboqDE.route.js";
+import workdoneRouter from "./src/module/site/workdone/workdone.route.js";
+import purchaseBillRouter from "./src/module/finance/purchasebill/purchasebill.route.js";
+import weeklyBillingRouter from "./src/module/finance/weeklyBilling/weeklyBilling.route.js";
+import ledgerRouter from "./src/module/finance/ledger/ledger.route.js";
+import creditNoteRouter from "./src/module/finance/creditnote/creditnote.route.js";
+import debitNoteRouter from "./src/module/finance/debitnote/debitnote.route.js";
+import paymentVoucherRouter from "./src/module/finance/paymentvoucher/paymentvoucher.route.js";
+import receiptVoucherRouter from "./src/module/finance/receiptvoucher/receiptvoucher.route.js";
+import accountTreeRouter from "./src/module/finance/accounttree/accounttree.route.js";
+import companyBankAccountRouter from "./src/module/finance/companybankaccount/companybankaccount.route.js";
+import companyCashAccountRouter from "./src/module/finance/companycashaccount/companycashaccount.route.js";
+import journalEntryRouter from "./src/module/finance/journalentry/journalentry.route.js";
+import JournalEntryService from "./src/module/finance/journalentry/journalentry.service.js";
+import financeDropdownRouter from "./src/module/finance/dropdown/dropdown.route.js";
+import bankTransferRouter from "./src/module/finance/banktransfer/banktransfer.route.js";
 
 dotenv.config();
 const PORT = process.env.PORT;
@@ -77,15 +74,14 @@ connectDB();
 startAbsenteeismCron();
 
 // Daily: process journal entries scheduled for auto-reversal
-cron.schedule('0 1 * * *', async () => {
+cron.schedule("0 1 * * *", async () => {
   try {
     await JournalEntryService.processAutoReversals();
-    logger.info('Auto-reversal cron: completed');
+    logger.info("Auto-reversal cron: completed");
   } catch (err) {
-    logger.error('Auto-reversal cron error:', err.message);
+    logger.error("Auto-reversal cron error:", err.message);
   }
 });
-
 
 //middleware
 
@@ -101,7 +97,7 @@ cron.schedule('0 1 * * *', async () => {
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:3000",
-  process.env.FRONTEND_URL
+  process.env.FRONTEND_URL,
 ];
 
 app.use(
@@ -110,7 +106,8 @@ app.use(
       // allow requests with no origin (like mobile apps or curl requests)
       if (!origin) return callback(null, true);
       if (allowedOrigins.indexOf(origin) === -1) {
-        var msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+        var msg =
+          "The CORS policy for this site does not allow access from the specified Origin.";
         return callback(new Error(msg), false);
       }
       return callback(null, true);
@@ -118,7 +115,7 @@ app.use(
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     allowedHeaders: ["Content-Type", "Authorization"],
-  })
+  }),
 );
 
 app.use(cookieParser(process.env.ACCESS_TOKEN_SECRET)); //Secure Cookie Parser
@@ -129,102 +126,94 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Strips keys starting with '$' or containing '.' from req.body and req.params.
 function stripDollarKeys(val) {
   if (Array.isArray(val)) return val.map(stripDollarKeys);
-  if (val && typeof val === 'object') {
+  if (val && typeof val === "object") {
     return Object.fromEntries(
       Object.entries(val)
-        .filter(([k]) => !k.startsWith('$') && !k.includes('.'))
-        .map(([k, v]) => [k, stripDollarKeys(v)])
+        .filter(([k]) => !k.startsWith("$") && !k.includes("."))
+        .map(([k, v]) => [k, stripDollarKeys(v)]),
     );
   }
   return val;
 }
 app.use((req, _res, next) => {
-  if (req.body)   req.body   = stripDollarKeys(req.body);
+  if (req.body) req.body = stripDollarKeys(req.body);
   if (req.params) req.params = stripDollarKeys(req.params);
   next();
 });
 
-
-
-
-
 //Add Morgan Middleware for Logging
 app.use(
-  morgan('combined', {
+  morgan("combined", {
     stream: {
       write: (message) => logger.info(message.trim()),
     },
   }),
 );
 
-logger.info('Server started successfully');
+logger.info("Server started successfully");
 
-app.use('/role', roleRoute);
-app.use('/user', userRoute)
-app.use('/auth', authRoute);
-app.use('/client', clientRoute);
-app.use('/employee', employeeRoute);
-app.use('/vendor', vendorRoute);
-app.use('/tender', tenderrouter);
-app.use('/boq', boqrouter);
-app.use('/bid', bidRouter);
-app.use('/permittedvendor', permittedrouter);
-app.use('/permittedcontractor', permittedcontractworkerrouter)
-app.use('/emd', emdrouter);
-app.use('/contractor', contractorRoute);
-app.use('/contractworker', contractworkerrouter);
+app.use("/role", roleRoute);
+app.use("/user", userRoute);
+app.use("/auth", authRoute);
+app.use("/client", clientRoute);
+app.use("/employee", employeeRoute);
+app.use("/vendor", vendorRoute);
+app.use("/tender", tenderrouter);
+app.use("/boq", boqrouter);
+app.use("/bid", bidRouter);
+app.use("/permittedvendor", permittedrouter);
+app.use("/permittedcontractor", permittedcontractworkerrouter);
+app.use("/emd", emdrouter);
+app.use("/contractor", contractorRoute);
+app.use("/contractworker", contractworkerrouter);
 app.use("/document", tenderDocRouter);
 app.use("/workorderdocument", workOrderDocRouter);
 app.use("/penalty", penaltyRouter);
 app.use("/rateanalysis", rateanalysisrouter);
-app.use('/detailedestimate', detailedestrouter);
-app.use('/schedule', schedulerouter);
-app.use('/workorderrequest', workOrderRequestrouter);
-app.use('/purchaseorderrequest', purhcaseRequestrouter);
-app.use('/material', materialrouter);
-app.use('/machineryasset', machineryrouter);
-app.use('/siteoverhead', siteoverheadrouter);
-app.use('/raquantities', rateanalysisquantitesrouter);
-app.use('/schedulelite', scheduleLiteRouter);
-app.use('/workorderdone', workOrderDoneRouter);
-app.use('/clientbilling/estimate', billingEstimateRouter);
-app.use('/clientbilling/creditnote', clientCNRouter);
-app.use('/clientbilling', billingRouter);
-app.use('/steelestimate', steelestimaterouter);
-app.use('/machinerylogs', machinerylogrouter);
-app.use('/attendance', AttendanceRoute);
-app.use('/calendar', CalendarRoute);
-app.use('/leave', LeaveRoute);
-app.use('/hsn', hsnSacRouter)
-app.use('/notification', notificationRoute)
-app.use('/dashboard', dashboardRoute)
-app.use('/dlp', dlpRouter)
-app.use('/nmrattendance', nmrAttendanceRouter)
-app.use('/drawingvboqde', drawingVsBOQDERouter)
-app.use('/workdone', workdoneRouter)
-app.use('/purchasebill', purchaseBillRouter) //fix_finance
-app.use('/weeklybilling', weeklyBillingRouter)
-app.use('/ledger', ledgerRouter)
-app.use('/creditnote', creditNoteRouter)
-app.use('/debitnote', debitNoteRouter)
-app.use('/paymentvoucher', paymentVoucherRouter)
-app.use('/receiptvoucher', receiptVoucherRouter)
-app.use('/accounttree', accountTreeRouter)
-app.use('/companybankaccount', companyBankAccountRouter)
-app.use('/companycashaccount', companyCashAccountRouter)
-app.use('/journalentry', journalEntryRouter)
-app.use('/finance-dropdown', financeDropdownRouter)
-app.use('/finance', financeDropdownRouter)        // alias: /finance/payable-bills, /finance/parties/:tenderId, etc.
-app.use('/banktransfer', bankTransferRouter)
+app.use("/detailedestimate", detailedestrouter);
+app.use("/schedule", schedulerouter);
+app.use("/workorderrequest", workOrderRequestrouter);
+app.use("/purchaseorderrequest", purhcaseRequestrouter);
+app.use("/material", materialrouter);
+app.use("/machineryasset", machineryrouter);
+app.use("/siteoverhead", siteoverheadrouter);
+app.use("/raquantities", rateanalysisquantitesrouter);
+app.use("/schedulelite", scheduleLiteRouter);
+app.use("/workorderdone", workOrderDoneRouter);
+app.use("/clientbilling/estimate", billingEstimateRouter);
+// app.use('/clientbilling/creditnote', clientCNRouter);
+app.use("/clientbilling", billingRouter);
+app.use("/steelestimate", steelestimaterouter);
+app.use("/machinerylogs", machinerylogrouter);
+app.use("/attendance", AttendanceRoute);
+app.use("/calendar", CalendarRoute);
+app.use("/leave", LeaveRoute);
+app.use("/hsn", hsnSacRouter);
+app.use("/notification", notificationRoute);
+app.use("/dashboard", dashboardRoute);
+app.use("/dlp", dlpRouter);
+app.use("/nmrattendance", nmrAttendanceRouter);
+app.use("/drawingvboqde", drawingVsBOQDERouter);
+app.use("/workdone", workdoneRouter);
+app.use("/purchasebill", purchaseBillRouter); //fix_finance
+app.use("/weeklybilling", weeklyBillingRouter);
+app.use("/ledger", ledgerRouter);
+app.use("/creditnote", creditNoteRouter);
+app.use("/debitnote", debitNoteRouter);
+app.use("/paymentvoucher", paymentVoucherRouter);
+app.use("/receiptvoucher", receiptVoucherRouter);
+app.use("/accounttree", accountTreeRouter);
+app.use("/companybankaccount", companyBankAccountRouter);
+app.use("/companycashaccount", companyCashAccountRouter);
+app.use("/journalentry", journalEntryRouter);
+app.use("/finance-dropdown", financeDropdownRouter);
+app.use("/finance", financeDropdownRouter); // alias: /finance/payable-bills, /finance/parties/:tenderId, etc.
+app.use("/banktransfer", bankTransferRouter);
 
-
-
-
-app.get('/', (req, res) => {
-  res.send(`Welcome to Romaa Backend`)
-})
+app.get("/", (req, res) => {
+  res.send(`Welcome to Romaa Backend`);
+});
 
 app.listen(PORT, () => {
   console.log(`Server is running in port ${PORT}`);
-})
-
+});

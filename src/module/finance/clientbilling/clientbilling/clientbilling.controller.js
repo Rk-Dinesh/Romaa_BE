@@ -159,6 +159,26 @@ export const getBillById = async (req, res) => {
   }
 };
 
+// Delete Bill — Draft only; also removes linked steel estimate and billing estimate
+export const deleteBill = async (req, res) => {
+  try {
+    const bill_id = req.query.bill_id?.trim();
+    if (!bill_id) return res.status(400).json({ status: false, message: "bill_id query param is required" });
+
+    const result = await BillingService.deleteBill(bill_id);
+
+    res.status(200).json({
+      status: true,
+      message: `Bill "${result.bill_id}" deleted successfully along with ${result.steel_estimates_deleted} steel estimate(s) and ${result.billing_estimates_deleted} billing estimate(s)`,
+      data: result,
+    });
+  } catch (error) {
+    const code = error.message.includes("not found") ? 404
+               : error.message.includes("status") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
 // Approve Bill — posts to client receivable ledger
 export const approveBill = async (req, res) => {
   try {

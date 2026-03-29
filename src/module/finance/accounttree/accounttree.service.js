@@ -300,6 +300,38 @@ class AccountTreeService {
     return { migrated: accounts.length, message: `Migrated ${accounts.length} accounts` };
   }
 
+  // ── Internal: auto-create project ledger for an approved tender ─────────────
+  // Called by tender service when tender_status becomes "APPROVED".
+  // Creates a leaf account under 4010 (Project / Contract Revenue).
+  static async autoCreateProjectLedger({ tender_id, tender_name, tender_ref }) {
+    if (!tender_id || !tender_name) {
+      throw new Error("autoCreateProjectLedger: tender_id and tender_name are required");
+    }
+
+    const existing = await AccountTreeModel.findOne({ linked_supplier_id: tender_id, is_deleted: false }).lean();
+    if (existing) return existing;
+
+    const account_code = `4010-${tender_id}`;
+
+    return await AccountTreeModel.create({
+      account_code,
+      account_name:         `${tender_name} — Revenue`,
+      description:          `Project revenue for tender: ${tender_name} (${tender_id})`,
+      account_type:         "Income",
+      account_subtype:      "Operating Income",
+      normal_balance:       "Cr",
+      parent_code:          "4010",
+      level:                3,
+      is_group:             false,
+      is_posting_account:   true,
+      is_personal:          true,
+      linked_supplier_id:   tender_id,
+      linked_supplier_type: "Project",
+      linked_supplier_ref:  tender_ref || null,
+      is_system:            false,
+    });
+  }
+
   // ── Internal: auto-create personal ledger for a new vendor/contractor ─────
   // Called by vendor/contractor service when a new party is created.
   // Creates a leaf account under the appropriate group (2010 for Vendor, 2020 for Contractor).

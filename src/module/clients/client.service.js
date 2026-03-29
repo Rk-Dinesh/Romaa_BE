@@ -1,5 +1,6 @@
 import ClientModel from "./client.model.js";
 import IdcodeServices from "../idcode/idcode.service.js";
+import AccountTreeService from "../finance/accounttree/accounttree.service.js";
 
 class ClientService {
   // ✅ Create
@@ -12,7 +13,16 @@ class ClientService {
       if (!client_id) throw new Error("Failed to generate client ID");
 
       const newClient = new ClientModel({ client_id, ...clientData });
-      return await newClient.save();
+      const saved = await newClient.save();
+
+      AccountTreeService.autoCreatePersonalLedger({
+        supplier_id: saved.client_id,
+        supplier_type: "Client",
+        supplier_name: saved.client_name,
+        supplier_ref: saved._id,
+      }).catch(() => {});
+
+      return saved;
     } catch (error) {
       throw new Error("Error creating client: " + error.message);
     }

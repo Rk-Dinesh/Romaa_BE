@@ -72,7 +72,7 @@ const TAX_TYPES = [
   "ITC_Reversal", // When input credit is reversed (returns, exempts)
 ];
 
-const SUPPLIER_TYPES = ["Vendor", "Contractor", "Client"];
+const SUPPLIER_TYPES = ["Vendor", "Contractor", "Client", "Project"];
 
 // ── Main schema ───────────────────────────────────────────────────────────────
 

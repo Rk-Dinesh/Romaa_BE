@@ -4,6 +4,7 @@ import ClientModel from "../../clients/client.model.js";
 import DetailedEstimateModel from "../detailedestimate/detailedestimate.model.js";
 import SiteOverheads from "../siteoverheads/siteoverhead.model.js";
 import NotificationService from "../../notifications/notification.service.js";
+import AccountTreeService from "../../finance/accounttree/accounttree.service.js";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -272,6 +273,12 @@ class TenderService {
 
     await tender.save();
 
+    AccountTreeService.autoCreateProjectLedger({
+      tender_id: tender.tender_id,
+      tender_name: tender.tender_name || tender.tender_project_name,
+      tender_ref: tender._id,
+    }).catch(() => {});
+
     // Notify project team about work order issuance
     NotificationService.notify({
       title: "Work Order Issued",
@@ -306,6 +313,12 @@ class TenderService {
     tender.agreement_issued_date = agreement_issued_date;
 
     await tender.save();
+
+    AccountTreeService.autoCreateProjectLedger({
+      tender_id: tender.tender_id,
+      tender_name: tender.tender_name || tender.tender_project_name,
+      tender_ref: tender._id,
+    }).catch(() => {});
 
     return tender;
   }

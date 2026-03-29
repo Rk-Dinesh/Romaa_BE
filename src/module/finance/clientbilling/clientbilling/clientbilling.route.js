@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import {  getHistory, getDetails, getBillById, approveBill, uploadBillingCSV, updateBillingCSV } from "./clientbilling.controller.js";
+import {  getHistory, getDetails, getBillById, approveBill, uploadBillingCSV, updateBillingCSV, deleteBill } from "./clientbilling.controller.js";
 import { verifyJWT, verifyPermission } from "../../../../common/Auth.middlware.js";
 
 const billingRouter = Router();
@@ -21,6 +21,15 @@ billingRouter.get('/api/details', getDetails);
 // GET: Bill details by bill_id only — items with current_qty = 0 excluded
 // Use query param to avoid slash conflicts: /api/bill?bill_id=B/25-26/0001
 billingRouter.get('/api/bill', getBillById);
+
+// DELETE: Delete a bill — Draft only; also removes linked steel & billing estimates
+// ?bill_id=CB/25-26/0001
+billingRouter.delete(
+  '/api/delete',
+  verifyJWT,
+//  verifyPermission("finance", "clientbilling", "delete"),
+  deleteBill
+);
 
 // PATCH: Approve a bill — posts to client receivable ledger
 billingRouter.patch(
