@@ -67,11 +67,7 @@ const SteelEstimateSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    abstract_name: {
-      type: String,
-      default: "Abstract Estimate"
-    },
-    items: [WorkItemSchema], 
+    items: [WorkItemSchema],
     created_by_user: { type: String, default: "ADMIN" },
   },
   { timestamps: true }
@@ -79,7 +75,7 @@ const SteelEstimateSchema = new mongoose.Schema(
 
 
 
-SteelEstimateSchema.index({ tender_id: 1, bill_id: 1, abstract_name: 1 }, { unique: true });
+SteelEstimateSchema.index({ tender_id: 1, bill_id: 1 }, { unique: true });
 
 const SteelEstimateModel = mongoose.model("steelestimate", SteelEstimateSchema);
 export default SteelEstimateModel;

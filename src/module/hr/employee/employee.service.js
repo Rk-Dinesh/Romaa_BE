@@ -42,7 +42,7 @@ class EmployeeService {
 
     // B. Check Password
     const isPasswordValid = await user.isPasswordCorrect(password);
-    if (!isPasswordValid) throw new Error("Invalid user credentials");
+    if (!isPasswordValid) throw new Error("Invalid Password");
 
     // C. Generate Tokens
     const accessToken = user.generateAccessToken();

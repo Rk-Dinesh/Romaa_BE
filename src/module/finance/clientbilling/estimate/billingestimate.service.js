@@ -1,6 +1,5 @@
 import mongoose from "mongoose";
 import BillingEstimateModel from "./billingestimate.model.js";
-import BillingService from "../clientbilling/clientbilling.service.js";
 
 class BillingEstimateService {
 
@@ -17,7 +16,7 @@ class BillingEstimateService {
         return 0;
     }
 
-static async bulkInsert(csvRows, tender_id, bill_id, user_sequence = null, abstract_name, created_by_user) {
+static async bulkInsert(csvRows, tender_id, bill_id, created_by_user) {
     const session = await mongoose.startSession();
     session.startTransaction();
 
@@ -32,103 +31,19 @@ static async bulkInsert(csvRows, tender_id, bill_id, user_sequence = null, abstr
             return isNaN(num) ? 0 : num;
         };
 
-        // --- Logic: Bill ID & Sequence & Target Document ---
-        // Get the last sequence to determine auto-increment if needed
-        const lastBill = await BillingEstimateModel.findOne({ tender_id })
-            .sort({ bill_sequence: -1 })
-            .session(session);
+        // Find existing doc for this tender+bill or create new
+        let targetDoc = await BillingEstimateModel.findOne({ tender_id, bill_id }).session(session);
 
-        const lastSequence = lastBill ? lastBill.bill_sequence : 0;
-
-        let targetDoc = null; 
-        let final_sequence = 0;
-        let final_bill_id = "";
-
-            // --- SCENARIO 1: Abstract Estimate ---
-        if (abstract_name === "Abstract Estimate") {
-            
-            // Step A: If user_sequence is provided, try to find the existing document
-            if (user_sequence !== null) {
-                targetDoc = await BillingEstimateModel.findOne({ 
-                    tender_id, 
-                    bill_sequence: user_sequence 
-                }).session(session);
-            }
-
-            // Step B: Decision - Update Existing OR Create New
-            if (targetDoc) {
-                // --- UPDATE EXISTING ---
-                // Document found, we will overwrite its items below
-                final_sequence = targetDoc.bill_sequence;
-                final_bill_id = targetDoc.bill_id;
-            } else {
-                // --- CREATE NEW ---
-                // Triggered if: 
-                // 1. user_sequence was null (User wants new)
-                // 2. OR user_sequence was provided but not found in DB
-                
-                final_sequence = lastSequence + 1;
-                final_bill_id = `RA-${String(final_sequence).padStart(2, '0')}`;
-
-                targetDoc = new BillingEstimateModel({
-                    tender_id,
-                    bill_id: final_bill_id,
-                    bill_sequence: final_sequence,
-                    abstract_name: abstract_name,
-                    created_by_user: created_by_user || "ADMIN",
-                    items: []
-                });
-            }
+        if (!targetDoc) {
+            targetDoc = new BillingEstimateModel({
+                tender_id,
+                bill_id,
+                created_by_user: created_by_user || "ADMIN",
+                items: []
+            });
         }
 
-        // --- SCENARIO 2: Other Estimates (Detailed, etc.) ---
-
-        else {
-            // Validation: Must have Abstract Estimate first to attach details to it
-            if (lastSequence === 0) {
-                throw new Error("No existing records found. Please upload 'Abstract Estimate' first.");
-            }
-
-            // Validation: User Sequence Mandatory for non-Abstract uploads
-            if (user_sequence === null) {
-                throw new Error("Please provide user sequence to link this estimate.");
-            }
-
-            // 1. Check if the Parent Abstract Estimate exists
-            const parentAbstract = await BillingEstimateModel.findOne({ 
-                tender_id, 
-                bill_sequence: user_sequence 
-            }).session(session);
-
-            if (!parentAbstract) {
-                throw new Error(`Abstract Estimate with sequence ${user_sequence} does not exist.`);
-            }
-
-            // 2. Check if THIS specific estimate type already exists for this sequence
-            targetDoc = await BillingEstimateModel.findOne({ 
-                tender_id, 
-                bill_sequence: user_sequence, 
-                abstract_name: abstract_name 
-            }).session(session);
-
-            if (!targetDoc) {
-                // Create New Document linked to the same Bill ID/Sequence
-                final_sequence = parentAbstract.bill_sequence;
-                final_bill_id = parentAbstract.bill_id;
-
-                targetDoc = new BillingEstimateModel({
-                    tender_id,
-                    bill_id: final_bill_id,
-                    bill_sequence: final_sequence,
-                    abstract_name: abstract_name,
-                    created_by_user: created_by_user || "ADMIN",
-                    items: []
-                });
-            } 
-            // Else: targetDoc exists, we will update it below
-        }
-
-        // --- CSV Processing (Common for both scenarios) ---
+        // --- CSV Processing ---
 
         const items = [];
         let currentWorkItem = null;
@@ -210,27 +125,12 @@ static async bulkInsert(csvRows, tender_id, bill_id, user_sequence = null, abstr
         targetDoc.items = items; // Overwrite items list with new CSV data
         await targetDoc.save({ session });
 
-        // --- TRIGGER BILL CREATION (Only for Abstract Estimate) ---
-        if (abstract_name === "Abstract Estimate") {
-            // Create a clean list (Level 1 items only) for the Bill Summary
-            const level1Items = items.map(({ details, ...rest }) => rest);
-
-            if (level1Items.length > 0) {
-                await BillingService.createBill({
-                    tender_id: tender_id,
-                    bill_sequence: targetDoc.bill_sequence, // Use the doc's sequence
-                    bill_id: targetDoc.bill_id,             // Use the doc's ID
-                    items: level1Items
-                });
-            }
-        }
-
         await session.commitTransaction();
         session.endSession();
 
         return {
             success: true,
-            message: `Successfully processed '${abstract_name}' as ${targetDoc.bill_id}. Items: ${items.length}`,
+            message: `Successfully processed bill ${targetDoc.bill_id}. Items: ${items.length}`,
             data: targetDoc,
         };
 
@@ -241,9 +141,8 @@ static async bulkInsert(csvRows, tender_id, bill_id, user_sequence = null, abstr
     }
 }
 
-    static async getDetailedBill(tender_id,bill_id,abstract_name,bill_sequence){
-        const doc = await BillingEstimateModel.findOne({ tender_id, bill_id, abstract_name,bill_sequence });
-        return doc;
+    static async getDetailedBill(tender_id, bill_id) {
+        return await BillingEstimateModel.findOne({ tender_id, bill_id });
     }
 }
 

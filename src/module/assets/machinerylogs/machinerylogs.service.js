@@ -59,7 +59,8 @@ static async getLogsByProject(projectId, startDate, endDate) {
     const logs = await MachineDailyLog.find(query)
       .populate({
         path: "assetId",
-        select: "assetName", 
+        select: "assetName vendorName vendorId", 
+        
       })
       .populate({
         path: "bid_id",

@@ -21,7 +21,7 @@ const weeklyBillingTransactionSchema = new mongoose.Schema(
 
     // ── Traceability ───────────────────────────────────────────────────────
     work_order_id: { type: String, required: true, index: true }, // source work order
-    work_done_id:  { type: String, required: true, index: true }, // source WorkOrderDone._id
+    work_done_id:  { type: String, required: true }, // source WorkOrderDone._id
 
     // ── Line item details ──────────────────────────────────────────────────
     item_description: { type: String, default: "" },

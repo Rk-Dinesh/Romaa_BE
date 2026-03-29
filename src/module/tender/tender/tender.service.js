@@ -186,6 +186,7 @@ class TenderService {
       {
         tender_id: 1,
         tender_name: 1,
+        tender_project_name: 1,
         tender_value: 1,
         tender_start_date: 1,
         tender_type: 1,
@@ -221,6 +222,7 @@ class TenderService {
     return {
       tenderDetails: {
         tender_id: tender.tender_id,
+        tender_project_name: tender.tender_project_name,
         tender_published_date: tender.tender_start_date,
         tender_type: tender.tender_type,
         tender_value: tender.tender_value,

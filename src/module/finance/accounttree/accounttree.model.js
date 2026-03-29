@@ -176,7 +176,6 @@ const AccountTreeSchema = new mongoose.Schema(
 );
 
 // ── Indexes ───────────────────────────────────────────────────────────────────
-AccountTreeSchema.index({ account_code: 1 });                           // primary lookup
 AccountTreeSchema.index({ parent_code: 1 });                            // tree traversal
 AccountTreeSchema.index({ account_type: 1, is_deleted: 1 });           // type-wise filter
 AccountTreeSchema.index({ account_type: 1, account_subtype: 1 });      // subtype reports

@@ -14,7 +14,7 @@ class SteelEstimateService {
         return 0;
     }
 
-    static async bulkInsert(csvRows, tender_id, bill_id, abstract_name, created_by_user) {
+    static async bulkInsert(csvRows, tender_id, bill_id, created_by_user) {
 
         const session = await mongoose.startSession();
         session.startTransaction();
@@ -35,24 +35,12 @@ class SteelEstimateService {
             // ---------------------------------------------------------
 
             // Attempt to find exact match
-            let targetDoc = await SteelEstimateModel.findOne({
-                tender_id,
-                bill_id,
-                abstract_name,
-            }).session(session);
+            let targetDoc = await SteelEstimateModel.findOne({ tender_id, bill_id }).session(session);
 
-            if (targetDoc) {
-                // --- A. UPDATE EXISTING ---
-                console.log(`Document found for ${bill_id}. Updating items...`);
-            } else {
-                // --- B. CREATE NEW ---
-                // No auto-increment. We use exactly what the user gave us.
-                console.log(`No document found. Creating new for ${bill_id}...`);
-
+            if (!targetDoc) {
                 targetDoc = new SteelEstimateModel({
                     tender_id,
                     bill_id,
-                    abstract_name,
                     created_by_user: created_by_user || "ADMIN",
                     items: []
                 });
@@ -147,7 +135,7 @@ class SteelEstimateService {
 
             return {
                 success: true,
-                message: `Successfully processed '${targetDoc.abstract_name}' (ID: ${targetDoc.bill_id}). Items: ${items.length}`,
+                message: `Successfully processed bill ${targetDoc.bill_id}. Items: ${items.length}`,
                 data: targetDoc,
             };
 
@@ -157,8 +145,8 @@ class SteelEstimateService {
             throw err;
         }
     }
-    static async getDetailedSteelEstimate(tender_id, bill_id, abstract_name) {
-        return await SteelEstimateModel.findOne({ tender_id, bill_id, abstract_name }).lean();
+    static async getDetailedSteelEstimate(tender_id, bill_id) {
+        return await SteelEstimateModel.findOne({ tender_id, bill_id }).lean();
     }
 }
 

@@ -37,18 +37,17 @@ const ItemSchema = new mongoose.Schema(
 // ── Main schema ───────────────────────────────────────────────────────────────
 const BillingSchema = new mongoose.Schema(
   {
-    // Auto-generated: CB/<FY>/<seq>  e.g. CB/25-26/0001
+    // Auto-generated: B/<FY>/<seq>  e.g. B/25-26/0001
     bill_id: { type: String, unique: true },
 
-    tender_id:   { type: String, required: true, index: true },
-    tender_name: { type: String, default: "" },
-
+    tender_id:      { type: String, required: true, index: true },
+    tender_name:    { type: String, default: "" },
     bill_date:    { type: Date, default: Date.now },
 
     // ── Client snapshot (filled at create from Tender) ────────────────────────
     client_id:   { type: String, default: "" },
     client_name: { type: String, default: "" },
-    client_ref:  { type: mongoose.Schema.Types.ObjectId, ref: "Clients", default: null },
+
 
     previous_bill_id: { type: mongoose.Schema.Types.ObjectId, ref: "billing", default: null },
 

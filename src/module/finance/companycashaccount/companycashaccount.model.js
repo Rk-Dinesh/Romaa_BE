@@ -41,7 +41,6 @@ const CompanyCashAccountSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-CompanyCashAccountSchema.index({ account_code: 1 });
 CompanyCashAccountSchema.index({ is_deleted: 1, is_active: 1 });
 
 const CompanyCashAccountModel = mongoose.model("CompanyCashAccount", CompanyCashAccountSchema);

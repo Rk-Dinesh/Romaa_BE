@@ -13,6 +13,9 @@ const MachineryAssetSchema = new mongoose.Schema(
     assetType: { type: String,
        enum: ["OWN ASSET", "RENTAL ASSET"],
        required: true }, 
+
+    vendorId: { type: String },
+    vendorName: { type: String },
     
     // --- 2. Technical Specifications (Expanded) ---
     serialNumber: String,      // OEM Serial No

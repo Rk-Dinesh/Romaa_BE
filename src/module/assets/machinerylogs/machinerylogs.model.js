@@ -2,9 +2,12 @@ import mongoose, { Schema } from "mongoose";
 
 const MachineDailyLogSchema = new mongoose.Schema(
   {
-    assetId: { type: String, required: true, index: true }, // custom business ID (e.g. "EX-01"), not ObjectId
+    assetId: { type: Schema.Types.ObjectId, ref: "MachineryAsset", required: true, index: true }, // custom business ID (e.g. "EX-01"), not ObjectId
     projectId: { type: String, required: true, index: true },
-    bid_id: { type: String, required: true, index: true }, // custom business ID
+    bid_id: { type: Schema.Types.ObjectId, ref: "Bids", required: true, index: true }, 
+    // custom business ID
+    vendorId: { type: String, required: true, index: true },
+    vendorName: { type: String, required: true, index: true },
     item_id: { type: String },
     operatorId: { type: String, default: null }, // stores employeeId string
     logDate: { type: Date, required: true, index: true }, 

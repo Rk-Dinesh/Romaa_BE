@@ -62,12 +62,7 @@ const BillingSchema = new mongoose.Schema(
       type: String, 
       required: true, 
     },
-    bill_sequence: { type: Number, default: 1 },
-    abstract_name: { 
-      type: String, 
-      default: "Abstract Estimate" 
-    },
-    items: [WorkItemSchema], 
+    items: [WorkItemSchema],
     created_by_user: { type: String, default: "ADMIN" },
   },
   { timestamps: true }
