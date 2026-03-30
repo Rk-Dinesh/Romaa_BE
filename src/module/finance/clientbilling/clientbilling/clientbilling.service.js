@@ -2,6 +2,7 @@ import BillingModel from "./clientbilling.model.js";
 import BidModel from "../../../tender/bid/bid.model.js";
 import TenderModel from "../../../tender/tender/tender.model.js";
 import LedgerService from "../../ledger/ledger.service.js";
+import JournalEntryService from "../../journalentry/journalentry.service.js";
 import mongoose from "mongoose";
 import NotificationService from "../../../notifications/notification.service.js";
 import SteelEstimateModel from "../../../project/CBEstimates/steelestimate/steelEstimate.model.js";
@@ -370,9 +371,44 @@ class BillingService {
       vch_ref: bill._id,
       particulars: `Client Bill ${bill.bill_id} for ${bill.tender_id}`,
       tender_id: bill.tender_id,
-      credit_amt: bill.net_amount, // Net Payable: gross + tax - retention - deductions
+      credit_amt: bill.net_amount,
       debit_amt: 0,
     });
+
+    // ── Auto Journal Entry: Dr Receivable / Cr Revenue + GST Output ──────────
+    const clientAccCode = await JournalEntryService.getSupplierAccountCode("Client", tender.client_id);
+    const projectAccCode = `4010-${bill.tender_id}`;
+
+    if (clientAccCode) {
+      const jeLines = [
+        // Dr: Client Receivable (net amount the client will pay)
+        { account_code: clientAccCode, dr_cr: "Dr", debit_amt: bill.net_amount, credit_amt: 0, narration: "Client receivable" },
+        // Cr: Project Revenue (full base amount)
+        { account_code: projectAccCode, dr_cr: "Cr", debit_amt: 0, credit_amt: bill.grand_total, narration: "Project revenue" },
+      ];
+
+      // Cr: GST Output accounts
+      if (bill.cgst_amt > 0) jeLines.push({ account_code: "2110", dr_cr: "Cr", debit_amt: 0, credit_amt: bill.cgst_amt, narration: "CGST Output" });
+      if (bill.sgst_amt > 0) jeLines.push({ account_code: "2120", dr_cr: "Cr", debit_amt: 0, credit_amt: bill.sgst_amt, narration: "SGST Output" });
+      if (bill.igst_amt > 0) jeLines.push({ account_code: "2130", dr_cr: "Cr", debit_amt: 0, credit_amt: bill.igst_amt, narration: "IGST Output" });
+
+      // Dr: Retention Money Receivable (withheld by client — released after DLP)
+      if (bill.retention_amount > 0) jeLines.push({ account_code: "1060", dr_cr: "Dr", debit_amt: bill.retention_amount, credit_amt: 0, narration: "Retention withheld by client" });
+
+      // Dr: TDS Receivable (deducted by client — adjustable against tax)
+      if (bill.total_deductions > 0) jeLines.push({ account_code: "1070", dr_cr: "Dr", debit_amt: bill.total_deductions, credit_amt: 0, narration: "TDS / deductions by client" });
+
+      await JournalEntryService.createFromVoucher(jeLines, {
+        je_type: "Client Bill",
+        je_date: bill.bill_date || new Date(),
+        narration: `Client Bill ${bill.bill_id} — ${bill.tender_name || bill.tender_id} — ${tender.client_name || tender.client_id}`,
+        tender_id: bill.tender_id,
+        tender_name: bill.tender_name || "",
+        source_ref: bill._id,
+        source_type: "clientbilling",
+        source_no: bill.bill_id,
+      });
+    }
 
     // Notify finance team
     const financeRoles = await NotificationService.getRoleIdsByPermission(

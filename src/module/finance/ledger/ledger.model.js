@@ -26,6 +26,7 @@ const VCH_TYPES = [
   "Payment",        // PY — clears payable
   "Receipt",        // RE — reduces payable
   "ClientBill",     // CB — raises receivable (client owes us)
+  "ClientCN",       // CCN — reduces receivable (credit note to client)
   "Journal",        // JOUR — manual / opening balance
 ];
 

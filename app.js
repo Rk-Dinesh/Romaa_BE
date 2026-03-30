@@ -36,7 +36,7 @@ import scheduleLiteRouter from "./src/module/project/scheduleNew/schedulelite/sc
 import workOrderDoneRouter from "./src/module/site/workorderdone/workorderdone.route.js";
 import billingEstimateRouter from "./src/module/project/CBEstimates/estimate/billingestimate.route.js";
 import billingRouter from "./src/module/finance/clientbilling/clientbilling/clientbilling.route.js";
-// import clientCNRouter from './src/module/finance/clientbilling/clientcreditnote/clientcreditnote.route.js';
+import clientCNRouter from "./src/module/finance/clientcreditnote/clientcreditnote.route.js";
 import steelestimaterouter from "./src/module/project/CBEstimates/steelestimate/steelestimate.route.js";
 import machinerylogrouter from "./src/module/assets/machinerylogs/machinerylogs.route.js";
 import AttendanceRoute from "./src/module/hr/userAttendance/userAttendance.route.js";
@@ -181,7 +181,7 @@ app.use("/raquantities", rateanalysisquantitesrouter);
 app.use("/schedulelite", scheduleLiteRouter);
 app.use("/workorderdone", workOrderDoneRouter);
 app.use("/clientbilling/estimate", billingEstimateRouter);
-// app.use('/clientbilling/creditnote', clientCNRouter);
+app.use("/clientcreditnote", clientCNRouter);
 app.use("/clientbilling", billingRouter);
 app.use("/steelestimate", steelestimaterouter);
 app.use("/machinerylogs", machinerylogrouter);

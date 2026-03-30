@@ -1,6 +1,7 @@
 import ClientCNModel from "./clientcreditnote.model.js";
-import BillingModel  from "../clientbilling/clientbilling.model.js";
-import LedgerService from "../../ledger/ledger.service.js";
+import BillingModel  from "../clientbilling/clientbilling/clientbilling.model.js";
+import LedgerService from "../ledger/ledger.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -188,6 +189,35 @@ class ClientCNService {
 
     // Cr entry: reduces client receivable in ledger
     await postToLedger(ccn);
+
+    // ── Auto Journal Entry: Dr Revenue / Cr Client Receivable + GST reversal ──
+    const clientAccCode = await JournalEntryService.getSupplierAccountCode("Client", ccn.client_id);
+    const projectAccCode = `4010-${ccn.tender_id}`;
+
+    if (clientAccCode) {
+      const jeLines = [
+        // Cr: Client Receivable (reduces what client owes)
+        { account_code: clientAccCode, dr_cr: "Cr", debit_amt: 0, credit_amt: ccn.net_amount, narration: "Reduce client receivable" },
+        // Dr: Project Revenue (reverse revenue for credited items)
+        { account_code: projectAccCode, dr_cr: "Dr", debit_amt: ccn.grand_total, credit_amt: 0, narration: "Revenue reversal" },
+      ];
+
+      // Dr: Reverse GST Output
+      if (ccn.cgst_amt > 0) jeLines.push({ account_code: "2110", dr_cr: "Dr", debit_amt: ccn.cgst_amt, credit_amt: 0, narration: "CGST Output reversal" });
+      if (ccn.sgst_amt > 0) jeLines.push({ account_code: "2120", dr_cr: "Dr", debit_amt: ccn.sgst_amt, credit_amt: 0, narration: "SGST Output reversal" });
+      if (ccn.igst_amt > 0) jeLines.push({ account_code: "2130", dr_cr: "Dr", debit_amt: ccn.igst_amt, credit_amt: 0, narration: "IGST Output reversal" });
+
+      await JournalEntryService.createFromVoucher(jeLines, {
+        je_type: "Client Credit Note",
+        je_date: ccn.ccn_date || new Date(),
+        narration: `Client CN ${ccn.ccn_no} against Bill ${ccn.bill_id} — ${ccn.client_name || ccn.client_id}`,
+        tender_id: ccn.tender_id,
+        tender_name: ccn.tender_name || "",
+        source_ref: ccn._id,
+        source_type: "ClientCreditNote",
+        source_no: ccn.ccn_no,
+      });
+    }
 
     return ccn;
   }

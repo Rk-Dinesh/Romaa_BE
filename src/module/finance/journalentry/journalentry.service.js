@@ -134,7 +134,7 @@ async function enrichAndValidateLines(lines) {
 // we also post to the supplier LedgerEntry so the supplier payable register stays accurate.
 async function crossPostToSupplierLedger(je) {
   const supplierLines = je.lines.filter(
-    (l) => l.supplier_id && l.supplier_type && ["Vendor", "Contractor"].includes(l.supplier_type)
+    (l) => l.supplier_id && l.supplier_type && ["Vendor", "Contractor", "Client"].includes(l.supplier_type)
   );
 
   for (const line of supplierLines) {

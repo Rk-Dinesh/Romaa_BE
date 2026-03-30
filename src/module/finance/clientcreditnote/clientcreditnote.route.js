@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { verifyJWT, verifyPermission } from "../../../../common/Auth.middlware.js";
+import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 import {
   getList,
   getById,
