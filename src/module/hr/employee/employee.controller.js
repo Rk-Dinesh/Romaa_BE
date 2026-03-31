@@ -15,11 +15,13 @@ export const login = async (req, res) => {
 
     const { user, accessToken, refreshToken } = await EmployeeService.loginUser(email, password);
 
-    // Secure Cookie Options
+    // Secure Cookie Options — SameSite=None required for cross-origin (frontend on different domain)
     const options = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production", // Only secure in prod
-      sameSite: "strict"
+      secure: true,
+      sameSite: "None",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
     };
 
     return res
@@ -29,7 +31,7 @@ export const login = async (req, res) => {
       .json({
         status: true,
         message: "User logged in successfully",
-        data: { user } 
+        data: { user }
       });
 
   } catch (error) {
@@ -49,8 +51,10 @@ export const mobileLogin = async (req, res) => {
     // 1. Set Cookies (Great for Web)
     const options = {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "strict"
+      secure: true,
+      sameSite: "None",
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/",
     };
 
     return res
