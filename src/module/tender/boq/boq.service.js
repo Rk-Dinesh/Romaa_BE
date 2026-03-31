@@ -33,9 +33,9 @@ class BoqService {
         { tender_id: boqData.tender_id },
         {
           $set: {
-            BoQ_id: boq_id,
+            boq_id: boq_id,
             boq_final_value: savedBoq.total_amount || 0,
-            zeroCost_final_value: savedBoq.items.reduce(
+            zero_cost_final_value: savedBoq.items.reduce(
               (sum, i) => sum + (i.zero_cost_final_amount || 0),
               0
             )
@@ -86,9 +86,9 @@ static async addOrUpdateBoqItem(boqData) {
       { tender_id },
       {
         $set: {
-          BoQ_id: savedBoq.boq_id,
+          boq_id: savedBoq.boq_id,
           boq_final_value: savedBoq.total_amount || 0,
-          zeroCost_final_value: savedBoq.items.reduce(
+          zero_cost_final_value: savedBoq.items.reduce(
             (sum, i) => sum + (i.zero_cost_final_amount || 0),
             0
           ),
@@ -125,9 +125,9 @@ static async addOrUpdateBoqItem(boqData) {
       { tender_id },
       {
         $set: {
-          BoQ_id: boq_id,
+          boq_id: boq_id,
           boq_final_value: savedBoq.total_amount || 0,
-          zeroCost_final_value: savedBoq.items.reduce(
+          zero_cost_final_value: savedBoq.items.reduce(
             (sum, i) => sum + (i.zero_cost_final_amount || 0),
             0
           ),
@@ -203,7 +203,7 @@ static async addOrUpdateBoqItem(boqData) {
 
     if (!boq) throw new Error("BOQ record not found");
 
-    // 🔹 Recalculate zeroCost_final_value from full BoQ and sync to Tender
+    // 🔹 Recalculate zero_cost_final_value from full BoQ and sync to Tender
     if (boq.tender_id) {
       const zeroCostTotal = boq.items.reduce(
         (sum, i) => sum + (i.zero_cost_final_amount || 0),
@@ -215,7 +215,7 @@ static async addOrUpdateBoqItem(boqData) {
         {
           $set: {
             boq_final_value: boq.total_amount || 0,
-            zeroCost_final_value: zeroCostTotal
+            zero_cost_final_value: zeroCostTotal
           }
         }
       );
@@ -357,7 +357,7 @@ static async bulkInsert(csvRows, createdByUser, tender_id, phase = "", parsedRev
     { tender_id },
     {
       $set: {
-        BoQ_id: savedBoq.boq_id,
+        boq_id: savedBoq.boq_id,
         boq_final_value: savedBoq.total_amount || 0,
       },
     }

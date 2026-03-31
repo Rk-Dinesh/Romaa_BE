@@ -18,15 +18,17 @@ const templatePath = path.join(
 );
 const siteOverheadsTemplate = JSON.parse(fs.readFileSync(templatePath, "utf8"));
 
+const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 class TenderService {
   // Create new tender
- static async createTender(tenderData) {
+  static async createTender(tenderData) {
     const idname = "TENDER";
     const idcode = "TND";
     await IdcodeServices.addIdCode(idname, idcode);
     const tender_id = await IdcodeServices.generateCode(idname);
 
-    const tender_project_name = `Tender No ${tender_id}`;
+    const tender_project_name = `Info ${tender_id}`;
 
     const tender = new TenderModel({
       tender_id,
@@ -50,12 +52,9 @@ class TenderService {
       ...siteOverheadsTemplate,
       tenderId: tender_id,
       tenderName: tenderData.tender_name,
-      // periodMonths, jobValueRs, sections already present in template
     };
 
     const siteOverheads = new SiteOverheads(siteOverheadsPayload);
-    console.log(siteOverheads);
-    
     await siteOverheads.save();
 
     const savedTender = await tender.save();
@@ -85,7 +84,7 @@ class TenderService {
     return await TenderModel.find();
   }
 
-    static async getAllTendersId() {
+  static async getAllTendersId() {
     return await TenderModel.find().select("tender_id _id tender_project_name");
   }
 
@@ -106,23 +105,8 @@ class TenderService {
     );
   }
 
-  // Update tender (with recalculations)
+  // Update tender
   static async updateTender(tender_id, updateData) {
-    // if (updateData.tender_value && updateData.emd?.emd_percentage) {
-    //   updateData.emd.emd_amount =
-    //     (updateData.tender_value * updateData.emd.emd_percentage) / 100;
-    // }
-
-    // if (
-    //   updateData.tender_value &&
-    //   updateData.security_deposit?.security_deposit_percentage
-    // ) {
-    //   updateData.security_deposit.security_deposit_amount =
-    //     (updateData.tender_value *
-    //       updateData.security_deposit.security_deposit_percentage) /
-    //     100;
-    // }
-
     return await TenderModel.findOneAndUpdate(
       { tender_id },
       { $set: updateData },
@@ -147,18 +131,17 @@ class TenderService {
   static async getTendersPaginated(page, limit, search, fromdate, todate) {
     const query = {};
 
-    // 🔍 Keyword Search
     if (search) {
+      const escaped = escapeRegex(search);
       query.$or = [
-        { tender_name: { $regex: search, $options: "i" } },
-        { tender_id: { $regex: search, $options: "i" } },
-        { "tender_location.city": { $regex: search, $options: "i" } },
-        { "tender_location.state": { $regex: search, $options: "i" } },
-        { "tender_location.country": { $regex: search, $options: "i" } },
+        { tender_name: { $regex: escaped, $options: "i" } },
+        { tender_id: { $regex: escaped, $options: "i" } },
+        { "tender_location.city": { $regex: escaped, $options: "i" } },
+        { "tender_location.state": { $regex: escaped, $options: "i" } },
+        { "tender_location.country": { $regex: escaped, $options: "i" } },
       ];
     }
 
-    // 📅 Date Filtering (based on tender_start_date)
     if (fromdate || todate) {
       query.tender_start_date = {};
       if (fromdate) query.tender_start_date.$gte = new Date(fromdate);
@@ -173,14 +156,15 @@ class TenderService {
 
     const tenders = await TenderModel.find(query)
       .select(
-        "tender_id tender_name tender_location tender_start_date tender_value tender_status tender_type client_id client_name tender_contact_person  tender_contact_phone tender_contact_email tender_duration consider_completion_duration tender_end_date tender_description emd.emd_percentage emd.emd_validity emd.emd_amount site_location.latitude site_location.longitude"
-      ) // ✅ only required fields
+        "tender_id tender_name tender_location tender_start_date tender_value tender_status tender_type client_id client_name tender_contact_person tender_contact_phone tender_contact_email tender_duration consider_completion_duration tender_end_date tender_description emd.emd_percentage emd.emd_validity emd.emd_amount site_location.latitude site_location.longitude"
+      )
       .skip((page - 1) * limit)
       .limit(limit)
       .sort({ createdAt: -1 });
 
     return { total, tenders };
   }
+
   static async getTenderForOverview(tender_id) {
     const tender = await TenderModel.findOne(
       { tender_id },
@@ -196,23 +180,24 @@ class TenderService {
         tender_contact_phone: 1,
         tender_contact_email: 1,
         tender_status_check: 1,
-        follow_up_ids: 1,
+        follow_up_dates: 1,
         client_id: 1,
         client_name: 1,
-        agreement_value:1
+        agreement_value: 1
       }
     ).lean();
 
     if (!tender) return null;
 
-    // Minimal client lookup
     const client = await ClientModel.findOne(
       { client_id: tender.client_id },
       {
         client_id: 1,
         client_name: 1,
+        contact_person: 1,
         contact_phone: 1,
         contact_email: 1,
+        contact_persons: 1,
         address: 1,
         pan_no: 1,
         cin_no: 1,
@@ -238,8 +223,10 @@ class TenderService {
         ? {
             client_id: client.client_id,
             client_name: client.client_name,
+            contact_person: client.contact_person,
             contact_phone: client.contact_phone,
             contact_email: client.contact_email,
+            contact_persons: client.contact_persons,
             address: client.address,
             pan_no: client.pan_no,
             cin_no: client.cin_no,
@@ -252,7 +239,7 @@ class TenderService {
   static async addImportantDate(tender_id, dateData) {
     return await TenderModel.findOneAndUpdate(
       { tender_id },
-      { $push: { follow_up_ids: dateData } },
+      { $push: { follow_up_dates: dateData } },
       { new: true }
     );
   }
@@ -279,7 +266,6 @@ class TenderService {
       tender_ref: tender._id,
     }).catch(() => {});
 
-    // Notify project team about work order issuance
     NotificationService.notify({
       title: "Work Order Issued",
       message: `Work order ${workOrder_id} issued for tender ${tender_id} — ${tender.tender_name}`,
@@ -323,30 +309,22 @@ class TenderService {
     return tender;
   }
 
-  static async getTendersPaginatedWorkorder(
-    page,
-    limit,
-    search,
-    fromdate,
-    todate
-  ) {
+  static async getTendersPaginatedWorkorder(page, limit, search, fromdate, todate) {
     const query = {};
 
-    // ✅ Ensure workOrder_id is not empty
     query.workOrder_id = { $nin: [null, ""] };
 
-    // 🔍 Keyword Search
     if (search) {
+      const escaped = escapeRegex(search);
       query.$or = [
-        { tender_name: { $regex: search, $options: "i" } },
-        { tender_id: { $regex: search, $options: "i" } },
-        { "tender_location.city": { $regex: search, $options: "i" } },
-        { "tender_location.state": { $regex: search, $options: "i" } },
-        { "tender_location.country": { $regex: search, $options: "i" } },
+        { tender_name: { $regex: escaped, $options: "i" } },
+        { tender_id: { $regex: escaped, $options: "i" } },
+        { "tender_location.city": { $regex: escaped, $options: "i" } },
+        { "tender_location.state": { $regex: escaped, $options: "i" } },
+        { "tender_location.country": { $regex: escaped, $options: "i" } },
       ];
     }
 
-    // 📅 Date Filtering (based on tender_start_date)
     if (fromdate || todate) {
       query.tender_start_date = {};
       if (fromdate) query.tender_start_date.$gte = new Date(fromdate);
@@ -373,21 +351,19 @@ class TenderService {
   static async getTendersPaginatedEMDSD(page, limit, search, fromdate, todate) {
     const query = {};
 
-    // ✅ Ensure workOrder_id is not empty
     query.workOrder_id = { $nin: [null, ""] };
 
-    // 🔍 Keyword Search
     if (search) {
+      const escaped = escapeRegex(search);
       query.$or = [
-        { tender_name: { $regex: search, $options: "i" } },
-        { tender_id: { $regex: search, $options: "i" } },
-        { "tender_location.city": { $regex: search, $options: "i" } },
-        { "tender_location.state": { $regex: search, $options: "i" } },
-        { "tender_location.country": { $regex: search, $options: "i" } },
+        { tender_name: { $regex: escaped, $options: "i" } },
+        { tender_id: { $regex: escaped, $options: "i" } },
+        { "tender_location.city": { $regex: escaped, $options: "i" } },
+        { "tender_location.state": { $regex: escaped, $options: "i" } },
+        { "tender_location.country": { $regex: escaped, $options: "i" } },
       ];
     }
 
-    // 📅 Date Filtering (based on tender_start_date)
     if (fromdate || todate) {
       query.tender_start_date = {};
       if (fromdate) query.tender_start_date.$gte = new Date(fromdate);
@@ -402,8 +378,7 @@ class TenderService {
 
     const tenders = await TenderModel.find(query)
       .select(
-        `
-  tender_id
+        `tender_id
   tender_name
   workOrder_id
   workOrder_issued_date
@@ -430,8 +405,7 @@ class TenderService {
   emd.approved_emd_details.security_deposit_approved_date
   emd.approved_emd_details.security_deposit_amount_collected
   emd.approved_emd_details.security_deposit_pendingAmount
-  emd.approved_emd_details.security_deposit_note
-  `
+  emd.approved_emd_details.security_deposit_note`
       )
       .skip((page - 1) * limit)
       .limit(limit)
@@ -440,125 +414,105 @@ class TenderService {
     return { total, tenders };
   }
 
- static async updateEmdDetailsService(tender_id, updates) {
-  const { emd_note, emd_deposit_amount_collected } = updates;
+  static async updateEmdDetailsService(tender_id, updates) {
+    const { emd_note, emd_deposit_amount_collected } = updates;
 
-  const tender = await TenderModel.findOne({ tender_id });
-  if (!tender) throw new Error("Tender not found");
+    const tender = await TenderModel.findOne({ tender_id });
+    if (!tender) throw new Error("Tender not found");
 
-  if (
-    !tender.emd.approved_emd_details ||
-    tender.emd.approved_emd_details.length === 0
-  ) {
-    throw new Error("No approved EMD details found to update");
+    if (!tender.emd?.approved_emd_details?.emd_proposed_company) {
+      throw new Error("No approved EMD details found to update");
+    }
+
+    const emdEntry = tender.emd.approved_emd_details;
+
+    const approved = emdEntry.emd_approved_amount || 0;
+    const prevCollected = emdEntry.emd_deposit_amount_collected || 0;
+    const addAmount = Number(emd_deposit_amount_collected || 0);
+
+    if (emd_note !== undefined) emdEntry.emd_note = emd_note;
+
+    const newCollectedTotal = prevCollected + addAmount;
+    emdEntry.emd_deposit_amount_collected = newCollectedTotal;
+
+    const pending = approved - newCollectedTotal;
+    emdEntry.emd_deposit_pendingAmount = pending;
+
+    emdEntry.emd_tracking.push({
+      emd_note,
+      amount_collected: addAmount,
+      amount_pending: pending,
+      amount_collected_by: "Admin",
+      amount_collected_date: new Date(),
+      amount_collected_time: new Date().toLocaleTimeString(),
+    });
+
+    await tender.save();
+    return emdEntry;
   }
 
-  const emdEntry = tender.emd.approved_emd_details[0];
+  static async getemd_tracking(tender_id) {
+    const tender = await TenderModel.findOne({ tender_id });
+    if (!tender) throw new Error("Tender not found");
 
-  // current totals (fallback 0)
-  const approved = emdEntry.emd_approved_amount || 0;
-  const prevCollected = emdEntry.emd_deposit_amount_collected || 0;
-  const addAmount = Number(emd_deposit_amount_collected || 0);
+    if (!tender.emd?.approved_emd_details?.emd_proposed_company) {
+      throw new Error("No approved EMD details found");
+    }
 
-  if (emd_note !== undefined) emdEntry.emd_note = emd_note;
-
-  // new cumulative total
-  const newCollectedTotal = prevCollected + addAmount;
-  emdEntry.emd_deposit_amount_collected = newCollectedTotal;
-
-  // pending
-  const pending = approved - newCollectedTotal;
-  emdEntry.emd_deposit_pendingAmount = pending;
-
-  // push tracking for this *transaction only*
-  emdEntry.emd_tracking.push({
-    emd_note,
-    amount_collected: addAmount,          // 2000 (this entry)
-    amount_pending: pending,              // 8000, 6000, ...
-    amount_collected_by: "Admin",
-    amount_collected_date: new Date(),
-    amount_collected_time: new Date().toLocaleTimeString(),
-  });
-
-  await tender.save();
-  return emdEntry;
-}
-
-static async getemd_tracking(tender_id) {
-  const tender = await TenderModel.findOne({ tender_id });
-  if (!tender) throw new Error("Tender not found");
-
-  if (
-    !tender.emd.approved_emd_details ||
-    tender.emd.approved_emd_details.length === 0
-  ) {
-    throw new Error("No approved EMD details found to update");
+    return tender.emd.approved_emd_details.emd_tracking;
   }
 
-  const emdEntry = tender.emd.approved_emd_details[0];
+  static async updateSDDetailsService(tender_id, updates) {
+    const { security_deposit_note, security_deposit_amount_collected } = updates;
 
-  return emdEntry.emd_tracking;
-}
+    const tender = await TenderModel.findOne({ tender_id });
+    if (!tender) throw new Error("Tender not found");
 
-static async updateSDDetailsService(tender_id, updates) {
-  const { security_deposit_note, security_deposit_amount_collected } = updates;
+    if (!tender.emd?.approved_emd_details?.emd_proposed_company) {
+      throw new Error("No approved EMD details found to update");
+    }
 
-  const tender = await TenderModel.findOne({ tender_id });
-  if (!tender) throw new Error("Tender not found");
+    const emdEntry = tender.emd.approved_emd_details;
 
-  if (
-    !tender.emd.approved_emd_details ||
-    tender.emd.approved_emd_details.length === 0
-  ) {
-    throw new Error("No approved EMD details found to update");
+    const approved = emdEntry.security_deposit_amount || 0;
+    const prevCollected = emdEntry.security_deposit_amount_collected || 0;
+    const addAmount = Number(security_deposit_amount_collected || 0);
+
+    if (security_deposit_note !== undefined) {
+      emdEntry.security_deposit_note = security_deposit_note;
+    }
+
+    const newCollectedTotal = prevCollected + addAmount;
+    emdEntry.security_deposit_amount_collected = newCollectedTotal;
+
+    const pending = approved - newCollectedTotal;
+    emdEntry.security_deposit_pendingAmount = pending;
+
+    emdEntry.security_deposit_tracking.push({
+      security_deposit_note,
+      amount_collected: addAmount,
+      amount_pending: pending,
+      amount_collected_by: "Admin",
+      amount_collected_date: new Date(),
+      amount_collected_time: new Date().toLocaleTimeString(),
+    });
+
+    await tender.save();
+    return emdEntry;
   }
 
-  const emdEntry = tender.emd.approved_emd_details[0];
+  static async getsecurity_deposit_tracking(tender_id) {
+    const tender = await TenderModel.findOne({ tender_id });
+    if (!tender) throw new Error("Tender not found");
 
-  const approved = emdEntry.security_deposit_amount || 0;
-  const prevCollected = emdEntry.security_deposit_amount_collected || 0;
-  const addAmount = Number(security_deposit_amount_collected || 0);
+    if (!tender.emd?.approved_emd_details?.emd_proposed_company) {
+      throw new Error("No approved EMD details found");
+    }
 
-  if (security_deposit_note !== undefined) {
-    emdEntry.security_deposit_note = security_deposit_note;
+    return tender.emd.approved_emd_details.security_deposit_tracking;
   }
 
-  const newCollectedTotal = prevCollected + addAmount;
-  emdEntry.security_deposit_amount_collected = newCollectedTotal;
-
-  const pending = approved - newCollectedTotal;
-  emdEntry.security_deposit_pendingAmount = pending;
-
-  emdEntry.security_deposit_tracking.push({
-    security_deposit_note,
-    amount_collected: addAmount,
-    amount_pending: pending,
-    amount_collected_by: "Admin",
-    amount_collected_date: new Date(),
-    amount_collected_time: new Date().toLocaleTimeString(),
-  });
-
-  await tender.save();
-  return emdEntry;
-}
-
-static async getsecurity_deposit_tracking(tender_id) {
-  const tender = await TenderModel.findOne({ tender_id });
-  if (!tender) throw new Error("Tender not found");
-
-  if (
-    !tender.emd.approved_emd_details ||
-    tender.emd.approved_emd_details.length === 0
-  ) {
-    throw new Error("No approved EMD details found to update");
-  }
-
-  const emdEntry = tender.emd.approved_emd_details[0];
-
-  return emdEntry.security_deposit_tracking;
-}
-
-static async getWorkorderForOverview(tender_id) {
+  static async getWorkorderForOverview(tender_id) {
     const tender = await TenderModel.findOne(
       { tender_id },
       {
@@ -571,7 +525,7 @@ static async getWorkorderForOverview(tender_id) {
         tender_contact_phone: 1,
         tender_contact_email: 1,
         tender_status_check: 1,
-        follow_up_ids: 1,
+        follow_up_dates: 1,
         client_id: 1,
         client_name: 1,
         workOrder_id: 1,
@@ -583,21 +537,6 @@ static async getWorkorderForOverview(tender_id) {
     ).lean();
 
     if (!tender) return null;
-
-    // Minimal client lookup
-    const client = await ClientModel.findOne(
-      { client_id: tender.client_id },
-      {
-        client_id: 1,
-        client_name: 1,
-        contact_phone: 1,
-        contact_email: 1,
-        address: 1,
-        pan_no: 1,
-        cin_no: 1,
-        gstin: 1,
-      }
-    ).lean();
 
     return {
       workOrderDetails: {
@@ -623,13 +562,11 @@ static async getWorkorderForOverview(tender_id) {
       { tender_id },
       { tender_process: 1 }
     );
-    console.log(tender);
 
     if (!tender) throw new Error("Tender not found");
     return tender.tender_process;
   }
 
-  // Update/save a single step data and mark completed
   static async saveTenderProcessStep(tender_id, stepData) {
     const tender = await TenderModel.findOne({ tender_id });
     if (!tender) throw new Error("Tender not found");
@@ -639,9 +576,8 @@ static async getWorkorderForOverview(tender_id) {
     );
     if (index === -1) throw new Error("Step not found");
 
-    // Update step fields and mark completed
     tender.tender_process[index] = {
-      ...tender.tender_process[index]._doc, // existing fields
+      ...tender.tender_process[index]._doc,
       notes: stepData.notes || "",
       date: stepData.date || null,
       time: stepData.time || "",
@@ -698,7 +634,7 @@ static async getWorkorderForOverview(tender_id) {
       ...tender.preliminary_site_work[index]._doc,
       notes: stepData.notes || "",
       date: stepData.date || new Date().toISOString(),
-      time: stepData.time || new Date().toLocaleTimeString() , //to get 12 hour format,
+      time: stepData.time || new Date().toLocaleTimeString(),
       file_name: stepData.file_name || "",
       file_url: stepData.file_url || "",
       completed: true,
@@ -768,7 +704,7 @@ static async getWorkorderForOverview(tender_id) {
         tender_id: 1,
         tender_project_division: 1,
         tender_project_type: 1,
-        tender_bussiness_type: 1,
+        tender_business_type: 1,
         tender_project_name: 1,
       }
     );

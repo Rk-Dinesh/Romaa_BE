@@ -39,7 +39,7 @@ class ClientService {
   }
 
   static async getAllClientsIDNAME() {
-    return ClientModel.find().select("client_id client_name");
+    return ClientModel.find().select("client_id client_name contact_person contact_email contact_phone");
   }
 
   
@@ -59,6 +59,8 @@ static async getClientsPaginated(page, limit, search, fromdate, todate) {
       { client_name: { $regex: search, $options: "i" } },
       { contact_email: { $regex: search, $options: "i" } },
       { contact_phone: { $regex: search, $options: "i" } },
+      { "contact_persons.name": { $regex: search, $options: "i" } },
+      { "contact_persons.phone": { $regex: search, $options: "i" } },
     ];
   }
 
@@ -100,7 +102,9 @@ static async getClientsPaginated(page, limit, search, fromdate, todate) {
       $or: [
         { client_name: { $regex: keyword, $options: "i" } },
         { contact_email: { $regex: keyword, $options: "i" } },
-        { contact_phone: { $regex: keyword, $options: "i" } }
+        { contact_phone: { $regex: keyword, $options: "i" } },
+        { "contact_persons.name": { $regex: keyword, $options: "i" } },
+        { "contact_persons.phone": { $regex: keyword, $options: "i" } }
       ]
     });
   }

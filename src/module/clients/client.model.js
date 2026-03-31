@@ -7,8 +7,15 @@ const clientSchema = new mongoose.Schema(
     pan_no: String,
     cin_no: String,
     gstin: String,
+    contact_person: String,
     contact_email: String,
     contact_phone: String,
+    contact_persons: [
+      {
+        name: String,
+        phone: String,
+      },
+    ],
     address: {
       city: String,
       state: String,

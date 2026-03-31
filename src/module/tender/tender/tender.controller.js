@@ -185,7 +185,7 @@ export const addImportantDate = async (req, res) => {
     res.status(200).json({
       status: true,
       message: "Important date added successfully",
-      data: tender.important_dates
+      data: tender.follow_up_dates
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -197,13 +197,12 @@ export const updateTenderWorkOrderController = async (req, res) => {
   try {
     
    const { tender_id } = req.params;
-    const { workOrder_id,workOrder_issued_date } = req.body;
-    console.log(tender_id,workOrder_id,workOrder_issued_date);
+    const { workOrder_id, workOrder_issued_date } = req.body;
 
-    if (!tender_id || !workOrder_issued_date ||!workOrder_id) {
+    if (!tender_id || !workOrder_issued_date || !workOrder_id) {
       return res.status(400).json({
-        success: false,
-        message: "tender_id and workOrder_issued_by are required"
+        status: false,
+        message: "tender_id, workOrder_id and workOrder_issued_date are required"
       });
     }
 
@@ -214,7 +213,7 @@ export const updateTenderWorkOrderController = async (req, res) => {
     );
 
     res.status(200).json({
-      success: true,
+      status: true,
       message: "Tender status updated & work order issued successfully",
       data: updatedTender
     });
@@ -226,12 +225,12 @@ export const updateTenderWorkOrderController = async (req, res) => {
 export const updateTenderAgreementController = async (req, res) => {
   try {
     const { tender_id } = req.params;
-    const { agreement_id,agreement_value,agreement_issued_date } = req.body;
+    const { agreement_id, agreement_value, agreement_issued_date } = req.body;
 
-    if (!tender_id || !agreement_issued_date ||!agreement_id) {
+    if (!tender_id || !agreement_issued_date || !agreement_id) {
       return res.status(400).json({
-        success: false,
-        message: "tender_id and agreement_issued_by are required"
+        status: false,
+        message: "tender_id, agreement_id and agreement_issued_date are required"
       });
     }
 
@@ -243,7 +242,7 @@ export const updateTenderAgreementController = async (req, res) => {
     );
 
     res.status(200).json({
-      success: true,
+      status: true,
       message: "Tender status updated & agreement issued successfully",
       data: updatedTender
     });
@@ -278,12 +277,12 @@ export const checkTenderApprovalStatus = async (req, res) => {
     const isApproved = tender.tender_status?.toUpperCase() === "APPROVED";
 
     return res.status(200).json({
-      success: true,
-      approved: isApproved, // ✅ true or false
+      status: true,
+      approved: isApproved,
     });
   } catch (error) {
     return res.status(500).json({
-      success: false,
+      status: false,
       message: error.message,
     });
   }
@@ -546,7 +545,7 @@ export const savePreliminarySiteWorkaws = async (req, res) => {
 
 export const getFinancialGenerals = async (req, res) => {
   try {
-    const data = await TenderService.getFinancialGenerals(req.params.tender_id,req.params.workOrder_id);
+    const data = await TenderService.getFinancialGenerals(req.params.tender_id, req.params.workOrder_id);
     if (!data)
       return res.status(404).json({ status: false, message: "Tender not found" });
 
@@ -558,7 +557,7 @@ export const getFinancialGenerals = async (req, res) => {
 
 export const updateFinancialGenerals = async (req, res) => {
   try {
-    const { tender_id ,workOrder_id} = req.params; 
+    const { tender_id, workOrder_id } = req.params;
     const updatedFinancialGenerals = await TenderService.financialGeneralsUpdate(
       tender_id,
       workOrder_id,
