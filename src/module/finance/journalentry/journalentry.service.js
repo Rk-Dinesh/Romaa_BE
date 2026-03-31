@@ -2,6 +2,8 @@ import JournalEntryModel from "./journalentry.model.js";
 import AccountTreeModel from "../accounttree/accounttree.model.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
 import LedgerService from "../ledger/ledger.service.js";
+import FinanceCounterModel from "../FinanceCounter.model.js";
+import logger from "../../../config/logger.js";
 
 // ── Supplier AP account lookup ────────────────────────────────────────────────
 // Returns the personal ledger account code for a supplier (e.g. "2010-VND-001").
@@ -170,16 +172,14 @@ class JournalEntryService {
 
   // GET /journalentry/next-no
   static async getNextJeNo() {
-    const fy     = getFY(new Date());
-    const prefix = `JE/${fy}/`;
-    const last   = await JournalEntryModel.findOne(
-      { je_no: { $regex: `^${prefix}` } },
-      { je_no: 1 }
-    ).sort({ createdAt: -1 });
-
-    const seq   = last ? parseInt(last.je_no.split("/").pop(), 10) : 0;
-    const je_no = `${prefix}${String(seq + 1).padStart(4, "0")}`;
-    return { je_no, is_first: !last };
+    const fy      = getFY(new Date());
+    const counter = await FinanceCounterModel.findByIdAndUpdate(
+      `JE/${fy}`,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    const je_no   = `JE/${fy}/${String(counter.seq).padStart(4, "0")}`;
+    return { je_no, is_first: counter.seq === 1 };
   }
 
   // GET /journalentry/list
@@ -467,7 +467,10 @@ class JournalEntryService {
       });
 
       // Cross-post supplier lines to LedgerEntry
-      await crossPostToSupplierLedger(saved);
+      // Skip if the calling voucher service already posted directly (prevents double-posting)
+      if (!meta.skip_ledger_cross_post) {
+        await crossPostToSupplierLedger(saved);
+      }
 
       // Update AccountTree available_balance for all touched accounts
       await AccountTreeService.applyBalanceLines(saved.lines);
@@ -475,7 +478,11 @@ class JournalEntryService {
       return saved;
     } catch (err) {
       // Log but never fail the parent voucher approval
-      console.error(`[JE] createFromVoucher failed for ${meta?.source_no}: ${err.message}`);
+      logger.error(`[JE] createFromVoucher failed for ${meta?.source_no}: ${err.message}`, {
+        source_no:   meta?.source_no,
+        source_type: meta?.source_type,
+        error:       err.message,
+      });
       return null;
     }
   }

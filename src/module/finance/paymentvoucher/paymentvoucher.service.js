@@ -4,7 +4,10 @@ import ContractorModel from "../../hr/contractors/contractor.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
 import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
+import ClientModel from "../../clients/client.model.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
+import FinanceCounterModel from "../FinanceCounter.model.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -49,7 +52,17 @@ async function resolveSupplier(supplier_type, supplier_id) {
     };
   }
 
-  throw new Error(`Invalid supplier_type '${supplier_type}'. Must be Vendor or Contractor`);
+  if (supplier_type === "Client") {
+    const client = await ClientModel.findOne({ client_id: supplier_id }).lean();
+    if (!client) throw new Error(`Client '${supplier_id}' not found`);
+    return {
+      supplier_ref:   client._id,
+      supplier_name:  client.client_name,
+      supplier_gstin: client.gstin || "",
+    };
+  }
+
+  throw new Error(`Invalid supplier_type '${supplier_type}'. Must be Vendor, Contractor, or Client`);
 }
 
 // ── Build document from payload ───────────────────────────────────────────────
@@ -180,18 +193,24 @@ async function markBillsSettled(pv) {
 
 class PaymentVoucherService {
 
-  // GET /paymentvoucher/next-no
+  // GET /paymentvoucher/next-no  — preview only, does NOT increment
   static async getNextPvNo() {
-    const fy     = currentFY();
-    const prefix = `PV/${fy}/`;
-    const last   = await PaymentVoucherModel.findOne(
-      { pv_no: { $regex: `^${prefix}` } },
-      { pv_no: 1 }
-    ).sort({ createdAt: -1 });
+    const fy      = currentFY();
+    const counter = await FinanceCounterModel.findById(`PV/${fy}`).lean();
+    const nextSeq = counter ? counter.seq + 1 : 1;
+    const pv_no   = `PV/${fy}/${String(nextSeq).padStart(4, "0")}`;
+    return { pv_no, is_first: !counter };
+  }
 
-    const seq   = last ? parseInt(last.pv_no.split("/").pop(), 10) : 0;
-    const pv_no = `${prefix}${String(seq + 1).padStart(4, "0")}`;
-    return { pv_no, is_first: !last };
+  // Internal: atomically allocate the next PV number
+  static async #allocatePvNo() {
+    const fy      = currentFY();
+    const counter = await FinanceCounterModel.findByIdAndUpdate(
+      `PV/${fy}`,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    return `PV/${fy}/${String(counter.seq).padStart(4, "0")}`;
   }
 
   // GET /paymentvoucher/list
@@ -278,7 +297,6 @@ class PaymentVoucherService {
 
   // POST /paymentvoucher/create
   static async create(payload) {
-    if (!payload.pv_no)         throw new Error("pv_no is required");
     if (!payload.supplier_id)   throw new Error("supplier_id is required");
     if (!payload.supplier_type) throw new Error("supplier_type is required");
 
@@ -287,7 +305,9 @@ class PaymentVoucherService {
 
     validateEntriesBalance(payload.entries);
 
-    const doc = buildDoc(payload, payload.pv_no);
+    // Atomically allocate pv_no (ignore any client-supplied value to prevent duplicates)
+    const pv_no = await PaymentVoucherService.#allocatePvNo();
+    const doc   = buildDoc(payload, pv_no);
 
     // If creating directly as approved, bank_account_code must be present
     if (doc.status === "approved" && !doc.bank_account_code) {
@@ -299,11 +319,7 @@ class PaymentVoucherService {
     if (saved.status === "approved") {
       await postToLedger(saved);
       await markBillsSettled(saved);
-      await AccountTreeService.applyBalanceLines([{
-        account_code: saved.bank_account_code,
-        debit_amt:    0,
-        credit_amt:   saved.amount,
-      }]);
+      await PaymentVoucherService.#postJE(saved);
     }
 
     return saved;
@@ -336,6 +352,49 @@ class PaymentVoucherService {
     return { deleted: true, pv_no: pv.pv_no };
   }
 
+  // ── Build and post the double-entry JE for a payment voucher ─────────────────
+  // Dr: Supplier Payable (personal ledger account) — clears the liability
+  // Cr: Bank / Cash account — cash goes out
+  // Cr: TDS Payable (2140) — tax withheld at source (if any)
+  static async #postJE(pv) {
+    const supplierAccCode = await JournalEntryService.getSupplierAccountCode(pv.supplier_type, pv.supplier_id);
+    const grossAmt = pv.gross_amount || pv.amount;
+    const tdsAmt   = pv.tds_amt || 0;
+
+    const jeLines = [];
+
+    if (supplierAccCode) {
+      jeLines.push({ account_code: supplierAccCode, dr_cr: "Dr", debit_amt: grossAmt, credit_amt: 0, narration: "Supplier payable cleared" });
+    }
+    jeLines.push({ account_code: pv.bank_account_code, dr_cr: "Cr", debit_amt: 0, credit_amt: pv.amount, narration: "Payment out" });
+    if (tdsAmt > 0) {
+      jeLines.push({ account_code: "2140", dr_cr: "Cr", debit_amt: 0, credit_amt: tdsAmt, narration: "TDS withheld" });
+    }
+
+    const je = await JournalEntryService.createFromVoucher(jeLines, {
+      je_type:     "Payment",
+      je_date:     pv.pv_date || new Date(),
+      narration:   `Payment Voucher ${pv.pv_no} — ${pv.supplier_name}${pv.narration ? " | " + pv.narration : ""}`,
+      tender_id:   pv.tender_id,
+      tender_name: pv.tender_name || "",
+      source_ref:  pv._id,
+      source_type:             "PaymentVoucher",
+      source_no:               pv.pv_no,
+      skip_ledger_cross_post:  true,  // postToLedger() already posted to supplier ledger
+    });
+
+    if (je?._id) {
+      await PaymentVoucherModel.findByIdAndUpdate(pv._id, { je_ref: je._id, je_no: je.je_no });
+    } else if (!supplierAccCode) {
+      // JE not posted (no supplier account code) — fall back to manual bank balance update
+      await AccountTreeService.applyBalanceLines([{
+        account_code: pv.bank_account_code,
+        debit_amt:    0,
+        credit_amt:   pv.amount,
+      }]);
+    }
+  }
+
   // PATCH /paymentvoucher/approve/:id
   // body may include { bank_account_code } to set it at approval time
   static async approve(id, body = {}) {
@@ -362,13 +421,9 @@ class PaymentVoucherService {
     // 2. Update every referenced bill with this PV's payment details
     await markBillsSettled(pv);
 
-    // 3. Reduce the paying bank account balance in AccountTree
-    // Payment out = Cr to bank account (Dr normal Asset → balance decreases)
-    await AccountTreeService.applyBalanceLines([{
-      account_code: pv.bank_account_code,
-      debit_amt:    0,
-      credit_amt:   pv.amount,
-    }]);
+    // 3. Post double-entry JE: Dr supplier payable / Cr bank + TDS
+    //    (JE service also updates AccountTree available_balance for both sides)
+    await PaymentVoucherService.#postJE(pv);
 
     return pv;
   }

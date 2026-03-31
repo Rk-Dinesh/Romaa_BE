@@ -111,6 +111,10 @@ const BillingSchema = new mongoose.Schema(
 
     narration:         { type: String, default: "" },
     created_by_user:   { type: String, default: "" },
+
+    // ── Journal Entry link (set on approval) ─────────────────────────────────
+    je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
+    je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
   },
   { timestamps: true }
 );

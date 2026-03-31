@@ -4,6 +4,8 @@ import ContractorModel from "../../hr/contractors/contractor.model.js";
 import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
 import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 import LedgerService from "../ledger/ledger.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
+import FinanceCounterModel from "../FinanceCounter.model.js";
 
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -188,6 +190,39 @@ async function markBillAdjusted(cn) {
   await bill.save();
 }
 
+// ── Post double-entry JE for a credit note ────────────────────────────────────
+// Supplier sends CN: Dr supplier payable / Cr material cost + Cr GST Input reversal
+async function postCNJe(cn) {
+  const supplierAccCode = await JournalEntryService.getSupplierAccountCode(cn.supplier_type, cn.supplier_id);
+  const expenseAccCode  = cn.supplier_type === "Contractor" ? "5030" : "5010";
+
+  const jeLines = [];
+  if (supplierAccCode) {
+    jeLines.push({ account_code: supplierAccCode, dr_cr: "Dr", debit_amt: cn.amount, credit_amt: 0, narration: "Supplier payable reduced by CN" });
+  }
+  // Cr: reverse material / subcontract cost
+  jeLines.push({ account_code: expenseAccCode, dr_cr: "Cr", debit_amt: 0, credit_amt: cn.taxable_amount || cn.amount, narration: "Cost reversal" });
+  // Cr: reverse GST Input ITC
+  if (cn.cgst_amt > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Cr", debit_amt: 0, credit_amt: cn.cgst_amt, narration: "CGST ITC reversal" });
+  if (cn.sgst_amt > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Cr", debit_amt: 0, credit_amt: cn.sgst_amt, narration: "SGST ITC reversal" });
+  if (cn.igst_amt > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Cr", debit_amt: 0, credit_amt: cn.igst_amt, narration: "IGST ITC reversal" });
+
+  const je = await JournalEntryService.createFromVoucher(jeLines, {
+    je_type:     "Credit Note",
+    je_date:     cn.cn_date || new Date(),
+    narration:   `Credit Note ${cn.cn_no} — ${cn.supplier_name}${cn.narration ? " | " + cn.narration : ""}`,
+    tender_id:   cn.tender_id,
+    tender_name: cn.tender_name || "",
+    source_ref:  cn._id,
+    source_type: "CreditNote",
+    source_no:   cn.cn_no,
+  });
+
+  if (je?._id) {
+    await CreditNoteModel.findByIdAndUpdate(cn._id, { je_ref: je._id, je_no: je.je_no });
+  }
+}
+
 // ── Full approval flow ────────────────────────────────────────────────────────
 async function approveCN(cn) {
   // 1. Post to supplier sub-ledger (Dr entry — reduces payable)
@@ -195,24 +230,32 @@ async function approveCN(cn) {
 
   // 2. If "Against Bill", adjust the linked bill
   await markBillAdjusted(cn);
+
+  // 3. Post double-entry JE
+  await postCNJe(cn);
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
 class CreditNoteService {
 
-  // GET /creditnote/next-no
+  // GET /creditnote/next-no  — preview only, does NOT increment
   static async getNextCnNo() {
-    const fy     = currentFY();
-    const prefix = `CN/${fy}/`;
-    const last   = await CreditNoteModel.findOne(
-      { cn_no: { $regex: `^${prefix}` } },
-      { cn_no: 1 }
-    ).sort({ createdAt: -1 });
+    const fy      = currentFY();
+    const counter = await FinanceCounterModel.findById(`CN/${fy}`).lean();
+    const nextSeq = counter ? counter.seq + 1 : 1;
+    const cn_no   = `CN/${fy}/${String(nextSeq).padStart(4, "0")}`;
+    return { cn_no, is_first: !counter };
+  }
 
-    const seq   = last ? parseInt(last.cn_no.split("/").pop(), 10) : 0;
-    const cn_no = `${prefix}${String(seq + 1).padStart(4, "0")}`;
-    return { cn_no, is_first: !last };
+  static async #allocateCnNo() {
+    const fy      = currentFY();
+    const counter = await FinanceCounterModel.findByIdAndUpdate(
+      `CN/${fy}`,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    return `CN/${fy}/${String(counter.seq).padStart(4, "0")}`;
   }
 
   // GET /creditnote/list
@@ -283,7 +326,6 @@ class CreditNoteService {
 
   // POST /creditnote/create
   static async create(payload) {
-    if (!payload.cn_no)         throw new Error("cn_no is required");
     if (!payload.supplier_id)   throw new Error("supplier_id is required");
     if (!payload.supplier_type) throw new Error("supplier_type is required");
 
@@ -296,7 +338,8 @@ class CreditNoteService {
       payload.bill_ref = await resolveBillRef(payload.bill_no, payload.supplier_type);
     }
 
-    const saved = await CreditNoteModel.create(buildDoc(payload, payload.cn_no));
+    const cn_no = await CreditNoteService.#allocateCnNo();
+    const saved = await CreditNoteModel.create(buildDoc(payload, cn_no));
 
     // Full approval flow if created directly as approved
     if (saved.status === "approved") {

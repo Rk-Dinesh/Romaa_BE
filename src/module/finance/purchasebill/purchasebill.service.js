@@ -2,6 +2,8 @@ import PurchaseBillModel from "./purchasebill.model.js";
 import MaterialTransactionModel from "../../tender/materials/materialTransaction.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import LedgerService from "../ledger/ledger.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
+import FinanceCounterModel from "../FinanceCounter.model.js";
 
 // ── Build document from payload ───────────────────────────────────────────────
 // Only source fields are mapped here.
@@ -32,8 +34,8 @@ function buildDoc(payload, doc_id) {
 
     // Only pass source fields — pre-save derives cgst_amt, sgst_amt, igst_amt, net_amt
     line_items: (payload.line_items || []).map((i) => ({
-      grn_no:           i.grn_no            || "",
-      grn_ref:          i.grn_ref           || null,
+      grn_no:           i.grn_no   || i.grn_bill_no || "",   // grn_bill_no = field name from getGRNForBilling API
+      grn_ref:          i.grn_ref  || i._id          || null, // _id = field name from getGRNForBilling API
       ref_date:         i.ref_date ? new Date(i.ref_date) : null,
       item_id:          i.item_id           || null,
       item_description: i.item_description  || "",
@@ -98,11 +100,25 @@ function buildGRNFilter(line_items) {
 }
 
 // ── Mark linked GRN transactions as billed (called on approval) ──────────────
-async function markGRNsBilled(line_items, doc_id) {
+async function markGRNsBilled(bill) {
+  const { line_items, doc_id, tender_id, vendor_id } = bill;
+
+  // Primary path: use stored grn_ref (ObjectId) / grn_bill_no (string)
   const filter = buildGRNFilter(line_items);
-  if (!filter) return;
+  if (filter) {
+    await MaterialTransactionModel.updateMany(
+      filter,
+      { $set: { is_bill_generated: true, purchase_bill_id: doc_id } }
+    );
+    return;
+  }
+
+  // Fallback: grn refs were not stored (legacy data) — match by tender + vendor + item_ids
+  const itemIds = (line_items || []).map((r) => r.item_id).filter(Boolean);
+  if (!tender_id || !vendor_id || itemIds.length === 0) return;
+
   await MaterialTransactionModel.updateMany(
-    filter,
+    { tender_id, vendor_id, type: "IN", is_bill_generated: false, item_id: { $in: itemIds } },
     { $set: { is_bill_generated: true, purchase_bill_id: doc_id } }
   );
 }
@@ -122,7 +138,7 @@ async function unmarkGRNsBilled(line_items) {
 class PurchaseBillService {
   // GET /purchasebill/next-id
   // Returns the doc_id that will be assigned to the next bill (global FY sequence).
-  // Does NOT create anything — purely a preview.
+  // Does NOT create anything — purely a preview (reads counter without incrementing).
   static async getNextDocId() {
     const now     = new Date();
     const month   = now.getMonth() + 1;
@@ -130,17 +146,26 @@ class PurchaseBillService {
     const fyStart = month >= 4 ? year : year - 1;
     const fy      = `${fyStart.toString().slice(-2)}-${(fyStart + 1).toString().slice(-2)}`;
 
-    const prefix  = `PB/${fy}/`;
-    const lastDoc = await PurchaseBillModel.findOne(
-      { doc_id: { $regex: `^${prefix}` } },
-      { doc_id: 1 }
-    ).sort({ createdAt: -1 });
+    const counter  = await FinanceCounterModel.findById(`PB/${fy}`).lean();
+    const nextSeq  = counter ? counter.seq + 1 : 1;
+    const doc_id   = `PB/${fy}/${String(nextSeq).padStart(4, "0")}`;
+    return { doc_id, is_first: !counter };
+  }
 
-    const lastSeq  = lastDoc ? parseInt(lastDoc.doc_id.split("/").pop(), 10) : 0;
-    const doc_id   = `${prefix}${String(lastSeq + 1).padStart(4, "0")}`;
-    const is_first = lastDoc === null;
+  // Internal: atomically allocate the next PB sequence number.
+  static async #allocateDocId() {
+    const now     = new Date();
+    const month   = now.getMonth() + 1;
+    const year    = now.getFullYear();
+    const fyStart = month >= 4 ? year : year - 1;
+    const fy      = `${fyStart.toString().slice(-2)}-${(fyStart + 1).toString().slice(-2)}`;
 
-    return { doc_id, is_first };
+    const counter = await FinanceCounterModel.findByIdAndUpdate(
+      `PB/${fy}`,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    return `PB/${fy}/${String(counter.seq).padStart(4, "0")}`;
   }
 
   // GET /purchasebill/list
@@ -349,7 +374,6 @@ class PurchaseBillService {
   }
 
   static async createPurchaseBill(payload) {
-    if (!payload.doc_id) throw new Error("doc_id is required");
     if (!payload.vendor_id) throw new Error("vendor_id is required");
 
     if (payload.invoice_no) {
@@ -369,16 +393,67 @@ class PurchaseBillService {
     // Auto-fill credit_days from vendor master if not explicitly provided
     if (!payload.credit_days) payload.credit_days = vendor.credit_day || 0;
 
+    // Atomically allocate doc_id (ignore any client-supplied doc_id to prevent duplicates)
+    const doc_id = await PurchaseBillService.#allocateDocId();
+
     // create() triggers the pre-save hook which computes all derived fields
-    const saved = await PurchaseBillModel.create(buildDoc(payload, payload.doc_id));
+    const saved = await PurchaseBillModel.create(buildDoc(payload, doc_id));
 
     // Auto-approve flow if created directly as approved
     if (saved.status === "approved") {
       await postToLedger(saved);
-      await markGRNsBilled(saved.line_items, saved.doc_id);
+      await markGRNsBilled(saved);
+      await PurchaseBillService.#postJE(saved);
     }
 
     return saved;
+  }
+
+  // ── Build and post the double-entry JE for a purchase bill ───────────────────
+  static async #postJE(bill) {
+    const vendorAccCode = await JournalEntryService.getSupplierAccountCode("Vendor", bill.vendor_id);
+
+    const jeLines = [
+      // Dr: Material / subcontract expense
+      { account_code: "5010", dr_cr: "Dr", debit_amt: bill.grand_total, credit_amt: 0, narration: "Material cost" },
+    ];
+
+    // Dr: GST Input ITC (split by component based on tax_mode)
+    if (bill.tax_mode === "instate") {
+      const cgstTotal = bill.tax_groups.reduce((s, g) => s + (g.cgst_amt || 0), 0);
+      const sgstTotal = bill.tax_groups.reduce((s, g) => s + (g.sgst_amt || 0), 0);
+      if (cgstTotal > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Dr", debit_amt: cgstTotal, credit_amt: 0, narration: "CGST Input ITC" });
+      if (sgstTotal > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Dr", debit_amt: sgstTotal, credit_amt: 0, narration: "SGST Input ITC" });
+    } else {
+      const igstTotal = bill.tax_groups.reduce((s, g) => s + (g.igst_amt || 0), 0);
+      if (igstTotal > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Dr", debit_amt: igstTotal, credit_amt: 0, narration: "IGST Input ITC" });
+    }
+
+    // Handle additional charges / deductions + round-off (keeps JE balanced)
+    const slop = Math.round((bill.net_amount - bill.grand_total - bill.total_tax) * 100) / 100;
+    if (slop > 0) jeLines.push({ account_code: "5160", dr_cr: "Dr", debit_amt: slop, credit_amt: 0, narration: "Additional charges / round-off" });
+    if (slop < 0) jeLines.push({ account_code: "4050", dr_cr: "Cr", debit_amt: 0, credit_amt: Math.abs(slop), narration: "Deductions / round-off" });
+
+    // Cr: Vendor payable (personal ledger account)
+    if (vendorAccCode) {
+      jeLines.push({ account_code: vendorAccCode, dr_cr: "Cr", debit_amt: 0, credit_amt: bill.net_amount, narration: "Payable to vendor" });
+    }
+
+    const je = await JournalEntryService.createFromVoucher(jeLines, {
+      je_type:     "Purchase Invoice",
+      je_date:     bill.doc_date || new Date(),
+      narration:   `Purchase Bill ${bill.doc_id} — ${bill.vendor_name}${bill.narration ? " | " + bill.narration : ""}`,
+      tender_id:   bill.tender_id,
+      tender_name: bill.tender_name || "",
+      source_ref:  bill._id,
+      source_type:             "PurchaseBill",
+      source_no:               bill.doc_id,
+      skip_ledger_cross_post:  true,  // postToLedger() already posted to supplier ledger
+    });
+
+    if (je?._id) {
+      await PurchaseBillModel.findByIdAndUpdate(bill._id, { je_ref: je._id, je_no: je.je_no });
+    }
   }
 
   // PATCH /purchasebill/approve/:id
@@ -394,7 +469,10 @@ class PurchaseBillService {
     await postToLedger(bill);
 
     // 2. Lock all linked GRNs — mark them as billed so they can't be picked again
-    await markGRNsBilled(bill.line_items, bill.doc_id);
+    await markGRNsBilled(bill);
+
+    // 3. Post double-entry JE to general ledger (Dr expense + GST ITC / Cr vendor payable)
+    await PurchaseBillService.#postJE(bill);
 
     return bill;
   }

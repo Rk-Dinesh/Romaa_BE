@@ -8,6 +8,7 @@ import TenderModel            from "../../tender/tender/tender.model.js";
 import VendorModel            from "../../purchase/vendor/vendor.model.js";
 import ContractorModel        from "../../hr/contractors/contractor.model.js";
 import ClientModel            from "../../clients/client.model.js";
+import ClientBillingModel     from "../clientbilling/clientbilling/clientbilling.model.js";
 
 const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -213,6 +214,47 @@ class DropdownService {
           cn_amount:     b.cn_amount   || 0,
           dn_amount:     b.dn_amount   || 0,
           balance_due:   r2(billAmt - (b.amount_paid || 0) - (b.cn_amount || 0) - (b.dn_amount || 0)),
+          paid_status:   b.paid_status,
+        });
+      }
+    }
+
+    // ── Client Bills ──────────────────────────────────────────────────────────
+    const fetchCB = !supplier_type || supplier_type === "Client";
+    if (fetchCB) {
+      const q = { status: "Approved", paid_status: { $ne: "paid" } };
+      if (supplier_id) q.client_id = supplier_id;
+      if (tender_id)   q.tender_id = tender_id;
+
+      const bills = await ClientBillingModel
+        .find(q)
+        .select(
+          "bill_id bill_date " +
+          "client_id client_name " +
+          "tender_id tender_name " +
+          "net_amount amount_received balance_due paid_status"
+        )
+        .sort({ bill_date: 1 })
+        .lean();
+
+      for (const b of bills) {
+        rows.push({
+          _id:           b._id,
+          bill_type:     "ClientBilling",
+          bill_no:       b.bill_id,
+          bill_date:     b.bill_date,
+          ref_no:        "",
+          due_date:      null,
+          supplier_type: "Client",
+          supplier_id:   b.client_id,
+          supplier_name: b.client_name,
+          tender_id:     b.tender_id,
+          tender_name:   b.tender_name || "",
+          bill_amount:   b.net_amount || 0,
+          amount_paid:   b.amount_received || 0,
+          cn_amount:     0,
+          dn_amount:     0,
+          balance_due:   b.balance_due || r2((b.net_amount || 0) - (b.amount_received || 0)),
           paid_status:   b.paid_status,
         });
       }

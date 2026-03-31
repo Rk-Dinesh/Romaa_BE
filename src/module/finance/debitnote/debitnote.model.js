@@ -78,6 +78,13 @@ const DebitNoteSchema = new mongoose.Schema(
 
     narration: { type: String, default: "" },
 
+    // ── Who raised the debit note ─────────────────────────────────────────
+    // "Company" = Romaa raises DN against supplier (penalty/deduction)
+    //   JE: Dr supplier payable / Cr penalty income (4030)
+    // "Vendor" = supplier raises DN against us (billing correction/price revision)
+    //   JE: Dr expense (5010/5030) / Cr supplier payable
+    raised_by: { type: String, enum: ["Company", "Vendor"], default: "Company" },
+
     // ── Lifecycle ─────────────────────────────────────────────────────────
     status: {
       type: String,

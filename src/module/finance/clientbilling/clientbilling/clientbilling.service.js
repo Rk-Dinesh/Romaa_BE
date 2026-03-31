@@ -3,6 +3,7 @@ import BidModel from "../../../tender/bid/bid.model.js";
 import TenderModel from "../../../tender/tender/tender.model.js";
 import LedgerService from "../../ledger/ledger.service.js";
 import JournalEntryService from "../../journalentry/journalentry.service.js";
+import FinanceCounterModel from "../../FinanceCounter.model.js";
 import mongoose from "mongoose";
 import NotificationService from "../../../notifications/notification.service.js";
 import SteelEstimateModel from "../../../project/CBEstimates/steelestimate/steelEstimate.model.js";
@@ -255,15 +256,15 @@ class BillingService {
     return `${String(startYear).slice(-2)}-${String(startYear + 1).slice(-2)}`;
   }
 
-  // Generates next bill_id: B/<FY>/<seq>  e.g. B/25-26/0001
-  static async generateBillId(session) {
-    const fy = this.getFY();
-    const prefix = `CB/${fy}/`;
-    const count = await BillingModel.countDocuments({
-      bill_id: { $regex: `^${prefix}` },
-    }).session(session ?? null);
-    const seq = String(count + 1).padStart(4, "0");
-    return `${prefix}${seq}`;
+  // Generates next bill_id atomically: CB/<FY>/<seq>  e.g. CB/25-26/0001
+  static async generateBillId(_session) {
+    const fy      = this.getFY();
+    const counter = await FinanceCounterModel.findByIdAndUpdate(
+      `CB/${fy}`,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    return `CB/${fy}/${String(counter.seq).padStart(4, "0")}`;
   }
 
   static async createBill(data) {
@@ -398,7 +399,7 @@ class BillingService {
       // Dr: TDS Receivable (deducted by client — adjustable against tax)
       if (bill.total_deductions > 0) jeLines.push({ account_code: "1070", dr_cr: "Dr", debit_amt: bill.total_deductions, credit_amt: 0, narration: "TDS / deductions by client" });
 
-      await JournalEntryService.createFromVoucher(jeLines, {
+      const je = await JournalEntryService.createFromVoucher(jeLines, {
         je_type: "Client Bill",
         je_date: bill.bill_date || new Date(),
         narration: `Client Bill ${bill.bill_id} — ${bill.tender_name || bill.tender_id} — ${tender.client_name || tender.client_id}`,
@@ -408,6 +409,9 @@ class BillingService {
         source_type: "clientbilling",
         source_no: bill.bill_id,
       });
+      if (je?._id) {
+        await BillingModel.findByIdAndUpdate(bill._id, { je_ref: je._id, je_no: je.je_no });
+      }
     }
 
     // Notify finance team

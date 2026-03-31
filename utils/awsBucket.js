@@ -30,7 +30,7 @@ export const uploadFileToS3 = async (file, bucketName) => {
     };
   } catch (error) {
     logger.error("Error uploading file to S3: " + error.message);
-    throw new Error("Failed to upload file to S3");
+    throw new Error("Failed to upload file to S3", error);
   }
 };
 

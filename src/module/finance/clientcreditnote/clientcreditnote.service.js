@@ -2,6 +2,7 @@ import ClientCNModel from "./clientcreditnote.model.js";
 import BillingModel  from "../clientbilling/clientbilling/clientbilling.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import JournalEntryService from "../journalentry/journalentry.service.js";
+import FinanceCounterModel from "../FinanceCounter.model.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -14,15 +15,13 @@ function currentFY() {
 
 // ── Auto-generate ccn_no: CCN/<FY>/<seq> e.g. CCN/25-26/0001 ─────────────────
 async function generateCCNNo() {
-  const fy     = currentFY();
-  const prefix = `CCN/${fy}/`;
-  const last   = await ClientCNModel.findOne(
-    { ccn_no: { $regex: `^${prefix}` } },
-    { ccn_no: 1 }
-  ).sort({ createdAt: -1 });
-
-  const seq = last ? parseInt(last.ccn_no.split("/").pop(), 10) : 0;
-  return `${prefix}${String(seq + 1).padStart(4, "0")}`;
+  const fy      = currentFY();
+  const counter = await FinanceCounterModel.findByIdAndUpdate(
+    `CCN/${fy}`,
+    { $inc: { seq: 1 } },
+    { new: true, upsert: true }
+  );
+  return `CCN/${fy}/${String(counter.seq).padStart(4, "0")}`;
 }
 
 // ── Post Cr entry to client ledger on approval ────────────────────────────────
@@ -207,16 +206,20 @@ class ClientCNService {
       if (ccn.sgst_amt > 0) jeLines.push({ account_code: "2120", dr_cr: "Dr", debit_amt: ccn.sgst_amt, credit_amt: 0, narration: "SGST Output reversal" });
       if (ccn.igst_amt > 0) jeLines.push({ account_code: "2130", dr_cr: "Dr", debit_amt: ccn.igst_amt, credit_amt: 0, narration: "IGST Output reversal" });
 
-      await JournalEntryService.createFromVoucher(jeLines, {
+      const je = await JournalEntryService.createFromVoucher(jeLines, {
         je_type: "Client Credit Note",
         je_date: ccn.ccn_date || new Date(),
         narration: `Client CN ${ccn.ccn_no} against Bill ${ccn.bill_id} — ${ccn.client_name || ccn.client_id}`,
         tender_id: ccn.tender_id,
         tender_name: ccn.tender_name || "",
         source_ref: ccn._id,
-        source_type: "ClientCreditNote",
-        source_no: ccn.ccn_no,
+        source_type:             "ClientCreditNote",
+        source_no:               ccn.ccn_no,
+        skip_ledger_cross_post:  true,  // postToLedger() already posted to supplier ledger
       });
+      if (je?._id) {
+        await ClientCNModel.findByIdAndUpdate(ccn._id, { je_ref: je._id, je_no: je.je_no });
+      }
     }
 
     return ccn;

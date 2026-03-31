@@ -4,6 +4,7 @@ import WeeklyBillingTransactionModel from "./WeeklyBillingTransaction.model.js";
 import BillCounterModel from "./WeeklyBillingCounter.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
 import LedgerService from "../ledger/ledger.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
 
 // ── Financial year helper ──────────────────────────────────────────────────────
 // Apr–Mar Indian financial year.  Mar 2026 → "25-26",  Apr 2026 → "26-27"
@@ -420,6 +421,34 @@ class WeeklyBillingService {
           debit_amt:     0,
           credit_amt:    updated.total_amount,
         });
+
+        // ── Auto Journal Entry: Dr Subcontract + GST ITC / Cr Retention + Contractor Payable ──
+        const contractorAccCode = await JournalEntryService.getSupplierAccountCode("Contractor", updated.contractor_id);
+        const jeLines = [
+          { account_code: "5030", dr_cr: "Dr", debit_amt: updated.base_amount, credit_amt: 0, narration: "Subcontract charges" },
+        ];
+        if (updated.tax_mode === "instate") {
+          if (updated.cgst_amt > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Dr", debit_amt: updated.cgst_amt, credit_amt: 0, narration: "CGST Input ITC" });
+          if (updated.sgst_amt > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Dr", debit_amt: updated.sgst_amt, credit_amt: 0, narration: "SGST Input ITC" });
+        } else {
+          if (updated.igst_amt > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Dr", debit_amt: updated.igst_amt, credit_amt: 0, narration: "IGST Input ITC" });
+        }
+        if (updated.retention_amt > 0) jeLines.push({ account_code: "2040", dr_cr: "Cr", debit_amt: 0, credit_amt: updated.retention_amt, narration: "Retention payable" });
+        if (contractorAccCode) jeLines.push({ account_code: contractorAccCode, dr_cr: "Cr", debit_amt: 0, credit_amt: updated.net_payable, narration: "Payable to contractor" });
+
+        const je = await JournalEntryService.createFromVoucher(jeLines, {
+          je_type:     "Contractor Bill",
+          je_date:     updated.bill_date || new Date(),
+          narration:   `Weekly Bill ${updated.bill_no} — ${updated.contractor_name}`,
+          tender_id:   updated.tender_id,
+          tender_name: updated.tender_name || "",
+          source_ref:  updated._id,
+          source_type: "WeeklyBill",
+          source_no:   updated.bill_no,
+        });
+        if (je?._id) {
+          await WeeklyBillingModel.findByIdAndUpdate(billId, { je_ref: je._id, je_no: je.je_no });
+        }
 
       } else if (status === "Cancelled") {
         // Reverse the original Cr with a Dr entry in the supplier sub-ledger

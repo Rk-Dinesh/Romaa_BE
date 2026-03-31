@@ -1,10 +1,21 @@
 import mongoose from "mongoose";
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-const SUPPLIER_TYPES = ["Vendor", "Contractor"];
+const SUPPLIER_TYPES = ["Vendor", "Contractor", "Client"];
 const RECEIPT_MODES  = ["Cash", "Cheque", "NEFT", "RTGS", "UPI", "DD"];
 
 // ── Embedded sub-schemas ──────────────────────────────────────────────────────
+
+// Which client bills are being settled by this receipt (optional — On Account allowed)
+const BillRefSchema = new mongoose.Schema(
+  {
+    bill_type:   { type: String, enum: ["ClientBilling"], default: "ClientBilling" },
+    bill_ref:    { type: mongoose.Schema.Types.ObjectId, default: null },
+    bill_no:     { type: String, default: "" },  // snapshot (bill_id)
+    settled_amt: { type: Number, default: 0 },
+  },
+  { _id: false }
+);
 
 // One double-entry line — mirrors the Dr/Cr table in the voucher screen
 const EntryLineSchema = new mongoose.Schema(
@@ -51,6 +62,9 @@ const ReceiptVoucherSchema = new mongoose.Schema(
     // ── Against document (optional — advance receipt, refund against a bill) ──
     against_ref: { type: mongoose.Schema.Types.ObjectId, default: null },
     against_no:  { type: String, default: "" },  // snapshot
+
+    // ── Client bills being settled by this receipt (optional — On Account if empty) ─
+    bill_refs: { type: [BillRefSchema], default: [] },
 
     // ── Receipt amount ────────────────────────────────────────────────────
     amount: { type: Number, default: 0 },

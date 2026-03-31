@@ -1,7 +1,7 @@
 import mongoose from "mongoose";
 
 // ── Enums ─────────────────────────────────────────────────────────────────────
-const SUPPLIER_TYPES  = ["Vendor", "Contractor"];
+const SUPPLIER_TYPES  = ["Vendor", "Contractor", "Client"];
 const PAYMENT_MODES   = ["Cash", "Cheque", "NEFT", "RTGS", "UPI", "DD"];
 
 // ── Embedded sub-schemas ──────────────────────────────────────────────────────

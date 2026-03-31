@@ -3,6 +3,10 @@ import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
+import FinanceCounterModel from "../FinanceCounter.model.js";
+import ClientModel from "../../clients/client.model.js";
+import BillingModel from "../clientbilling/clientbilling/clientbilling.model.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -47,7 +51,17 @@ async function resolveSupplier(supplier_type, supplier_id) {
     };
   }
 
-  throw new Error(`Invalid supplier_type '${supplier_type}'. Must be Vendor or Contractor`);
+  if (supplier_type === "Client") {
+    const client = await ClientModel.findOne({ client_id: supplier_id }).lean();
+    if (!client) throw new Error(`Client '${supplier_id}' not found`);
+    return {
+      supplier_ref:   client._id,
+      supplier_name:  client.client_name,
+      supplier_gstin: client.gstin || "",
+    };
+  }
+
+  throw new Error(`Invalid supplier_type '${supplier_type}'. Must be Vendor, Contractor, or Client`);
 }
 
 // ── Build document from payload ───────────────────────────────────────────────
@@ -76,6 +90,13 @@ function buildDoc(payload, rv_no) {
 
     against_ref: payload.against_ref || null,
     against_no:  payload.against_no  || "",
+
+    bill_refs: (payload.bill_refs || []).map((b) => ({
+      bill_type:   "ClientBilling",
+      bill_ref:    b.bill_ref    || null,
+      bill_no:     b.bill_no     || "",
+      settled_amt: Number(b.settled_amt) || 0,
+    })),
 
     amount: Number(payload.amount) || 0,
 
@@ -113,22 +134,107 @@ async function postToLedger(rv) {
   });
 }
 
+// ── Mark referenced client bills as (partially) received ─────────────────────
+// Called after an RV is approved. For each bill_ref:
+//   1. Pushes a payment_refs entry onto the client bill
+//   2. Increments amount_received
+//   3. Recomputes paid_status (unpaid / partial / paid)
+async function markBillsReceived(rv) {
+  if (!rv.bill_refs || rv.bill_refs.length === 0) return;
+
+  for (const ref of rv.bill_refs) {
+    if (!ref.bill_ref || !(ref.settled_amt > 0)) continue;
+
+    const bill = await BillingModel.findById(ref.bill_ref);
+    if (!bill) continue;
+
+    // Append the new receipt record
+    bill.payment_refs.push({
+      rv_ref:    rv._id,
+      rv_no:     rv.rv_no,
+      recv_amt:  ref.settled_amt,
+      recv_date: rv.rv_date || new Date(),
+    });
+
+    // Accumulate received amount
+    bill.amount_received = Math.round(((bill.amount_received || 0) + ref.settled_amt) * 100) / 100;
+
+    // Recompute paid_status against net_amount
+    const totalReceived = bill.amount_received;
+    const billTotal     = bill.net_amount || 0;
+
+    if (totalReceived >= billTotal) {
+      bill.paid_status = "paid";
+    } else if (totalReceived > 0) {
+      bill.paid_status = "partial";
+    } else {
+      bill.paid_status = "unpaid";
+    }
+
+    // pre-save hook recomputes balance_due = net_amount - amount_received
+    await bill.save();
+  }
+}
+
 // ── Service ───────────────────────────────────────────────────────────────────
 
 class ReceiptVoucherService {
 
-  // GET /receiptvoucher/next-no
+  // GET /receiptvoucher/next-no  — preview only, does NOT increment
   static async getNextRvNo() {
-    const fy     = currentFY();
-    const prefix = `RV/${fy}/`;
-    const last   = await ReceiptVoucherModel.findOne(
-      { rv_no: { $regex: `^${prefix}` } },
-      { rv_no: 1 }
-    ).sort({ createdAt: -1 });
+    const fy      = currentFY();
+    const counter = await FinanceCounterModel.findById(`RV/${fy}`).lean();
+    const nextSeq = counter ? counter.seq + 1 : 1;
+    const rv_no   = `RV/${fy}/${String(nextSeq).padStart(4, "0")}`;
+    return { rv_no, is_first: !counter };
+  }
 
-    const seq   = last ? parseInt(last.rv_no.split("/").pop(), 10) : 0;
-    const rv_no = `${prefix}${String(seq + 1).padStart(4, "0")}`;
-    return { rv_no, is_first: !last };
+  // Internal: atomically allocate the next RV number
+  static async #allocateRvNo() {
+    const fy      = currentFY();
+    const counter = await FinanceCounterModel.findByIdAndUpdate(
+      `RV/${fy}`,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    return `RV/${fy}/${String(counter.seq).padStart(4, "0")}`;
+  }
+
+  // ── Build and post the double-entry JE for a receipt voucher ─────────────────
+  // Dr: Bank / Cash account — cash comes in
+  // Cr: Supplier account — reduces advance outstanding or reverses their balance
+  static async #postJE(rv) {
+    const supplierAccCode = await JournalEntryService.getSupplierAccountCode(rv.supplier_type, rv.supplier_id);
+
+    const jeLines = [
+      { account_code: rv.bank_account_code, dr_cr: "Dr", debit_amt: rv.amount, credit_amt: 0, narration: "Receipt in" },
+    ];
+    if (supplierAccCode) {
+      jeLines.push({ account_code: supplierAccCode, dr_cr: "Cr", debit_amt: 0, credit_amt: rv.amount, narration: "Supplier advance / balance reduced" });
+    }
+
+    const je = await JournalEntryService.createFromVoucher(jeLines, {
+      je_type:     "Receipt",
+      je_date:     rv.rv_date || new Date(),
+      narration:   `Receipt Voucher ${rv.rv_no} — ${rv.supplier_name}${rv.narration ? " | " + rv.narration : ""}`,
+      tender_id:   rv.tender_id,
+      tender_name: rv.tender_name || "",
+      source_ref:  rv._id,
+      source_type:             "ReceiptVoucher",
+      source_no:               rv.rv_no,
+      skip_ledger_cross_post:  true,  // postToLedger() already posted to supplier ledger
+    });
+
+    if (je?._id) {
+      await ReceiptVoucherModel.findByIdAndUpdate(rv._id, { je_ref: je._id, je_no: je.je_no });
+    } else if (!supplierAccCode) {
+      // JE not posted (no supplier account code) — fall back to manual bank balance update
+      await AccountTreeService.applyBalanceLines([{
+        account_code: rv.bank_account_code,
+        debit_amt:    rv.amount,
+        credit_amt:   0,
+      }]);
+    }
   }
 
   // GET /receiptvoucher/list
@@ -205,7 +311,6 @@ class ReceiptVoucherService {
 
   // POST /receiptvoucher/create
   static async create(payload) {
-    if (!payload.rv_no)         throw new Error("rv_no is required");
     if (!payload.supplier_id)   throw new Error("supplier_id is required");
     if (!payload.supplier_type) throw new Error("supplier_type is required");
 
@@ -214,7 +319,9 @@ class ReceiptVoucherService {
 
     validateEntriesBalance(payload.entries);
 
-    const doc = buildDoc(payload, payload.rv_no);
+    // Atomically allocate rv_no (ignore any client-supplied value to prevent duplicates)
+    const rv_no = await ReceiptVoucherService.#allocateRvNo();
+    const doc   = buildDoc(payload, rv_no);
 
     // If creating directly as approved, bank_account_code must be present
     if (doc.status === "approved" && !doc.bank_account_code) {
@@ -225,11 +332,8 @@ class ReceiptVoucherService {
 
     if (saved.status === "approved") {
       await postToLedger(saved);
-      await AccountTreeService.applyBalanceLines([{
-        account_code: saved.bank_account_code,
-        debit_amt:    saved.amount,
-        credit_amt:   0,
-      }]);
+      await markBillsReceived(saved);
+      await ReceiptVoucherService.#postJE(saved);
     }
 
     return saved;
@@ -285,13 +389,12 @@ class ReceiptVoucherService {
     // 1. Post to supplier sub-ledger (Dr entry — reduces supplier balance)
     await postToLedger(rv);
 
-    // 2. Increase the receiving bank account balance in AccountTree
-    // Receipt in = Dr to bank account (Dr normal Asset → balance increases)
-    await AccountTreeService.applyBalanceLines([{
-      account_code: rv.bank_account_code,
-      debit_amt:    rv.amount,
-      credit_amt:   0,
-    }]);
+    // 2. Update every referenced client bill with this RV's receipt details
+    await markBillsReceived(rv);
+
+    // 3. Post double-entry JE: Dr bank / Cr supplier account
+    //    (JE service also updates AccountTree available_balance for both sides)
+    await ReceiptVoucherService.#postJE(rv);
 
     return rv;
   }

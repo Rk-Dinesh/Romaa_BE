@@ -4,6 +4,8 @@ import ContractorModel from "../../hr/contractors/contractor.model.js";
 import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
 import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 import LedgerService from "../ledger/ledger.service.js";
+import JournalEntryService from "../journalentry/journalentry.service.js";
+import FinanceCounterModel from "../FinanceCounter.model.js";
 
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -119,8 +121,9 @@ function buildDoc(payload, dn_no) {
       credit_amt:   Number(e.credit_amt) || 0,
     })),
 
-    narration: payload.narration || "",
-    status:    payload.status    || "pending",
+    narration:  payload.narration  || "",
+    raised_by:  payload.raised_by  || "Company",
+    status:     payload.status     || "pending",
   };
 }
 
@@ -188,6 +191,46 @@ async function markBillAdjusted(dn) {
   await bill.save();
 }
 
+// ── Post double-entry JE for a debit note ─────────────────────────────────────
+// Direction depends on raised_by:
+//   Company raises DN against supplier (penalty / short supply deduction):
+//     Dr supplier payable / Cr penalty income (4030)
+//   Vendor/Contractor raises DN against us (billing correction / price revision):
+//     Dr expense (5010 or 5030) + Dr GST Input ITC / Cr supplier payable
+async function postDNJe(dn) {
+  const supplierAccCode = await JournalEntryService.getSupplierAccountCode(dn.supplier_type, dn.supplier_id);
+  const expenseAccCode  = dn.supplier_type === "Contractor" ? "5030" : "5010";
+  const jeLines         = [];
+
+  if (dn.raised_by === "Vendor") {
+    // Vendor/Contractor raises DN: we owe them more
+    jeLines.push({ account_code: expenseAccCode, dr_cr: "Dr", debit_amt: dn.taxable_amount || dn.amount, credit_amt: 0, narration: "Cost increase from supplier DN" });
+    if (dn.cgst_amt > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Dr", debit_amt: dn.cgst_amt, credit_amt: 0, narration: "CGST Input ITC" });
+    if (dn.sgst_amt > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Dr", debit_amt: dn.sgst_amt, credit_amt: 0, narration: "SGST Input ITC" });
+    if (dn.igst_amt > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Dr", debit_amt: dn.igst_amt, credit_amt: 0, narration: "IGST Input ITC" });
+    if (supplierAccCode) jeLines.push({ account_code: supplierAccCode, dr_cr: "Cr", debit_amt: 0, credit_amt: dn.amount, narration: "Supplier payable increased" });
+  } else {
+    // Company raises DN: reduces what we owe the supplier (penalty / deduction)
+    if (supplierAccCode) jeLines.push({ account_code: supplierAccCode, dr_cr: "Dr", debit_amt: dn.amount, credit_amt: 0, narration: "Supplier payable reduced by DN" });
+    jeLines.push({ account_code: "4030", dr_cr: "Cr", debit_amt: 0, credit_amt: dn.amount, narration: "Penalty / deduction recovered" });
+  }
+
+  const je = await JournalEntryService.createFromVoucher(jeLines, {
+    je_type:     "Debit Note",
+    je_date:     dn.dn_date || new Date(),
+    narration:   `Debit Note ${dn.dn_no} — ${dn.supplier_name} (${dn.raised_by})${dn.narration ? " | " + dn.narration : ""}`,
+    tender_id:   dn.tender_id,
+    tender_name: dn.tender_name || "",
+    source_ref:  dn._id,
+    source_type: "DebitNote",
+    source_no:   dn.dn_no,
+  });
+
+  if (je?._id) {
+    await DebitNoteModel.findByIdAndUpdate(dn._id, { je_ref: je._id, je_no: je.je_no });
+  }
+}
+
 // ── Full approval flow ────────────────────────────────────────────────────────
 async function approveDN(dn) {
   // 1. Post to supplier sub-ledger (Dr entry — reduces payable)
@@ -195,24 +238,32 @@ async function approveDN(dn) {
 
   // 2. If "Against Bill", adjust the linked bill
   await markBillAdjusted(dn);
+
+  // 3. Post double-entry JE (direction based on raised_by)
+  await postDNJe(dn);
 }
 
 // ── Service ───────────────────────────────────────────────────────────────────
 
 class DebitNoteService {
 
-  // GET /debitnote/next-no
+  // GET /debitnote/next-no  — preview only, does NOT increment
   static async getNextDnNo() {
-    const fy     = currentFY();
-    const prefix = `DN/${fy}/`;
-    const last   = await DebitNoteModel.findOne(
-      { dn_no: { $regex: `^${prefix}` } },
-      { dn_no: 1 }
-    ).sort({ createdAt: -1 });
+    const fy      = currentFY();
+    const counter = await FinanceCounterModel.findById(`DN/${fy}`).lean();
+    const nextSeq = counter ? counter.seq + 1 : 1;
+    const dn_no   = `DN/${fy}/${String(nextSeq).padStart(4, "0")}`;
+    return { dn_no, is_first: !counter };
+  }
 
-    const seq   = last ? parseInt(last.dn_no.split("/").pop(), 10) : 0;
-    const dn_no = `${prefix}${String(seq + 1).padStart(4, "0")}`;
-    return { dn_no, is_first: !last };
+  static async #allocateDnNo() {
+    const fy      = currentFY();
+    const counter = await FinanceCounterModel.findByIdAndUpdate(
+      `DN/${fy}`,
+      { $inc: { seq: 1 } },
+      { new: true, upsert: true }
+    );
+    return `DN/${fy}/${String(counter.seq).padStart(4, "0")}`;
   }
 
   // GET /debitnote/list
@@ -283,7 +334,6 @@ class DebitNoteService {
 
   // POST /debitnote/create
   static async create(payload) {
-    if (!payload.dn_no)         throw new Error("dn_no is required");
     if (!payload.supplier_id)   throw new Error("supplier_id is required");
     if (!payload.supplier_type) throw new Error("supplier_type is required");
 
@@ -294,7 +344,8 @@ class DebitNoteService {
       payload.bill_ref = await resolveBillRef(payload.bill_no, payload.supplier_type);
     }
 
-    const saved = await DebitNoteModel.create(buildDoc(payload, payload.dn_no));
+    const dn_no = await DebitNoteService.#allocateDnNo();
+    const saved = await DebitNoteModel.create(buildDoc(payload, dn_no));
 
     // Full approval flow if created directly as approved
     if (saved.status === "approved") {
