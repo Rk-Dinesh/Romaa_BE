@@ -8,34 +8,40 @@ import {
   removeProposalFromTender,
   deleteEmdRecord,
   getProposalsPaginated,
-  updateProposalWithApprovalRule
+  updateProposalWithApprovalRule,
+  rejectProposal
 } from "./emd.controller.js";
 
 const emdrouter = Router();
 
-// Create or add proposal
+// Add proposal to a tender
 emdrouter.post("/addproposal/:tender_id", addProposalToTender);
 
-// Get EMD by tender
+// Get EMD record for a tender
 emdrouter.get("/getemd/:tender_id", getEmdByTender);
 
-// Get all EMDs
+// Get all EMD records
 emdrouter.get("/getall", getAllEmds);
 
-// Update entire EMD record
-emdrouter.put("/update/:tender_id", updateEmdRecord);
-
-// Update single proposal inside a tender record
-
-emdrouter.put("/updateproposal/:tender_id/:proposal_id", updateProposalWithApprovalRule);
-
-// Remove proposal from tender
-emdrouter.delete("/removeproposal/:tender_id/:proposal_id", removeProposalFromTender);
-
-// Delete entire EMD record
-emdrouter.delete("/delete/:tender_id", deleteEmdRecord);
-
+// Get paginated proposals for a tender
 emdrouter.get("/proposals/:tender_id", getProposalsPaginated);
 
+// Update full EMD record (all proposals)
+emdrouter.put("/update/:tender_id", updateEmdRecord);
+
+// Update a specific proposal's data (amount, bank, date, etc.)
+emdrouter.put("/updateproposal/:tender_id/:proposal_id", updateProposalInTender);
+
+// Approve or reject a proposal (syncs Tender.emd.approved_emd_details)
+emdrouter.put("/approveproposal/:tender_id/:proposal_id", updateProposalWithApprovalRule);
+
+// Reject a specific proposal (with optional reason)
+emdrouter.put("/rejectproposal/:tender_id/:proposal_id", rejectProposal);
+
+// Remove a proposal from the EMD record
+emdrouter.delete("/removeproposal/:tender_id/:proposal_id", removeProposalFromTender);
+
+// Delete entire EMD record for a tender
+emdrouter.delete("/delete/:tender_id", deleteEmdRecord);
 
 export default emdrouter;

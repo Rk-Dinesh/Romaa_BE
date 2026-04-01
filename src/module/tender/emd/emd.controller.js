@@ -73,15 +73,15 @@ export const updateEmdRecord = async (req, res) => {
   }
 };
 
-// ✏ Update a specific proposal in tender
+// ✏ Update a specific proposal in tender (by proposal_id)
 export const updateProposalInTender = async (req, res) => {
   try {
-    const { tender_id, company_name } = req.params;
+    const { tender_id, proposal_id } = req.params;
     const updateData = req.body;
 
     const result = await EmdService.updateProposalInTender(
       tender_id,
-      company_name,
+      proposal_id,
       updateData
     );
 
@@ -153,19 +153,34 @@ export const getProposalsPaginated = async (req, res) => {
   }
 };
 
+export const rejectProposal = async (req, res) => {
+  try {
+    const { tender_id, proposal_id } = req.params;
+    const { rejection_reason = "" } = req.body;
+
+    const result = await EmdService.rejectProposal(tender_id, proposal_id, rejection_reason);
+
+    res.status(200).json({
+      status: true,
+      message: "Proposal rejected successfully",
+      data: result,
+    });
+  } catch (error) {
+    res.status(400).json({ status: false, message: error.message });
+  }
+};
+
 export const updateProposalWithApprovalRule = async (req, res) => {
   try {
     const { tender_id, proposal_id } = req.params;
-    const { status, level,security_deposit } = req.body;
+    const { status, security_deposit } = req.body;
 
-    // For logging, can get username from auth middleware
     const updatedBy = req.user?.name || "System";
 
     const result = await EmdService.updateProposalWithApprovalRule(
       tender_id,
       proposal_id,
       status,
-      level,
       security_deposit,
       updatedBy
     );
@@ -173,10 +188,9 @@ export const updateProposalWithApprovalRule = async (req, res) => {
     res.json({
       status: true,
       message: "Proposal updated successfully",
-      data: result
+      data: result,
     });
   } catch (error) {
-    console.error(error);
     res.status(400).json({ status: false, message: error.message });
   }
 };

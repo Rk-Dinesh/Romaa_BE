@@ -101,7 +101,7 @@ class TenderService {
 
   static async getTenderByIdemd(tender_id) {
     return await TenderModel.findOne({ tender_id }).select(
-      "emd.emd_percentage emd.emd_validity emd.emd_amount"
+      "emd.emd_percentage emd.emd_validity emd.emd_amount emd.approved_emd_details.emd_proposed_company"
     );
   }
 

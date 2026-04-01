@@ -3,44 +3,56 @@ import TenderModel from "../tender/tender.model.js";
 import EmdModel from "./emd.model.js";
 import NotificationService from "../../notifications/notification.service.js";
 
+// ── Auto-rank proposals by bid value (lowest = L1) ───────────────────────────
+// Runs after every add / update. Proposals with a proposed_amount are sorted
+// ascending; the cheapest gets L1, next L2 … up to L5. Proposals without an
+// amount retain their existing level.
+function assignLevels(proposals) {
+  // Separate rankable from un-rankable
+  const withAmt  = proposals.filter((p) => Number(p.proposed_amount) > 0);
+  const withoutAmt = proposals.filter((p) => !(Number(p.proposed_amount) > 0));
+
+  // Sort ascending: cheapest first
+  withAmt.sort((a, b) => Number(a.proposed_amount) - Number(b.proposed_amount));
+
+  // Assign L1–L5 (cap at 5 even if more proposals exist)
+  withAmt.forEach((p, i) => {
+    p.level = i < 5 ? `L${i + 1}` : `L5+`;
+  });
+
+  // Keep un-rankable proposals at the end without changing their level
+  return [...withAmt, ...withoutAmt];
+}
+
 class EmdService {
-  // Create new EMD record for a tender
-  static async addProposalToTender(
-    tender_id,
-    proposal,
-    created_by_user = null
-  ) {
+  // ── Add a proposal to the EMD record for a tender ─────────────────────────
+  static async addProposalToTender(tender_id, proposal, created_by_user = null) {
     if (!tender_id) throw new Error("tender_id is required");
 
-    // 🔹 Find tender first
     const tender = await TenderModel.findOne({ tender_id });
     if (!tender) throw new Error("Tender not found");
-   
 
-    // Fill calculated fields
-    // proposal.emd_percentage = tender.emd.emd_percentage;
-    // proposal.emd_amount =
-    //   (proposal.proposed_amount * tender.emd.emd_percentage) / 100;
-    // proposal.emd_validity = tender.emd.emd_validity;
-
-    // 🔹 Generate unique Proposal ID
+    // Generate unique Proposal ID
     const proposalIdName = "PROPOSAL";
     const proposalIdCode = "PRO";
     await IdcodeServices.addIdCode(proposalIdName, proposalIdCode);
     proposal.proposal_id = await IdcodeServices.generateCode(proposalIdName);
 
-    // 🔹 Check if EMD record already exists
+    // Auto-compute emd_amount from tender's emd_percentage if provided
+    if (proposal.proposed_amount && tender.emd?.emd_percentage) {
+      proposal.emd_percentage = tender.emd.emd_percentage;
+      proposal.emd_amount = (proposal.proposed_amount * tender.emd.emd_percentage) / 100;
+    }
+
     let emdRecord = await EmdModel.findOne({ tender_id });
 
     if (!emdRecord) {
-      // Generate unique EMD ID
       const emdIdName = "EMD";
       const emdIdCode = "EMD";
       await IdcodeServices.addIdCode(emdIdName, emdIdCode);
       const emd_id = await IdcodeServices.generateCode(emdIdName);
       if (!emd_id) throw new Error("Failed to generate EMD ID");
 
-      // Create new record with first proposal
       emdRecord = new EmdModel({
         tender_id,
         emd_id,
@@ -48,34 +60,44 @@ class EmdService {
         created_by_user,
       });
 
-      return await emdRecord.save();
-    } else {
-      // Append new proposal
-      emdRecord.proposals.push(proposal);
+      // First proposal — still rank it (L1 by default)
+      emdRecord.proposals = assignLevels(emdRecord.proposals.map((p) => p.toObject ? p.toObject() : p));
       return await emdRecord.save();
     }
+
+    emdRecord.proposals.push(proposal);
+
+    // Re-rank all proposals by bid value before saving
+    emdRecord.proposals = assignLevels(
+      emdRecord.proposals.map((p) => (p.toObject ? p.toObject() : p))
+    );
+
+    return await emdRecord.save();
   }
 
-  // Get EMD record by tender_id
+  // ── Get EMD record by tender_id ───────────────────────────────────────────
   static async getEmdByTender(tender_id) {
     return await EmdModel.findOne({ tender_id });
   }
 
-  // Get all
+  // ── Get all EMD records ───────────────────────────────────────────────────
   static async getAllEmds() {
     return await EmdModel.find();
   }
 
-  // Update entire EMD record (recalculate using tender's % if proposed_amount changes)
+  // ── Update entire EMD record ──────────────────────────────────────────────
   static async updateEmdRecord(tender_id, updateData) {
     const tender = await TenderModel.findOne({ tender_id });
     if (!tender) throw new Error("Tender not found");
 
+    // Recalculate emd_amount for every proposal using tender's emd_percentage
     if (updateData.proposals) {
       updateData.proposals = updateData.proposals.map((p) => ({
         ...p,
-        emd_percentage: tender.emd.emd_percentage,
-        emd_amount: (p.proposed_amount * tender.emd_percentage) / 100,
+        emd_percentage: tender.emd?.emd_percentage ?? p.emd_percentage,
+        emd_amount: p.proposed_amount && tender.emd?.emd_percentage
+          ? (p.proposed_amount * tender.emd.emd_percentage) / 100
+          : p.emd_amount,
       }));
     }
 
@@ -86,24 +108,39 @@ class EmdService {
     );
   }
 
-  // Update a specific proposal
-  static async updateProposalInTender(tender_id, company_name, updateData) {
+  // ── Update a specific proposal by proposal_id ─────────────────────────────
+  static async updateProposalInTender(tender_id, proposal_id, updateData) {
     const tender = await TenderModel.findOne({ tender_id });
     if (!tender) throw new Error("Tender not found");
 
-    if (updateData.proposed_amount) {
-      updateData.emd_percentage = tender.emd_percentage;
-      updateData.emd_amount =
-        (updateData.proposed_amount * tender.emd_percentage) / 100;
+    const emdRecord = await EmdModel.findOne({ tender_id });
+    if (!emdRecord) throw new Error("EMD record not found");
+
+    const index = emdRecord.proposals.findIndex((p) => p.proposal_id === proposal_id);
+    if (index === -1) throw new Error("Proposal not found");
+
+    // Recalculate emd_amount if proposed_amount changed
+    if (updateData.proposed_amount && tender.emd?.emd_percentage) {
+      updateData.emd_percentage = tender.emd.emd_percentage;
+      updateData.emd_amount = (updateData.proposed_amount * tender.emd.emd_percentage) / 100;
     }
 
-    return await EmdModel.updateOne(
-      { tender_id, "proposals.company_name": company_name },
-      { $set: { "proposals.$": { company_name, ...updateData } } }
+    // Merge update data into existing proposal
+    const existing = emdRecord.proposals[index].toObject
+      ? emdRecord.proposals[index].toObject()
+      : { ...emdRecord.proposals[index] };
+
+    emdRecord.proposals[index] = { ...existing, ...updateData, proposal_id };
+
+    // Re-rank all proposals after the amount may have changed
+    emdRecord.proposals = assignLevels(
+      emdRecord.proposals.map((p) => (p.toObject ? p.toObject() : p))
     );
+
+    return await emdRecord.save();
   }
 
-  // Remove a proposal
+  // ── Remove a proposal ─────────────────────────────────────────────────────
   static async removeProposalFromTender(tender_id, proposal_id) {
     return await EmdModel.updateOne(
       { tender_id },
@@ -111,72 +148,14 @@ class EmdService {
     );
   }
 
-  // Delete entire record
+  // ── Delete entire EMD record ──────────────────────────────────────────────
   static async deleteEmdRecord(tender_id) {
     return await EmdModel.findOneAndDelete({ tender_id });
   }
 
-  static async approveProposal(tender_id, proposal_id, approvalData) {
-    // ✅ Update proposal in EMD
-    const emdRecord = await EmdModel.findOneAndUpdate(
-      { tender_id, "proposals.proposal_id": proposal_id },
-      {
-        $set: { "proposals.$": { ...approvalData, proposal_id } },
-      },
-      { new: true }
-    );
-
-    if (!emdRecord) throw new Error("EMD record not found");
-
-    // ✅ Prepare approved EMD entry for Tender
-    const approvedEntry = {
-      emd_proposed_company: company_name,
-      emd_proposed_amount: approvalData.proposed_amount || 0,
-      emd_proposed_date: approvalData.proposed_date || new Date(),
-      emd_approved: true,
-      emd_approved_date: approvalData.emd_approved_date || new Date(),
-      emd_approved_by: approvalData.emd_approved_by || "",
-      emd_approved_amount: approvalData.emd_approved_amount || 0,
-      emd_approved_status: approvalData.emd_approved_status || "APPROVED",
-      emd_applied_bank: approvalData.emd_applied_bank || "",
-      emd_applied_bank_branch: approvalData.emd_applied_bank_branch || "",
-      emd_level: approvalData.emd_level || "",
-      emd_note: approvalData.emd_note || "",
-      security_deposit_amount: approvalData.security_deposit_amount || 0,
-      security_deposit_validity: approvalData.security_deposit_validity || null,
-      security_deposit_status: approvalData.security_deposit_status || "",
-      security_deposit_approved_by:
-        approvalData.security_deposit_approved_by || "",
-      security_deposit_approved_date:
-        approvalData.security_deposit_approved_date || null,
-      security_deposit_amount_collected:
-        approvalData.security_deposit_amount_collected || 0,
-      security_deposit_pendingAmount:
-        (approvalData.security_deposit_amount || 0) -
-        (approvalData.security_deposit_amount_collected || 0),
-      security_deposit_note: approvalData.security_deposit_note || "",
-    };
-
-    // ✅ Push into Tender.approved_emd_details
-    await TenderModel.updateOne(
-      { tender_id },
-      { $push: { "emd.approved_emd_details": approvedEntry } }
-    );
-
-    return emdRecord;
-  }
-
-  static async getProposalsPaginated(
-    tender_id,
-    page = 1,
-    limit = 10,
-    search = ""
-  ) {
-    // Step 1: Find only 'proposals' field
-    const emd = await EmdModel.findOne(
-      { tender_id },
-      { proposals: 1, _id: 0 }
-    ).lean();
+  // ── Paginated proposals for a tender ─────────────────────────────────────
+  static async getProposalsPaginated(tender_id, page = 1, limit = 10, search = "") {
+    const emd = await EmdModel.findOne({ tender_id }, { proposals: 1, _id: 0 }).lean();
 
     if (!emd || !emd.proposals) {
       return { total: 0, proposals: [] };
@@ -184,7 +163,6 @@ class EmdService {
 
     let proposals = emd.proposals;
 
-    // Step 2: Optional search
     if (search) {
       const regex = new RegExp(search, "i");
       proposals = proposals.filter(
@@ -196,135 +174,150 @@ class EmdService {
       );
     }
 
-    // Step 3: Pagination
     const total = proposals.length;
     const startIndex = (page - 1) * limit;
     const paginatedProposals = proposals.slice(startIndex, startIndex + limit);
 
-    return {
-      total,
-      proposals: paginatedProposals,
-    };
+    return { total, proposals: paginatedProposals };
   }
-  static async updateProposalWithApprovalRule(
-    tender_id,
-    proposal_id,
-    status,
-    level,
-    security_deposit, // { security_deposit_percentage, security_deposit_validity }
-    updatedBy
-  ) {
+
+  // ── Reject a single proposal ──────────────────────────────────────────────
+  // Only the specified proposal is rejected.
+  // If that proposal was previously APPROVED, Tender.emd.approved_emd_details is cleared.
+  static async rejectProposal(tender_id, proposal_id, rejection_reason = "") {
     const emd = await EmdModel.findOne({ tender_id });
     if (!emd) throw new Error("Tender EMD not found");
 
-    // Find current approved proposal & the one to update
-    const approvedProposal = emd.proposals.find((p) => p.status === "APPROVED");
-    const proposalToUpdate = emd.proposals.find(
-      (p) => p.proposal_id === proposal_id
-    );
-    if (!proposalToUpdate) throw new Error("Proposal not found");
+    const proposal = emd.proposals.find((p) => p.proposal_id === proposal_id);
+    if (!proposal) throw new Error("Proposal not found");
 
-    // Only allow one APPROVED proposal
-    if (
-      status === "APPROVED" &&
-      approvedProposal &&
-      approvedProposal.proposal_id !== proposal_id
-    ) {
-      approvedProposal.status = "PENDING";
-    }
+    const wasApproved = proposal.status === "APPROVED";
 
-    // Update the target proposal
-    proposalToUpdate.status = status;
-    if (level) proposalToUpdate.level = level;
+    proposal.status           = "REJECTED";
+    proposal.rejection_reason = rejection_reason;
+    proposal.rejected_date    = new Date();
 
     await emd.save();
 
-    // If approving, calculate deposit & update Tender doc
-    if (status === "APPROVED") {
-      const emdAmount = proposalToUpdate.proposed_amount || 0;
-      // const depositPercentage =
-      //   Number(security_deposit?.security_deposit_percentage) || 0;
-      // const depositAmount = (emdAmount * depositPercentage) / 100 || 0;
-
-      const approvedEntry = {
-        emd_proposed_company: proposalToUpdate.company_name || "",
-        emd_proposed_amount: emdAmount,
-        emd_proposed_date: proposalToUpdate.payment_date || new Date(),
-        emd_approved: true,
-        emd_approved_date: new Date(),
-        emd_approved_by: updatedBy || "",
-        emd_approved_amount: proposalToUpdate.emd_amount || 0,
-        emd_approved_status: "APPROVED",
-        emd_applied_bank: proposalToUpdate.payment_bank || "",
-        emd_applied_bank_branch: "",
-        emd_level: proposalToUpdate.level || "",
-        emd_note: proposalToUpdate.notes || "",
-        emd_deposit_amount_collected: 0,
-        emd_deposit_pendingAmount: 0,
-
-        // ✅ New calculation
-        security_deposit_percentage: 0,
-        security_deposit_amount: security_deposit?.security_deposit_amount || null,
-        security_deposit_validity:
-          security_deposit?.security_deposit_validity || null,
-        security_deposit_status: "",
-        security_deposit_approved_by: "",
-        security_deposit_approved_date: null,
-        security_deposit_amount_collected: 0,
-        security_deposit_pendingAmount: 0,
-        security_deposit_note: "",
-      };
-
-      // Remove any existing approved entries
-      await TenderModel.updateOne(
-        { tender_id },
-        { $pull: { "emd.approved_emd_details": { emd_approved: true } } }
-      );
-
-      // Push new approved entry
-      await TenderModel.updateOne(
-        { tender_id },
-        { $push: { "emd.approved_emd_details": approvedEntry } }
-      );
-
-      // ✅ Also update Tender.security_deposit schema directly
+    // If this proposal was the approved one, clear the Tender snapshot
+    if (wasApproved) {
       await TenderModel.updateOne(
         { tender_id },
         {
           $set: {
-            security_deposit: {
-              security_deposit_percentage: 0,
-              security_deposit_amount:  security_deposit?.security_deposit_amount || null,
-              security_deposit_validity:
-                security_deposit?.security_deposit_validity || null,
+            "emd.approved_emd_details": {
+              emd_approved:              false,
+              emd_tracking:              [],
+              security_deposit_tracking: [],
             },
           },
         }
       );
-
-      // Notify Finance + Tender team about EMD approval
-      const [financeRoles, tenderRoles] = await Promise.all([
-        NotificationService.getRoleIdsByPermission("finance", "purchase_bill", "read"),
-        NotificationService.getRoleIdsByPermission("tender", "emd", "read"),
-      ]);
-      const notifyRoles = [...new Set([...financeRoles, ...tenderRoles].map(String))];
-      if (notifyRoles.length > 0) {
-        NotificationService.notify({
-          title: "EMD Proposal Approved",
-          message: `EMD proposal ${proposal_id} approved for tender ${tender_id} — Company: ${proposalToUpdate.company_name}, Amount: ${proposalToUpdate.proposed_amount}`,
-          audienceType: "role",
-          roles: notifyRoles,
-          category: "approval",
-          priority: "critical",
-          module: "tender",
-          actionUrl: `/tender/tenders/viewtender/${tender_id}?tab=7`,
-          actionLabel: "View EMD",
-        });
-      }
     }
 
     return emd;
   }
+static async updateProposalWithApprovalRule(tender_id, proposal_id, status, security_deposit, updatedBy) {
+  const now = new Date();
+  const targetTenderId = String(tender_id);
+  const targetProposalId = String(proposal_id);
+
+  // 1. FETCH DOCUMENT
+  const emdDoc = await EmdModel.findOne({ tender_id: targetTenderId });
+  if (!emdDoc) {
+    console.error(`ERROR: No EMD found for Tender ID: ${targetTenderId}`);
+    throw new Error(`Tender with ID ${targetTenderId} not found`);
+  }
+
+  const currentProposal = emdDoc.proposals.find(p => p.proposal_id === targetProposalId);
+  if (!currentProposal) {
+    console.error(`ERROR: Proposal ${targetProposalId} not found in array. Available IDs:`, emdDoc.proposals.map(p => p.proposal_id));
+    throw new Error("Proposal ID not found in this tender");
+  }
+
+  const previousStatus = currentProposal.status;
+
+
+  if (status === "APPROVED") {
+    // 2. ATOMIC UPDATE
+    console.log("Executing Atomic Update with arrayFilters...");
+    const updateResult = await EmdModel.updateOne(
+      { tender_id: targetTenderId },
+      {
+        $set: {
+          "proposals.$[approved].status": "APPROVED",
+          "proposals.$[approved].approved_by": updatedBy,
+          "proposals.$[approved].approved_date": now,
+          "proposals.$[approved].rejection_reason": "",
+          "proposals.$[approved].rejected_date": null,
+          "proposals.$[others].status": "REJECTED",
+          "proposals.$[others].rejected_date": now,
+          "proposals.$[others].rejection_reason": "L1 Selection Finalized"
+        }
+      },
+      {
+        arrayFilters: [
+          { "approved.proposal_id": targetProposalId },
+          { "others.proposal_id": { $ne: targetProposalId } }
+        ]
+      }
+    );
+
+    // 3. SYNC TO TENDER
+    const sdAmount = Number(security_deposit?.security_deposit_amount) || 0;
+    
+    try {
+      const tenderSync = await TenderModel.updateOne(
+        { tender_id: targetTenderId },
+        { 
+          $set: { 
+            "emd.approved_emd_details": {
+              emd_proposed_company: currentProposal.company_name,
+              emd_proposed_amount: currentProposal.proposed_amount,
+              emd_proposed_date: currentProposal.payment_date,
+              emd_approved: true,
+              emd_approved_date: now,
+              emd_approved_by: updatedBy,
+              emd_approved_amount: currentProposal.emd_amount,
+              emd_approved_status: "APPROVED",
+              emd_applied_bank: currentProposal.payment_bank || "",
+              emd_level: currentProposal.level || "",
+              security_deposit_amount: sdAmount,
+              security_deposit_validity: security_deposit?.security_deposit_validity || null,
+              emd_tracking: [],
+              security_deposit_tracking: []
+            } 
+          } 
+        }
+      );
+    } catch (tenderErr) {
+      console.error("CRITICAL: TenderModel Sync Failed:", tenderErr.message);
+    }
+
+  } else {
+    // 4. REJECTION LOGIC
+    const simpleUpdate = await EmdModel.updateOne(
+      { tender_id: targetTenderId, "proposals.proposal_id": targetProposalId },
+      { 
+        $set: { 
+          "proposals.$.status": status,
+          "proposals.$.rejected_date": status === "REJECTED" ? now : null,
+          "proposals.$.rejection_reason": status === "REJECTED" ? "Manual Rejection" : ""
+        } 
+      }
+    );
+
+    if (previousStatus === "APPROVED") {
+      await TenderModel.updateOne(
+        { tender_id: targetTenderId },
+        { $set: { "emd.approved_emd_details.emd_approved": false } }
+      );
+    }
+  }
+
+  return await EmdModel.findOne({ tender_id: targetTenderId });
+}
+
 }
 
 export default EmdService;
