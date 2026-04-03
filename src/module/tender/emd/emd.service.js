@@ -27,10 +27,11 @@ function assignLevels(proposals) {
 class EmdService {
   // ── Add a proposal to the EMD record for a tender ─────────────────────────
   static async addProposalToTender(tender_id, proposal, created_by_user = null) {
-    if (!tender_id) throw new Error("tender_id is required");
+    if (!tender_id) throw new Error("Tender ID is required to process this EMD request.");
+    if (!proposal || !proposal.company_name) throw new Error("Company name is required to submit an EMD proposal.");
 
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     // Generate unique Proposal ID
     const proposalIdName = "PROPOSAL";
@@ -51,7 +52,7 @@ class EmdService {
       const emdIdCode = "EMD";
       await IdcodeServices.addIdCode(emdIdName, emdIdCode);
       const emd_id = await IdcodeServices.generateCode(emdIdName);
-      if (!emd_id) throw new Error("Failed to generate EMD ID");
+      if (!emd_id) throw new Error("Failed to generate EMD reference number. Please try again.");
 
       emdRecord = new EmdModel({
         tender_id,
@@ -88,7 +89,7 @@ class EmdService {
   // ── Update entire EMD record ──────────────────────────────────────────────
   static async updateEmdRecord(tender_id, updateData) {
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     // Recalculate emd_amount for every proposal using tender's emd_percentage
     if (updateData.proposals) {
@@ -111,13 +112,13 @@ class EmdService {
   // ── Update a specific proposal by proposal_id ─────────────────────────────
   static async updateProposalInTender(tender_id, proposal_id, updateData) {
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     const emdRecord = await EmdModel.findOne({ tender_id });
-    if (!emdRecord) throw new Error("EMD record not found");
+    if (!emdRecord) throw new Error("EMD record not found for this tender.");
 
     const index = emdRecord.proposals.findIndex((p) => p.proposal_id === proposal_id);
-    if (index === -1) throw new Error("Proposal not found");
+    if (index === -1) throw new Error("EMD proposal not found for the specified Proposal ID.");
 
     // Recalculate emd_amount if proposed_amount changed
     if (updateData.proposed_amount && tender.emd?.emd_percentage) {
@@ -142,6 +143,10 @@ class EmdService {
 
   // ── Remove a proposal ─────────────────────────────────────────────────────
   static async removeProposalFromTender(tender_id, proposal_id) {
+    const emd = await EmdModel.findOne({ tender_id });
+    if (!emd) throw new Error("EMD record not found for this tender.");
+    const exists = emd.proposals.some((p) => p.proposal_id === proposal_id);
+    if (!exists) throw new Error("EMD proposal not found for the specified Proposal ID.");
     return await EmdModel.updateOne(
       { tender_id },
       { $pull: { proposals: { proposal_id } } }
@@ -186,10 +191,10 @@ class EmdService {
   // If that proposal was previously APPROVED, Tender.emd.approved_emd_details is cleared.
   static async rejectProposal(tender_id, proposal_id, rejection_reason = "") {
     const emd = await EmdModel.findOne({ tender_id });
-    if (!emd) throw new Error("Tender EMD not found");
+    if (!emd) throw new Error("EMD record not found for this tender.");
 
     const proposal = emd.proposals.find((p) => p.proposal_id === proposal_id);
-    if (!proposal) throw new Error("Proposal not found");
+    if (!proposal) throw new Error("EMD proposal not found for the specified Proposal ID.");
 
     const wasApproved = proposal.status === "APPROVED";
 
@@ -225,14 +230,12 @@ static async updateProposalWithApprovalRule(tender_id, proposal_id, status, secu
   // 1. FETCH DOCUMENT
   const emdDoc = await EmdModel.findOne({ tender_id: targetTenderId });
   if (!emdDoc) {
-    console.error(`ERROR: No EMD found for Tender ID: ${targetTenderId}`);
-    throw new Error(`Tender with ID ${targetTenderId} not found`);
+    throw new Error(`No Earnest Money Deposit record found for Tender ID ${targetTenderId}.`);
   }
 
   const currentProposal = emdDoc.proposals.find(p => p.proposal_id === targetProposalId);
   if (!currentProposal) {
-    console.error(`ERROR: Proposal ${targetProposalId} not found in array. Available IDs:`, emdDoc.proposals.map(p => p.proposal_id));
-    throw new Error("Proposal ID not found in this tender");
+    throw new Error("The specified Proposal ID does not exist in this tender's EMD record.");
   }
 
   const previousStatus = currentProposal.status;
@@ -240,7 +243,6 @@ static async updateProposalWithApprovalRule(tender_id, proposal_id, status, secu
 
   if (status === "APPROVED") {
     // 2. ATOMIC UPDATE
-    console.log("Executing Atomic Update with arrayFilters...");
     const updateResult = await EmdModel.updateOne(
       { tender_id: targetTenderId },
       {
@@ -252,7 +254,7 @@ static async updateProposalWithApprovalRule(tender_id, proposal_id, status, secu
           "proposals.$[approved].rejected_date": null,
           "proposals.$[others].status": "REJECTED",
           "proposals.$[others].rejected_date": now,
-          "proposals.$[others].rejection_reason": "L1 Selection Finalized"
+          "proposals.$[others].rejection_reason": "L1 bidder selected; remaining proposals have been automatically rejected as per evaluation criteria."
         }
       },
       {
@@ -291,7 +293,7 @@ static async updateProposalWithApprovalRule(tender_id, proposal_id, status, secu
         }
       );
     } catch (tenderErr) {
-      console.error("CRITICAL: TenderModel Sync Failed:", tenderErr.message);
+      throw new Error("Failed to sync approved EMD details to the Tender record. Please contact the system administrator.");
     }
 
   } else {
@@ -302,7 +304,7 @@ static async updateProposalWithApprovalRule(tender_id, proposal_id, status, secu
         $set: { 
           "proposals.$.status": status,
           "proposals.$.rejected_date": status === "REJECTED" ? now : null,
-          "proposals.$.rejection_reason": status === "REJECTED" ? "Manual Rejection" : ""
+          "proposals.$.rejection_reason": status === "REJECTED" ? "Proposal rejected manually by the authorized approver." : ""
         } 
       }
     );

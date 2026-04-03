@@ -15,11 +15,12 @@ export const addProposalToTender = async (req, res) => {
 
     res.status(201).json({
       status: true,
-      message: "Proposal added to tender successfully",
+      message: "EMD proposal submitted successfully.",
       data: result
     });
   } catch (error) {
-    res.status(500).json({
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({
       status: false,
       message: error.message
     });
@@ -35,7 +36,7 @@ export const getEmdByTender = async (req, res) => {
     if (!result) {
       return res.status(404).json({
         status: false,
-        message: "EMD record not found"
+        message: "No Earnest Money Deposit record found for this tender."
       });
     }
 
@@ -65,11 +66,12 @@ export const updateEmdRecord = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "EMD record updated successfully",
+      message: "Earnest Money Deposit record updated successfully.",
       data: result
     });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -87,11 +89,12 @@ export const updateProposalInTender = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Proposal updated successfully",
+      message: "EMD proposal updated successfully.",
       data: result
     });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -106,11 +109,12 @@ export const removeProposalFromTender = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Proposal removed successfully",
+      message: "EMD proposal removed successfully.",
       data: result
     });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -120,10 +124,13 @@ export const deleteEmdRecord = async (req, res) => {
     const { tender_id } = req.params;
 
     const result = await EmdService.deleteEmdRecord(tender_id);
+    if (!result) {
+      return res.status(404).json({ status: false, message: "No Earnest Money Deposit record found for this tender. Deletion could not be completed." });
+    }
 
     res.status(200).json({
       status: true,
-      message: "EMD record deleted successfully",
+      message: "Earnest Money Deposit record deleted successfully.",
       data: result
     });
   } catch (error) {
@@ -148,7 +155,6 @@ export const getProposalsPaginated = async (req, res) => {
       data: result.proposals
     });
   } catch (error) {
-    console.error(error);
     res.status(500).json({ status: false, message: error.message });
   }
 };
@@ -162,7 +168,7 @@ export const rejectProposal = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Proposal rejected successfully",
+      message: "EMD proposal rejected successfully.",
       data: result,
     });
   } catch (error) {
@@ -187,10 +193,11 @@ export const updateProposalWithApprovalRule = async (req, res) => {
 
     res.json({
       status: true,
-      message: "Proposal updated successfully",
+      message: "EMD proposal approval status updated successfully.",
       data: result,
     });
   } catch (error) {
-    res.status(400).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") || error.message.includes("No tender") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };

@@ -9,7 +9,7 @@ class BoqService {
     const idcode = "BOQ";
     await IdcodeServices.addIdCode(idname, idcode);
     const boq_id = await IdcodeServices.generateCode(idname);
-    if (!boq_id) throw new Error("Failed to generate BOQ ID");
+    if (!boq_id) throw new Error("Failed to generate Bill of Quantities reference number. Please try again.");
 
     if (boqData.items && boqData.items.length > 0) {
       boqData.items = boqData.items.map(item => ({
@@ -49,7 +49,7 @@ class BoqService {
 
 static async addOrUpdateBoqItem(boqData) {
   const { tender_id, items = [], ...rest } = boqData;
-  if (!tender_id) throw new Error("tender_id is required");
+  if (!tender_id) throw new Error("Tender ID is required to add or update Bill of Quantities items.");
 
   // 🔹 Generate unique code for each new BOQ Item
   const updatedItems = await Promise.all(
@@ -104,7 +104,7 @@ static async addOrUpdateBoqItem(boqData) {
     const idcode = "BOQ";
     await IdcodeServices.addIdCode(idname, idcode);
     const boq_id = await IdcodeServices.generateCode(idname);
-    if (!boq_id) throw new Error("Failed to generate BOQ ID");
+    if (!boq_id) throw new Error("Failed to generate Bill of Quantities reference number. Please try again.");
 
     // Calculate total
     const total_amount = updatedItems.reduce((sum, i) => sum + (i.final_amount || 0), 0);
@@ -201,7 +201,7 @@ static async addOrUpdateBoqItem(boqData) {
       { new: true }
     );
 
-    if (!boq) throw new Error("BOQ record not found");
+    if (!boq) throw new Error("Bill of Quantities record not found for this tender.");
 
     // 🔹 Recalculate zero_cost_final_value from full BoQ and sync to Tender
     if (boq.tender_id) {
@@ -227,7 +227,9 @@ static async addOrUpdateBoqItem(boqData) {
   // Remove item by item_code
   static async removeItemFromBoq(tender_id, item_code) {
     const boq = await BoqModel.findOne({ tender_id });
-    if (!boq) throw new Error("BOQ record not found");
+    if (!boq) throw new Error("Bill of Quantities record not found for this tender.");
+    const itemExists = boq.items.some(item => item.item_code === item_code);
+    if (!itemExists) throw new Error(`BOQ item with code '${item_code}' was not found. Removal could not be completed.`);
 
     boq.items = boq.items.filter(item => item.item_code !== item_code);
     boq.total_amount = boq.items.reduce(
@@ -239,7 +241,9 @@ static async addOrUpdateBoqItem(boqData) {
 
   // Delete entire BoQ
   static async deleteBoq(boq_id) {
-    return await BoqModel.findOneAndDelete({ boq_id });
+    const deleted = await BoqModel.findOneAndDelete({ boq_id });
+    if (!deleted) throw new Error("Bill of Quantities record not found. Deletion could not be completed.");
+    return deleted;
   }
 
   static async getBoqItemsPaginated(tender_id, page, limit, search) {
@@ -289,7 +293,7 @@ static async bulkInsert(csvRows, createdByUser, tender_id, phase = "", parsedRev
   const itemCodes = [];
   for (let i = 0; i < csvRows.length; i++) {
     const code = await IdcodeServices.generateCode(idname);
-    if (!code) throw new Error("Failed to generate unique item_code");
+    if (!code) throw new Error("Failed to generate a unique BOQ item code. Please retry the operation.");
     itemCodes.push(code);
   }
 
@@ -332,7 +336,7 @@ static async bulkInsert(csvRows, createdByUser, tender_id, phase = "", parsedRev
     const idCodeBoq = "BOQ";
     await IdcodeServices.addIdCode(idNameBoq, idCodeBoq);
     const boq_id = await IdcodeServices.generateCode(idNameBoq);
-    if (!boq_id) throw new Error("Failed to generate BOQ ID");
+    if (!boq_id) throw new Error("Failed to generate Bill of Quantities reference number. Please try again.");
 
     boq = new BoqModel({
       boq_id,
@@ -395,12 +399,12 @@ static async getDrawingQuantity(tender_id) {
 static async bulkUpdateDrawingQuantity(tender_id, itemsPayload) {
     // 1. Validation
     if (!itemsPayload || !Array.isArray(itemsPayload)) {
-        throw new Error("Invalid data: 'items' must be an array.");
+        throw new Error("Invalid input: BOQ items must be provided as an array.");
     }
 
     // 2. Fetch BOQ
     const boq = await BoqModel.findOne({ tender_id });
-    if (!boq) throw new Error("BOQ not found for this tender");
+    if (!boq) throw new Error("No Bill of Quantities record found for the specified tender.");
 
     // 3. Create Lookup Map 
     // Key: item_code (from payload) -> Value: drawing_quantity

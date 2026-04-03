@@ -10,11 +10,11 @@ export const addPenalty = async (req, res) => {
     const result = await PenaltyService.addPenalty(penaltyData);
     res.status(201).json({
       status: true,
-      message: "Penalty added successfully",
+      message: "Penalty record added successfully.",
       data: result,
     });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };
 
@@ -26,7 +26,7 @@ export const getPenalties = async (req, res) => {
     const { tender_id } = req.params;
     const result = await PenaltyService.getPenaltiesByTender(tender_id);
     if (!result) {
-      return res.status(404).json({ status: false, message: "No penalties found" });
+      return res.status(404).json({ status: false, message: "No penalty records found for the specified tender." });
     }
     res.status(200).json({ status: true, data: result });
   } catch (error) {
@@ -42,9 +42,10 @@ export const updatePenalty = async (req, res) => {
     const { tender_id, penalty_id } = req.params;
     const updateData = req.body;
     const result = await PenaltyService.updatePenalty(tender_id, penalty_id, updateData);
-    res.status(200).json({ status: true, message: "Penalty updated", data: result });
+    res.status(200).json({ status: true, message: "Penalty record updated successfully.", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -55,9 +56,10 @@ export const removePenalty = async (req, res) => {
   try {
     const { tender_id, penalty_id } = req.params;
     const result = await PenaltyService.removePenalty(tender_id, penalty_id);
-    res.status(200).json({ status: true, message: "Penalty removed", data: result });
+    res.status(200).json({ status: true, message: "Penalty record removed successfully.", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -82,6 +84,6 @@ export const getPaginatedPenalties = async (req, res) => {
       data: result.penalties,
     });
   } catch (error) {
-    res.status(500).json({ status: false, message: "Server Error" });
+    res.status(500).json({ status: false, message: error.message });
   }
 };

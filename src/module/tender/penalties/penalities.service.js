@@ -13,7 +13,7 @@ static async addPenalty(penaltyData) {
   const idcode = "PEN";
   await IdcodeServices.addIdCode(idname, idcode);
   const penalty_id = await IdcodeServices.generateCode(idname);
-  if (!penalty_id) throw new Error("Failed to generate penalty ID");
+  if (!penalty_id) throw new Error("Failed to generate Penalty reference number. Please try again.");
 
   const penaltyDetails = penaltyData.listOfPenalties[0];
 
@@ -91,6 +91,8 @@ static async addPenalty(penaltyData) {
    * Update a penalty entry by penalty_id within a tender
    */
   static async updatePenalty(tender_id, penalty_id, updateData) {
+    const record = await PenaltyModel.findOne({ tender_id, "listOfPenalties.penalty_id": penalty_id });
+    if (!record) throw new Error("Penalty record not found for the specified Penalty ID. Update could not be completed.");
     return await PenaltyModel.updateOne(
       { tender_id, "listOfPenalties.penalty_id": penalty_id },
       { $set: { "listOfPenalties.$": { penalty_id, ...updateData } } }
@@ -101,6 +103,8 @@ static async addPenalty(penaltyData) {
    * Remove a penalty by penalty_id from a tender
    */
   static async removePenalty(tender_id, penalty_id) {
+    const record = await PenaltyModel.findOne({ tender_id, "listOfPenalties.penalty_id": penalty_id });
+    if (!record) throw new Error("Penalty record not found for the specified Penalty ID. Removal could not be completed.");
     return await PenaltyModel.updateOne(
       { tender_id },
       { $pull: { listOfPenalties: { penalty_id } } }

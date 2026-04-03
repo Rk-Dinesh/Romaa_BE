@@ -20,10 +20,10 @@ class MaterialService {
     try {
       // Read inside session for consistent snapshot
       const materialDoc = await MaterialModel.findOne({ tender_id }).session(session);
-      if (!materialDoc) throw new Error(`Tender ${tender_id} not found in Inventory`);
+      if (!materialDoc) throw new Error(`Material inventory for Tender ${tender_id} has not been set up yet.`);
 
       const prDoc = await PurchaseRequestModel.findOne({ requestId }).session(session);
-      if (!prDoc) throw new Error(`Purchase Request ${requestId} not found`);
+      if (!prDoc) throw new Error(`Purchase Request ${requestId} not found. Verify the request ID and try again.`);
 
       const vendorName = prDoc.selectedVendor?.vendorName || "";
       const vendorId   = prDoc.selectedVendor?.vendorId   || "";
@@ -84,7 +84,7 @@ class MaterialService {
           (i) => i.item_description === entry.item_description
         );
         if (!itemSubDoc) {
-          throw new Error(`Item '${entry.item_description}' not found in Inventory.`);
+          throw new Error(`Material item '${entry.item_description}' was not found in the project inventory.`);
         }
 
         // --- HYDRATION: fill empty metadata fields from PR data ---
@@ -204,7 +204,7 @@ class MaterialService {
 
     try {
       const materialDoc = await MaterialModel.findOne({ tender_id }).session(session);
-      if (!materialDoc) throw new Error(`Tender ${tender_id} not found`);
+      if (!materialDoc) throw new Error(`Material inventory for Tender ${tender_id} has not been set up yet.`);
 
       const stockOps   = []; // conditional $inc (guard against race)
       const transactions = [];
@@ -214,14 +214,14 @@ class MaterialService {
         const itemSubDoc = materialDoc.items.find(
           (i) => i._id.toString() === entry.item_id || i.item_description === entry.item_description
         );
-        if (!itemSubDoc) throw new Error(`Item '${entry.item_description}' not found`);
+        if (!itemSubDoc) throw new Error(`Material item '${entry.item_description}' was not found in the project inventory.`);
 
         const qtyToIssue  = Number(entry.issued_quantity);
         const currentStock = itemSubDoc.current_stock_on_hand;
 
         if (currentStock < qtyToIssue) {
           throw new Error(
-            `Insufficient Stock for ${itemSubDoc.item_description}. Available: ${currentStock}, Requested: ${qtyToIssue}`
+            `Insufficient stock for '${itemSubDoc.item_description}'. Available: ${currentStock}, Requested: ${qtyToIssue}. Please raise a new procurement request.`
           );
         }
 
@@ -266,7 +266,7 @@ class MaterialService {
       // If any item's conditional filter didn't match, another request won the race
       if (bulkResult.modifiedCount !== stockOps.length) {
         throw new Error(
-          "Stock update conflict: one or more items had insufficient stock at write time. Please retry."
+          "Stock update conflict: one or more items had insufficient stock at the time of processing. Please retry the material issuance request."
         );
       }
 
@@ -324,7 +324,7 @@ class MaterialService {
    */
   static async getItemLedger(tender_id, item_id) {
     const materialDoc = await MaterialModel.findOne({ tender_id, "items._id": item_id }).lean();
-    if (!materialDoc) throw new Error("Item not found");
+    if (!materialDoc) throw new Error("Material item not found in the project inventory.");
 
     const item = materialDoc.items.find((i) => i._id.toString() === item_id);
 
@@ -419,10 +419,10 @@ class MaterialService {
    */
   static async getMaterialInwardHistory(tender_id, item_id) {
     const materialDoc = await MaterialModel.findOne({ tender_id, "items._id": item_id }).lean();
-    if (!materialDoc) throw new Error("Project (Tender) not found");
+    if (!materialDoc) throw new Error("Material inventory not found for the specified Tender ID.");
 
     const item = materialDoc.items.find((i) => i._id.toString() === item_id);
-    if (!item) throw new Error("Material Item not found");
+    if (!item) throw new Error("Material item not found in the project inventory.");
 
     const history = await MaterialTransactionModel.find({ tender_id, item_id, type: "IN" })
       .sort({ date: -1 })
@@ -442,10 +442,10 @@ class MaterialService {
    */
   static async getMaterialOutwardHistory(tender_id, item_id) {
     const materialDoc = await MaterialModel.findOne({ tender_id, "items._id": item_id }).lean();
-    if (!materialDoc) throw new Error("Project (Tender) not found");
+    if (!materialDoc) throw new Error("Material inventory not found for the specified Tender ID.");
 
     const item = materialDoc.items.find((i) => i._id.toString() === item_id);
-    if (!item) throw new Error("Material Item not found");
+    if (!item) throw new Error("Material item not found in the project inventory.");
 
     const history = await MaterialTransactionModel.find({ tender_id, item_id, type: "OUT" })
       .sort({ date: -1 })
@@ -505,7 +505,7 @@ class MaterialService {
    *          item_description, purchase_request_ref, invoice_challan_no
    */
   static async getGRNEntriesByTender(tender_id, filters = {}) {
-    if (!tender_id) throw new Error("tender_id is required");
+    if (!tender_id) throw new Error("Tender ID is required.");
 
     const match = { tender_id, type: "IN" };
 
@@ -541,8 +541,8 @@ class MaterialService {
    * only type:IN and is_bill_generated:false
    */
   static async getGRNForBilling(tender_id, vendor_id) {
-    if (!tender_id) throw new Error("tender_id is required");
-    if (!vendor_id) throw new Error("vendor_id is required");
+    if (!tender_id) throw new Error("Tender ID is required.");
+    if (!vendor_id) throw new Error("Vendor ID is required.");
 
     const entries = await MaterialTransactionModel.find({
       tender_id,

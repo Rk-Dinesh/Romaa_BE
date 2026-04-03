@@ -15,7 +15,7 @@ class RateAnalysisQuantitiesService {
     ];
 
     if (!allowed.includes(nametype)) {
-      throw new Error(`Invalid nametype: ${nametype}`);
+      throw new Error(`Invalid resource category '${nametype}'. Permitted categories: consumable_material, bulk_material, machinery, fuel, contractor, nmr.`);
     }
 
     const doc = await RAQuantityModel.findOne(
@@ -43,7 +43,7 @@ class RateAnalysisQuantitiesService {
     ];
 
     if (!allowed.includes(nametype)) {
-      throw new Error(`Invalid nametype: ${nametype}`);
+      throw new Error(`Invalid resource category '${nametype}'. Permitted categories: consumable_material, bulk_material, machinery, fuel, contractor, nmr.`);
     }
 
     const doc = await RAQuantityModel.findOne(
@@ -82,7 +82,7 @@ class RateAnalysisQuantitiesService {
     ];
 
     if (!allowed.includes(nametype)) {
-      throw new Error(`Invalid nametype: ${nametype}`);
+      throw new Error(`Invalid resource category '${nametype}'. Permitted categories: consumable_material, bulk_material, machinery, fuel, contractor, nmr.`);
     }
 
     const itemData = data.items;

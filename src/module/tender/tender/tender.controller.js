@@ -39,7 +39,7 @@ export const getTenderById = async (req, res) => {
     if (!tender)
       return res
         .status(404)
-        .json({ status: false, message: "Tender not found" });
+        .json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res.status(200).json({ status: true, data: tender });
   } catch (error) {
@@ -53,7 +53,7 @@ export const getTenderByIdforApprove = async (req, res) => {
     if (!tender)
       return res
         .status(404)
-        .json({ status: false, message: "Tender not found" });
+        .json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res.status(200).json({ status: true, data: tender });
   } catch (error) {
@@ -67,7 +67,7 @@ export const getTenderByIdemd = async (req, res) => {
     if (!tender)
       return res
         .status(404)
-        .json({ status: false, message: "Tender not found" });
+        .json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res.status(200).json({ status: true, data: tender });
   } catch (error) {
@@ -84,7 +84,7 @@ export const updateTender = async (req, res) => {
     if (!tender)
       return res
         .status(404)
-        .json({ status: false, message: "Tender not found" });
+        .json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res
       .status(200)
@@ -100,7 +100,7 @@ export const deleteTender = async (req, res) => {
     if (!tender)
       return res
         .status(404)
-        .json({ status: false, message: "Tender not found" });
+        .json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res
       .status(200)
@@ -120,11 +120,11 @@ export const updateTenderStatusCheck = async (req, res) => {
     if (!tender)
       return res
         .status(404)
-        .json({ status: false, message: "Tender not found" });
+        .json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res.status(200).json({
       status: true,
-      message: "Tender status check updated",
+      message: "Tender status checklist updated successfully.",
       data: tender,
     });
   } catch (error) {
@@ -165,7 +165,7 @@ export const getTenderForOverview = async (req, res) => {
   try {
     const data = await TenderService.getTenderForOverview(req.params.tender_id);
     if (!data)
-      return res.status(404).json({ status: false, message: "Tender not found" });
+      return res.status(404).json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res.status(200).json({ status: true, data });
   } catch (error) {
@@ -180,7 +180,7 @@ export const addImportantDate = async (req, res) => {
       req.body 
     );
     if (!tender) {
-      return res.status(404).json({ status: false, message: "Tender not found" });
+      return res.status(404).json({ status: false, message: "Tender record not found for the specified Tender ID." });
     }
     res.status(200).json({
       status: true,
@@ -202,7 +202,7 @@ export const updateTenderWorkOrderController = async (req, res) => {
     if (!tender_id || !workOrder_issued_date || !workOrder_id) {
       return res.status(400).json({
         status: false,
-        message: "tender_id, workOrder_id and workOrder_issued_date are required"
+        message: "Tender ID, Work Order ID and Work Order issued date are required."
       });
     }
 
@@ -214,11 +214,12 @@ export const updateTenderWorkOrderController = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Tender status updated & work order issued successfully",
+      message: "Tender approved and Work Order issued successfully.",
       data: updatedTender
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -230,7 +231,7 @@ export const updateTenderAgreementController = async (req, res) => {
     if (!tender_id || !agreement_issued_date || !agreement_id) {
       return res.status(400).json({
         status: false,
-        message: "tender_id, agreement_id and agreement_issued_date are required"
+        message: "Tender ID, Agreement ID and Agreement issued date are required."
       });
     }
 
@@ -243,11 +244,12 @@ export const updateTenderAgreementController = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Tender status updated & agreement issued successfully",
+      message: "Tender approved and Agreement issued successfully.",
       data: updatedTender
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -257,8 +259,8 @@ export const checkTenderApprovalStatus = async (req, res) => {
 
     if (!tender_id) {
       return res.status(400).json({
-        success: false,
-        message: "tender_id is required",
+        status: false,
+        message: "Tender ID is required.",
       });
     }
 
@@ -269,8 +271,8 @@ export const checkTenderApprovalStatus = async (req, res) => {
 
     if (!tender) {
       return res.status(404).json({
-        success: false,
-        message: "Tender not found",
+        status: false,
+        message: "Tender record not found for the specified Tender ID.",
       });
     }
 
@@ -347,18 +349,15 @@ export const getTendersPaginatedEMDSD = async (req, res) => {
 
 export const updateEmdDetails = async (req, res) => {
   try {
-    const { tender_id } = req.params; 
+    const { tender_id } = req.params;
     const updatedEmd = await TenderService.updateEmdDetailsService(
       tender_id,
       req.body
     );
 
-    res.json({
-      message: "EMD details updated successfully",
-      updatedEmd
-    });
+    res.status(200).json({ status: true, message: "EMD deposit details updated successfully.", data: updatedEmd });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };
 
@@ -366,9 +365,9 @@ export const getEmdTracking = async (req, res) => {
   try {
     const { tender_id } = req.params;
     const emdTracking = await TenderService.getemd_tracking(tender_id);
-    res.json({ emdTracking });
+    res.status(200).json({ status: true, data: emdTracking });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };
 
@@ -376,26 +375,23 @@ export const getSecurityDepositTracking = async (req, res) => {
   try {
     const { tender_id } = req.params;
     const securityDepositTracking = await TenderService.getsecurity_deposit_tracking(tender_id);
-    res.json({ securityDepositTracking });
+    res.status(200).json({ status: true, data: securityDepositTracking });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };  
 
 export const updateSDDetails = async (req, res) => {
   try {
-    const { tender_id } = req.params; 
+    const { tender_id } = req.params;
     const updatedEmd = await TenderService.updateSDDetailsService(
       tender_id,
       req.body
     );
 
-    res.json({
-      message: "SD details updated successfully",
-      updatedEmd
-    });
+    res.status(200).json({ status: true, message: "Security Deposit details updated successfully.", data: updatedEmd });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };
 
@@ -403,7 +399,7 @@ export const getWorkOrdererForOverview = async (req, res) => {
   try {
     const data = await TenderService.getWorkorderForOverview(req.params.tender_id);
     if (!data)
-      return res.status(404).json({ status: false, message: "Tender not found" });
+      return res.status(404).json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res.status(200).json({ status: true, data });
   } catch (error) {
@@ -416,8 +412,6 @@ export const getTenderProcess = async (req, res) => {
     const processData = await TenderService.getTenderProcess(req.params.tender_id);
     res.status(200).json({ status: true, processData });
   } catch (err) {
-    if (err.message === "Tender not found")
-      return res.status(404).json({ status: false, message: err.message });
     res.status(500).json({ status: false, message: err.message });
   }
 };
@@ -426,10 +420,8 @@ export const getTenderProcess = async (req, res) => {
 export const saveTenderProcessStep = async (req, res) => {
   try {
     const updatedProcess = await TenderService.saveTenderProcessStep(req.body.tender_id, req.body);
-    res.status(200).json({ status: true, message: "Step saved", processData: updatedProcess });
+    res.status(200).json({ status: true, message: "Tender process step saved successfully.", processData: updatedProcess });
   } catch (err) {
-    if (err.message === "Tender not found" || err.message === "Step not found")
-      return res.status(404).json({ status: false, message: err.message });
     res.status(500).json({ status: false, message: err.message });
   }
 };
@@ -468,12 +460,10 @@ export const saveTenderProcessStepaws = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Step saved",
+      message: "Tender process step saved successfully.",
       processData: updatedProcess,
     });
   } catch (err) {
-    if (err.message === "Tender not found" || err.message === "Step not found")
-      return res.status(404).json({ status: false, message: err.message });
     res.status(500).json({ status: false, message: err.message });
   }
 };
@@ -483,8 +473,6 @@ export const getPreliminarySiteWork = async (req, res) => {
     const processData = await TenderService.getPreliminarySiteWork(req.params.tender_id);
     res.status(200).json({ status: true, processData });
   } catch (err) {
-    if (err.message === "Tender not found")
-      return res.status(404).json({ status: false, message: err.message });
     res.status(500).json({ status: false, message: err.message });
   }
 };
@@ -492,10 +480,8 @@ export const getPreliminarySiteWork = async (req, res) => {
 export const savePreliminarySiteWork = async (req, res) => {
   try {
     const updatedWork = await TenderService.savePreliminarySiteWork(req.body.tender_id, req.body);
-    res.status(200).json({ status: true, message: "Preliminary site work saved", processData: updatedWork });
+    res.status(200).json({ status: true, message: "Preliminary site work saved successfully.", processData: updatedWork });
   } catch (err) {
-    if (err.message === "Tender not found" || err.message === "Work item not found")
-      return res.status(404).json({ status: false, message: err.message });
     res.status(500).json({ status: false, message: err.message });
   }
 };
@@ -533,12 +519,10 @@ export const savePreliminarySiteWorkaws = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: "Preliminary site work saved",
+      message: "Preliminary site work step saved successfully.",
       processData: updatedProcess,
     });
   } catch (err) {
-    if (err.message === "Tender not found" || err.message === "Work item not found")
-      return res.status(404).json({ status: false, message: err.message });
     res.status(500).json({ status: false, message: err.message });
   }
 };
@@ -547,7 +531,7 @@ export const getFinancialGenerals = async (req, res) => {
   try {
     const data = await TenderService.getFinancialGenerals(req.params.tender_id, req.params.workOrder_id);
     if (!data)
-      return res.status(404).json({ status: false, message: "Tender not found" });
+      return res.status(404).json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res.status(200).json({ status: true, data });
   } catch (error) {
@@ -564,12 +548,9 @@ export const updateFinancialGenerals = async (req, res) => {
       req.body
     );
 
-    res.json({
-      message: "Financial generals updated successfully",
-      updatedFinancialGenerals
-    });
+    res.status(200).json({ status: true, message: "Financial generals updated successfully.", data: updatedFinancialGenerals });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 }
 
@@ -587,7 +568,7 @@ export const getGenerlSetup = async (req, res) => {
     const { tender_id } = req.params; 
     const generlSetup = await TenderService.getGeneralSetup(tender_id);
     if (!generlSetup)
-      return res.status(404).json({ status: false, message: "Tender not found" });
+      return res.status(404).json({ status: false, message: "Tender record not found for the specified Tender ID." });
 
     res.status(200).json({ status: true, data: generlSetup });
   } catch (error) {
@@ -597,17 +578,14 @@ export const getGenerlSetup = async (req, res) => {
 
 export const updateGenerlSetup = async (req, res) => {
   try {
-    const { tender_id } = req.params; 
+    const { tender_id } = req.params;
     const updatedGenerlSetup = await TenderService.updateGenerlSetup(
       tender_id,
       req.body
     );
 
-    res.json({
-      message: "General setup updated successfully",
-      updatedGenerlSetup
-    });
+    res.status(200).json({ status: true, message: "General setup updated successfully.", data: updatedGenerlSetup });
   } catch (error) {
-    res.status(400).json({ message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 }

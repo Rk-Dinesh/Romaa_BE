@@ -2344,3 +2344,52 @@ static async updateDrawingQuantity(tender_id, item_code, drawing_quantity) {
         ]
     }
 }
+
+{
+  "metadata": {
+    "object": "TN87F8808",
+    "brand": "PUTZMEISTER",
+    "model": "BSF 36-4.16",
+    "company": "Romaa Infra",
+    "sensor": {
+      "brand": "Mielta",
+      "model": "Fantom",
+      "type": "Capacitive Fuel Sensor",
+      "uid": "644050000"
+    }
+  },
+  "units": {
+    "distance": "km",
+    "fuel": "Liter",
+    "mileage_distance": "Liter / Km",
+    "mileage_duration": "Liter / MM"
+  },
+  "telemetry": {
+    "distance": 30.03,
+    "duration": {
+      "working": "00:00:00",
+      "running": "00:00:00",
+      "idle": "00:00:00"
+    },
+    "speed": {
+      "average": 30.5,
+      "max": 105.8
+    },
+    "fuel_analysis": {
+      "start_level": 775.54,
+      "end_level": 125.0,
+      "total_consumption": 2.94,
+      "idle_consumption": 0.0,
+      "waste_due_to_idling": 0.0,
+      "avg_per_100km": 33.33,
+      "fills": 0,
+      "drains": 0,
+      "drain_volume": 0.125
+    },
+    "financials_and_environment": {
+      "total_load_t": 0.25,
+      "carbon_emission_kg": 0.0,
+      "total_cost": 0.0
+    }
+  }
+}

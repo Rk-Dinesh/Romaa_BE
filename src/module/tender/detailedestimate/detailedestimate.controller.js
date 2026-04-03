@@ -10,34 +10,35 @@ const __dirname = path.dirname(__filename);
 
 export const detailedEstimateCustomHeading = async (req, res) => {
   try {
-    const tender_id = req.query;
+    const { tender_id } = req.query;
     const result =
       await detailedestimateService.createDetailedEstimateCustomHeadings(
-        tender_id,
+        { tender_id },
         req.body,
       );
     res
       .status(200)
       .json({
         status: true,
-        message: "Custom heading added successfully",
+        message: "Detailed Estimate custom heading added successfully.",
         data: result,
       });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
 export const extractHeadingInpairs = async (req, res) => {
   try {
-    const tender_id = req.query;
+    const { tender_id } = req.query;
     const result =
-      await detailedestimateService.extractHeadingsInPairs(tender_id);
+      await detailedestimateService.extractHeadingsInPairs({ tender_id });
     res
       .status(200)
       .json({
         status: true,
-        message: "Custom heading pairs extracted successfully",
+        message: "Detailed Estimate heading pairs retrieved successfully.",
         data: result,
       });
   } catch (error) {
@@ -53,15 +54,15 @@ export const bulkInsertCustomHeadingsController = async (req, res) => {
     if (!req.file)
       return res
         .status(400)
-        .json({ status: false, message: "CSV file is required" });
+        .json({ status: false, message: "No file uploaded. Please attach a valid CSV file." });
     if (!tender_id)
       return res
         .status(400)
-        .json({ status: false, message: "tender_id is required" });
+        .json({ status: false, message: "Tender ID is required." });
     if (!nametype)
       return res
         .status(400)
-        .json({ status: false, message: "nametype is required" });
+        .json({ status: false, message: "Section type (nametype) is required." });
 
     const filePath = path.join(
       __dirname,
@@ -85,7 +86,7 @@ export const bulkInsertCustomHeadingsController = async (req, res) => {
             .status(200)
             .json({
               status: true,
-              message: "Bulk insert successful",
+              message: "Detailed Estimate data imported successfully.",
               data: result,
             });
         } catch (error) {
@@ -107,11 +108,11 @@ export const bulkInsertCustomHeadingsController = async (req, res) => {
 export const bulkInsertCustomHeadingsControllerNew = async (req, res, next) => {
   let filePath = null;
   try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded. Please attach a valid CSV or Excel file." });
     const { tender_id } = req.query;
     const { nametype } = req.body;
     if (!tender_id)
-      return res.status(400).json({ error: "tender_id is required" });
+      return res.status(400).json({ status: false, message: "Tender ID is required." });
     filePath = path.join(
       __dirname,
       "../../../../uploads",
@@ -121,7 +122,7 @@ export const bulkInsertCustomHeadingsControllerNew = async (req, res, next) => {
     const dataRows = await parseFileToJson(filePath, req.file.originalname);
 
     if (dataRows.length === 0) {
-      return res.status(400).json({ status: false, error: "File is empty" });
+      return res.status(400).json({ status: false, message: "The uploaded file is empty. Please provide a file with valid Detailed Estimate data." });
     }
 
     const result =
@@ -134,11 +135,11 @@ export const bulkInsertCustomHeadingsControllerNew = async (req, res, next) => {
       .status(200)
       .json({
         status: true,
-        message: "CSV data uploaded successfully",
+        message: "Detailed Estimate data uploaded and processed successfully.",
         data: result,
       });
   } catch (error) {
-    res.status(400).json({ status: false, error: error.message });
+    res.status(400).json({ status: false, message: error.message });
   } finally {
     // 5. Cleanup: Delete file after processing
     if (filePath && fs.existsSync(filePath)) {
@@ -165,7 +166,7 @@ export const getCustomHeadingsByTenderAndNameTypeController = async (
       );
     return res
       .status(200)
-      .json({ status: true, message: "Data retrieved successfully", data });
+      .json({ status: true, data });
   } catch (error) {
     return res.status(404).json({ status: false, message: error.message });
   }
@@ -178,7 +179,7 @@ export const getGeneralAbstractController = async (req, res) => {
       await detailedestimateService.getGeneralAbstractService(tender_id);
     return res
       .status(200)
-      .json({ status: true, message: "Data retrieved successfully", data });
+      .json({ status: true, data });
   } catch (error) {
     return res.status(404).json({ status: false, message: error.message });
   }
@@ -190,7 +191,7 @@ export const getBillOfQtyController = async (req, res) => {
     const data = await detailedestimateService.getBillOfQtyService(tender_id);
     return res
       .status(200)
-      .json({ status: true, message: "Data retrieved successfully", data });
+      .json({ status: true, data });
   } catch (error) {
     return res.status(404).json({ status: false, message: error.message });
   }

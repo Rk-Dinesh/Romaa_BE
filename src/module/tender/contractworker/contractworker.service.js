@@ -49,6 +49,8 @@ class ContractWorkerService {
 
   // Update a specific worker entry for a tender
   static async updateContractWorker(tender_id, worker_id, updateData) {
+    const record = await PermiitedcontractWorkerModel.findOne({ tender_id, "listOfContractWorkers.contractWorker_id": worker_id });
+    if (!record) throw new Error("Contract worker record not found for this tender. Update could not be completed.");
     return await PermiitedcontractWorkerModel.updateOne(
       { tender_id, "listOfContractWorkers.contractWorker_id": worker_id },
       { $set: { "listOfContractWorkers.$": { contractWorker_id: worker_id, ...updateData } } }
@@ -57,6 +59,8 @@ class ContractWorkerService {
 
   // Remove a worker from a tender and TenderModel.contractor_details
   static async removeContractWorker(tender_id, worker_id) {
+    const record = await PermiitedcontractWorkerModel.findOne({ tender_id, "listOfContractWorkers.contractWorker_id": worker_id });
+    if (!record) throw new Error("Contract worker not found for this tender. Removal could not be completed.");
     const result = await PermiitedcontractWorkerModel.updateOne(
       { tender_id },
       { $pull: { listOfContractWorkers: { contractWorker_id: worker_id } } }
@@ -71,8 +75,9 @@ class ContractWorkerService {
   }
 
     static async removePermittedContractor(tender_id, contractWorker_id) {
-      // Remove from VendorPermittedModel
-      const result = await PermiitedcontractWorkerModel.updateOne(
+      const record = await PermiitedcontractWorkerModel.findOne({ tender_id, "listOfContractWorkers.contractWorker_id": contractWorker_id });
+      if (!record) throw new Error("Permitted contractor not found for this tender. Removal could not be completed.");
+      return await PermiitedcontractWorkerModel.updateOne(
         { tender_id },
         { $pull: { listOfContractWorkers: { contractWorker_id } } }
       );

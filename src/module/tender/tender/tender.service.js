@@ -107,25 +107,31 @@ class TenderService {
 
   // Update tender
   static async updateTender(tender_id, updateData) {
-    return await TenderModel.findOneAndUpdate(
+    const updated = await TenderModel.findOneAndUpdate(
       { tender_id },
       { $set: updateData },
       { new: true }
     );
+    if (!updated) throw new Error("Tender record not found. Update could not be completed.");
+    return updated;
   }
 
   // Delete tender
   static async deleteTender(tender_id) {
-    return await TenderModel.findOneAndDelete({ tender_id });
+    const deleted = await TenderModel.findOneAndDelete({ tender_id });
+    if (!deleted) throw new Error("Tender record not found. Deletion could not be completed.");
+    return deleted;
   }
 
   // Special update for tender_status_check
   static async updateTenderStatusCheck(tender_id, statusData) {
-    return await TenderModel.findOneAndUpdate(
+    const updated = await TenderModel.findOneAndUpdate(
       { tender_id },
       { $set: { tender_status_check: statusData } },
       { new: true }
     );
+    if (!updated) throw new Error("Tender record not found. Status update could not be completed.");
+    return updated;
   }
 
   static async getTendersPaginated(page, limit, search, fromdate, todate) {
@@ -237,11 +243,13 @@ class TenderService {
   }
 
   static async addImportantDate(tender_id, dateData) {
-    return await TenderModel.findOneAndUpdate(
+    const updated = await TenderModel.findOneAndUpdate(
       { tender_id },
       { $push: { follow_up_dates: dateData } },
       { new: true }
     );
+    if (!updated) throw new Error("Tender record not found. Follow-up date could not be added.");
+    return updated;
   }
 
   static async updateTenderStatusWithWorkOrder(
@@ -252,7 +260,7 @@ class TenderService {
     const tender = await TenderModel.findOne({ tender_id });
 
     if (!tender) {
-      throw new Error("Tender not found for the given tender_id");
+      throw new Error("Tender record not found for the specified Tender ID.");
     }
     tender.workOrder_id = workOrder_id;
     tender.tender_status = "APPROVED";
@@ -291,7 +299,7 @@ class TenderService {
     const tender = await TenderModel.findOne({ tender_id });
 
     if (!tender) {
-      throw new Error("Tender not found for the given tender_id");
+      throw new Error("Tender record not found for the specified Tender ID.");
     }
     tender.agreement_id = agreement_id;
     tender.agreement_value = agreement_value;
@@ -418,10 +426,10 @@ class TenderService {
     const { emd_note, emd_deposit_amount_collected } = updates;
 
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     if (!tender.emd?.approved_emd_details?.emd_proposed_company) {
-      throw new Error("No approved EMD details found to update");
+      throw new Error("No approved EMD details are available to update for this tender. Please ensure an EMD proposal has been approved first.");
     }
 
     const emdEntry = tender.emd.approved_emd_details;
@@ -453,10 +461,10 @@ class TenderService {
 
   static async getemd_tracking(tender_id) {
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     if (!tender.emd?.approved_emd_details?.emd_proposed_company) {
-      throw new Error("No approved EMD details found");
+      throw new Error("No approved EMD details found for this tender.");
     }
 
     return tender.emd.approved_emd_details.emd_tracking;
@@ -466,10 +474,10 @@ class TenderService {
     const { security_deposit_note, security_deposit_amount_collected } = updates;
 
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     if (!tender.emd?.approved_emd_details?.emd_proposed_company) {
-      throw new Error("No approved EMD details found to update");
+      throw new Error("No approved EMD details are available to update for this tender. Please ensure an EMD proposal has been approved first.");
     }
 
     const emdEntry = tender.emd.approved_emd_details;
@@ -503,10 +511,10 @@ class TenderService {
 
   static async getsecurity_deposit_tracking(tender_id) {
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     if (!tender.emd?.approved_emd_details?.emd_proposed_company) {
-      throw new Error("No approved EMD details found");
+      throw new Error("No approved EMD details found for this tender.");
     }
 
     return tender.emd.approved_emd_details.security_deposit_tracking;
@@ -563,18 +571,18 @@ class TenderService {
       { tender_process: 1 }
     );
 
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
     return tender.tender_process;
   }
 
   static async saveTenderProcessStep(tender_id, stepData) {
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     const index = tender.tender_process.findIndex(
       (s) => s.key === stepData.step_key
     );
-    if (index === -1) throw new Error("Step not found");
+    if (index === -1) throw new Error("Tender process step not found. Verify the step key and try again.");
 
     tender.tender_process[index] = {
       ...tender.tender_process[index]._doc,
@@ -591,12 +599,12 @@ class TenderService {
 
   static async saveTenderProcessStepaws(tender_id, stepData) {
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     const index = tender.tender_process.findIndex(
       (s) => s.key === stepData.step_key
     );
-    if (index === -1) throw new Error("Step not found");
+    if (index === -1) throw new Error("Tender process step not found. Verify the step key and try again.");
 
     tender.tender_process[index] = {
       ...tender.tender_process[index]._doc,
@@ -617,18 +625,18 @@ class TenderService {
       { tender_id },
       { preliminary_site_work: 1 }
     );
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
     return tender.preliminary_site_work;
   }
 
   static async savePreliminarySiteWork(tender_id, stepData) {
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     const index = tender.preliminary_site_work.findIndex(
       (s) => s.key === stepData.step_key
     );
-    if (index === -1) throw new Error("Step not found");
+    if (index === -1) throw new Error("Tender process step not found. Verify the step key and try again.");
 
     tender.preliminary_site_work[index] = {
       ...tender.preliminary_site_work[index]._doc,
@@ -646,12 +654,12 @@ class TenderService {
 
   static async savePreliminarySiteWorkaws(tender_id, stepData) {
     const tender = await TenderModel.findOne({ tender_id });
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
 
     const index = tender.preliminary_site_work.findIndex(
       (s) => s.key === stepData.step_key
     );
-    if (index === -1) throw new Error("Step not found");
+    if (index === -1) throw new Error("Tender process step not found. Verify the step key and try again.");
 
     tender.preliminary_site_work[index] = {
       ...tender.preliminary_site_work[index]._doc,
@@ -668,11 +676,13 @@ class TenderService {
   }
 
   static async financialGeneralsUpdate(tender_id, workOrder_id, updateData) {
-    return await TenderModel.findOneAndUpdate(
+    const updated = await TenderModel.findOneAndUpdate(
       { tender_id, workOrder_id },
       { $set: { financial_generals: updateData } },
       { new: true }
     );
+    if (!updated) throw new Error("Tender record not found for the specified Tender ID and Work Order ID. Financial generals update could not be completed.");
+    return updated;
   }
 
   static async getFinancialGenerals(tender_id, workOrder_id) {
@@ -680,7 +690,7 @@ class TenderService {
       { tender_id, workOrder_id },
       { financial_generals: 1 }
     );
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
     return tender.financial_generals;
   }
 
@@ -708,16 +718,18 @@ class TenderService {
         tender_project_name: 1,
       }
     );
-    if (!tender) throw new Error("Tender not found");
+    if (!tender) throw new Error("Tender record not found for the specified Tender ID.");
     return tender;
   }
 
   static async updateGenerlSetup(tender_id, updateData) {
-    return await TenderModel.findOneAndUpdate(
+    const updated = await TenderModel.findOneAndUpdate(
       { tender_id },
       { $set: updateData },
       { new: true }
     );
+    if (!updated) throw new Error("Tender record not found. General setup update could not be completed.");
+    return updated;
   }
 }
 

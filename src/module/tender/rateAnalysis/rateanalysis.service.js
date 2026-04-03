@@ -232,7 +232,7 @@ class WorkItemService {
 
   static async syncBoqWithWorkItems(tender_id, workItems) {
     const boqDoc = await BoqModel.findOne({ tender_id });
-    if (!boqDoc) throw new Error("Matching BOQ not found");
+    if (!boqDoc) throw new Error("No Bill of Quantities record found for this tender. Rate Analysis sync could not be completed.");
 
     boqDoc.items.forEach((boqItem) => {
       const workItem = workItems.find(
@@ -298,8 +298,9 @@ class WorkItemService {
 
   static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
     const bid = await BidModel.findOne({ tender_id });
+    if (!bid) throw new Error("No Bid record found for this tender. Please submit a Bid before uploading Rate Analysis data.");
     if (bid.freezed === false) {
-      throw new Error("🔒 Freeze Bid and try again 🔄");
+      throw new Error("The Bid must be frozen before uploading Rate Analysis data. Please freeze the Bid and retry.");
     }
     // 1. Load BOQ once
     const boq = await BoqModel.findOne({ tender_id });
@@ -358,7 +359,7 @@ class WorkItemService {
 
         // Validation: Parent must exist in BOQ
         if (!boqById.has(currentMainItemNo)) {
-          throw new Error(`ItemNo "${currentMainItemNo}" not found in BOQ.`);
+          throw new Error(`Work item "${currentMainItemNo}" was not found in the Bill of Quantities. Please verify the Item ID in your CSV and try again.`);
         }
 
         // Initialize group
@@ -887,7 +888,7 @@ class WorkItemService {
 
 static async updateRateAnalysis(payload, tender_id) {
 
-    if (!tender_id) throw new Error("Tender ID is required");
+    if (!tender_id) throw new Error("Tender ID is required.");
 
     // 1. Load BOQ once
     const boq = await BoqModel.findOne({ tender_id: tender_id });
@@ -1407,7 +1408,7 @@ static async updateRateAnalysis(payload, tender_id) {
   static async freezeRateAnalysis(tender_id) {
     const doc = await WorkItemModel.findOne({ tender_id });
     if (!doc) {
-      throw new Error("WorkItem not found");
+      throw new Error("Rate Analysis record not found for this tender. Please upload Rate Analysis data before freezing.");
     }
     doc.freeze = true;
     await doc.save();
@@ -1418,9 +1419,8 @@ static async updateRateAnalysis(payload, tender_id) {
     const boq = await BoqModel.findOne({ tender_id });
     const siteOverheads = await SiteOverheads.findOne({ tenderId: tender_id });
 
-    if (!boq || !siteOverheads) {
-      throw new Error("BOQ or SiteOverheads not found for tender_id");
-    }
+    if (!boq) throw new Error("Bill of Quantities record not found for this tender. Summary recalculation could not be completed.");
+    if (!siteOverheads) throw new Error("Site Overheads record not found for this tender. Summary recalculation could not be completed.");
 
     // Extract values
     const zero_cost_total_amount = Number(boq.zero_cost_total_amount || 0);
@@ -1440,7 +1440,7 @@ static async updateRateAnalysis(payload, tender_id) {
     // Update WorkItems summary
     const doc = await WorkItemModel.findOne({ tender_id });
     if (!doc) {
-      throw new Error("WorkItem document not found for tender_id");
+      throw new Error("Rate Analysis record not found for this tender. Please upload Rate Analysis data before updating the summary.");
     }
 
     doc.summary = {
@@ -1466,11 +1466,11 @@ static async updateRateAnalysis(payload, tender_id) {
     const tender = await TenderModel.findOne({ tender_id });
 
     if (!doc) {
-      throw new Error("WorkItem not found");
+      throw new Error("Rate Analysis record not found for this tender.");
     }
 
     if (!tender) {
-      throw new Error("Tender not found");
+      throw new Error("Tender record not found for the specified Tender ID.");
     }
     const tenderdetails = {
       tender_id: tender.tender_id,

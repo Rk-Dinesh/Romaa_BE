@@ -60,6 +60,8 @@ class VendorPermittedService {
    * Update a permitted vendor entry
    */
   static async updatePermittedVendor(tender_id, vendor_id, updateData) {
+    const record = await VendorPermittedModel.findOne({ tender_id, "listOfPermittedVendors.vendor_id": vendor_id });
+    if (!record) throw new Error("Permitted vendor record not found for this tender. Update could not be completed.");
     return await VendorPermittedModel.updateOne(
       { tender_id, "listOfPermittedVendors.vendor_id": vendor_id },
       { $set: { "listOfPermittedVendors.$": { vendor_id, ...updateData } } }
@@ -70,6 +72,8 @@ class VendorPermittedService {
    * Remove permitted vendor AND remove its ID from TenderModel.vendor_details
    */
   static async removePermittedVendor(tender_id, vendor_id) {
+    const record = await VendorPermittedModel.findOne({ tender_id, "listOfPermittedVendors.vendor_id": vendor_id });
+    if (!record) throw new Error("Permitted vendor not found for this tender. Removal could not be completed.");
     // Remove from VendorPermittedModel
     const result = await VendorPermittedModel.updateOne(
       { tender_id },

@@ -9,9 +9,9 @@ const __dirname = path.dirname(__filename);
 export const createBoq = async (req, res) => {
   try {
     const result = await BoqService.addBoq(req.body);
-    res.status(201).json({ status: true, message: "BOQ created successfully", data: result });
+    res.status(201).json({ status: true, message: "Bill of Quantities created successfully.", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };
 
@@ -20,13 +20,12 @@ export const addOrUpdateBoqItem = async (req, res) => {
     const result = await BoqService.addOrUpdateBoqItem(req.body);
     res.status(200).json({
       status: true,
-      message: "BOQ item(s) added/updated successfully",
+      message: "Bill of Quantities item(s) added/updated successfully.",
       data: result,
     });
   } catch (error) {
-    console.log(error.message);
-    
-    res.status(500).json({
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({
       status: false,
       message: error.message,
     });
@@ -45,7 +44,7 @@ export const getAllBoqs = async (req, res) => {
 export const getBoqById = async (req, res) => {
   try {
     const result = await BoqService.getBoqById(req.params.boq_id);
-    if (!result) return res.status(404).json({ status: false, message: "BOQ not found" });
+    if (!result) return res.status(404).json({ status: false, message: "Bill of Quantities record not found for the specified BOQ ID." });
     res.status(200).json({ status: true, data: result });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -55,7 +54,8 @@ export const getBoqById = async (req, res) => {
 export const updateBoq = async (req, res) => {
   try {
     const result = await BoqService.updateBoq(req.params.boq_id, req.body);
-    res.status(200).json({ status: true, message: "BOQ updated successfully", data: result });
+    if (!result) return res.status(404).json({ status: false, message: "Bill of Quantities record not found. Update could not be completed." });
+    res.status(200).json({ status: true, message: "Bill of Quantities updated successfully.", data: result });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -64,27 +64,30 @@ export const updateBoq = async (req, res) => {
 export const addItemToBoq = async (req, res) => {
   try {
     const result = await BoqService.addItemToBoq(req.params.boq_id, req.body);
-    res.status(200).json({ status: true, message: "Item added to BOQ", data: result });
+    res.status(200).json({ status: true, message: "Bill of Quantities item added successfully.", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
 export const removeItemFromBoq = async (req, res) => {
   try {
     const result = await BoqService.removeItemFromBoq(req.params.tender_id, req.params.item_code);
-    res.status(200).json({ status: true, message: "Item removed from BOQ", data: result });
+    res.status(200).json({ status: true, message: "Bill of Quantities item removed successfully.", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
 export const deleteBoq = async (req, res) => {
   try {
     const result = await BoqService.deleteBoq(req.params.boq_id);
-    res.status(200).json({ status: true, message: "BOQ deleted successfully", data: result });
+    res.status(200).json({ status: true, message: "Bill of Quantities record deleted successfully.", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -132,17 +135,17 @@ export const getBoqByTenderId = async (req, res) => {
 
 export const uploadBoqCSV = async (req, res, next) => {
   try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-    
+    if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded. Please attach a valid CSV file." });
+
 
 
     const { created_by_user, tender_id, phase, revision, prepared_by, approved_by } = req.body;
 
-    if (!created_by_user) return res.status(400).json({ error: "created_by_user is required" });
-    if (!tender_id) return res.status(400).json({ error: "tender_id is required" });
+    if (!created_by_user) return res.status(400).json({ status: false, message: "Created by user is required." });
+    if (!tender_id) return res.status(400).json({ status: false, message: "Tender ID is required." });
         const parsedRevision = revision ? Number(revision.toString().trim()) : 0;
 if (isNaN(parsedRevision)) {
-  return res.status(400).json({ error: "revision must be a valid number" });
+  return res.status(400).json({ status: false, message: "Revision must be a valid number." });
 }
 
 
@@ -157,7 +160,7 @@ if (isNaN(parsedRevision)) {
       .on("end", async () => {
         try {
           const result = await BoqService.bulkInsert(csvRows, created_by_user, tender_id, phase, prepared_by, approved_by);
-          res.status(200).json({ status: true, message: "CSV data uploaded successfully", data: result });
+          res.status(200).json({ status: true, message: "Bill of Quantities data uploaded successfully.", data: result });
         } catch (error) {
           next(error);
         } finally {
@@ -206,7 +209,7 @@ export const bulkUpdateDrawingQuantity = async (req, res) => {
         
         return res.status(200).json({ status: true, message: "Updated successfully" });
     } catch (error) {
-        console.error("Update Error:", error);
-        return res.status(500).json({ status: false, message: error.message });
+        const code = error.message.includes("not found") ? 404 : 400;
+        return res.status(code).json({ status: false, message: error.message });
     }
 };

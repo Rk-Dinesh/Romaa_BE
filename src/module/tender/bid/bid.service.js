@@ -12,7 +12,7 @@ class BidService {
     const idcode = "BID";
     await IdcodeServices.addIdCode(idname, idcode);
     const bid_id = await IdcodeServices.generateCode(idname);
-    if (!bid_id) throw new Error("Failed to generate BID ID");
+    if (!bid_id) throw new Error("Failed to generate Bid reference number. Please try again.");
 
     // Calculate total_quote_amount and total_negotiated_amount
     if (bidData.items && bidData.items.length > 0) {
@@ -88,14 +88,16 @@ class BidService {
       },
       { new: true }
     );
-    if (!bid) throw new Error("Bid not found");
+    if (!bid) throw new Error("Bid record not found for this tender.");
     return bid;
   }
 
   // Remove item by item_code
   static async removeItemFromBid(bid_id, item_code) {
     const bid = await BidModel.findOne({ bid_id });
-    if (!bid) throw new Error("Bid not found");
+    if (!bid) throw new Error("Bid record not found for this tender.");
+    const itemExists = bid.items.some(item => item.item_code === item_code);
+    if (!itemExists) throw new Error(`Bid item with code '${item_code}' was not found. Removal could not be completed.`);
     bid.items = bid.items.filter(item => item.item_code !== item_code);
     bid.total_quote_amount = bid.items.reduce(
       (sum, item) => sum + (item.q_amount || 0), 0
@@ -250,7 +252,7 @@ class BidService {
         const idCodeBid = "BID";
         await IdcodeServices.addIdCode(idNameBid, idCodeBid);
         const bid_id = await IdcodeServices.generateCode(idNameBid);
-        if (!bid_id) throw new Error("Failed to generate BID ID");
+        if (!bid_id) throw new Error("Failed to generate Bid reference number. Please try again.");
 
         const total_quote_amount = Number(
           items.reduce((sum, i) => sum + (i.q_amount || 0), 0).toFixed(2)
@@ -289,7 +291,7 @@ class BidService {
 
 static async freezeBid(tender_id) {
   const bid = await BidModel.findOne({ tender_id });
-  if (!bid) throw new Error("Bid not found");
+  if (!bid) throw new Error("Bid record not found for this tender.");
   bid.freezed = true;
   return await bid.save();
 }
