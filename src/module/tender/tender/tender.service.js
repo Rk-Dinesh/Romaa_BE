@@ -112,14 +112,14 @@ class TenderService {
       { $set: updateData },
       { new: true }
     );
-    if (!updated) throw new Error("Tender record not found. Update could not be completed.");
+    if (!updated) throw new Error("Tender record not found. Please verify the tender ID and try again.");
     return updated;
   }
 
   // Delete tender
   static async deleteTender(tender_id) {
     const deleted = await TenderModel.findOneAndDelete({ tender_id });
-    if (!deleted) throw new Error("Tender record not found. Deletion could not be completed.");
+    if (!deleted) throw new Error("Tender record not found. Please verify the tender ID before attempting deletion.");
     return deleted;
   }
 
@@ -130,7 +130,7 @@ class TenderService {
       { $set: { tender_status_check: statusData } },
       { new: true }
     );
-    if (!updated) throw new Error("Tender record not found. Status update could not be completed.");
+    if (!updated) throw new Error("Tender record not found. Status checklist update could not be completed. Please verify the tender ID.");
     return updated;
   }
 
@@ -248,7 +248,7 @@ class TenderService {
       { $push: { follow_up_dates: dateData } },
       { new: true }
     );
-    if (!updated) throw new Error("Tender record not found. Follow-up date could not be added.");
+    if (!updated) throw new Error("Tender record not found. Follow-up date could not be added. Please verify the tender ID.");
     return updated;
   }
 
@@ -636,7 +636,7 @@ class TenderService {
     const index = tender.preliminary_site_work.findIndex(
       (s) => s.key === stepData.step_key
     );
-    if (index === -1) throw new Error("Tender process step not found. Verify the step key and try again.");
+    if (index === -1) throw new Error("Preliminary site work step not found. Please verify the step key and try again.");
 
     tender.preliminary_site_work[index] = {
       ...tender.preliminary_site_work[index]._doc,
@@ -659,7 +659,7 @@ class TenderService {
     const index = tender.preliminary_site_work.findIndex(
       (s) => s.key === stepData.step_key
     );
-    if (index === -1) throw new Error("Tender process step not found. Verify the step key and try again.");
+    if (index === -1) throw new Error("Preliminary site work step not found. Please verify the step key and try again.");
 
     tender.preliminary_site_work[index] = {
       ...tender.preliminary_site_work[index]._doc,

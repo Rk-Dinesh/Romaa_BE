@@ -445,7 +445,7 @@ static async bulkUpdateDrawingQuantity(tender_id, itemsPayload) {
         await boq.save();
     }
 
-    return { success: true, message: "Bulk update successful" };
+    return { status: true, message: "Drawing quantities updated successfully for the specified BOQ items." };
 }
 
 

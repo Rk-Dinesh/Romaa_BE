@@ -13,14 +13,14 @@ class CompanyCashAccountService {
   // ── GET /companycashaccount/:id ─────────────────────────────────────────
   static async getById(id) {
     const rec = await CompanyCashAccountModel.findById(id).lean();
-    if (!rec || rec.is_deleted) throw new Error("Company cash account not found");
+    if (!rec || rec.is_deleted) throw new Error("Company cash account not found. Please verify the account ID and try again");
     return rec;
   }
 
   // ── GET /companycashaccount/by-code/:code ───────────────────────────────
   static async getByCode(account_code) {
     const rec = await CompanyCashAccountModel.findOne({ account_code, is_deleted: false }).lean();
-    if (!rec) throw new Error(`Company cash account '${account_code}' not found`);
+    if (!rec) throw new Error(`Company cash account '${account_code}' not found. Please verify the account code and try again`);
     return rec;
   }
 
@@ -31,12 +31,12 @@ class CompanyCashAccountService {
   static async create(payload, created_by = "") {
     const { account_code, account_name } = payload;
 
-    if (!account_code)  throw new Error("account_code is required");
-    if (!account_name)  throw new Error("account_name is required");
+    if (!account_code)  throw new Error("Account code is required to register a company cash account");
+    if (!account_name)  throw new Error("Account name is required to register a company cash account");
 
     // Ensure no duplicate
     const existing = await CompanyCashAccountModel.findOne({ account_code, is_deleted: false });
-    if (existing) throw new Error(`Company cash account '${account_code}' already exists`);
+    if (existing) throw new Error(`Company cash account with code '${account_code}' already exists. Please use a different account code`);
 
     // Ensure parent "1010" exists and is a group (convert from leaf if needed)
     const parent = await AccountTreeModel.findOne({ account_code: "1010", is_deleted: false });
@@ -81,7 +81,7 @@ class CompanyCashAccountService {
   // ── PATCH /companycashaccount/update/:id ────────────────────────────────
   static async update(id, payload) {
     const rec = await CompanyCashAccountModel.findById(id);
-    if (!rec || rec.is_deleted) throw new Error("Company cash account not found");
+    if (!rec || rec.is_deleted) throw new Error("Company cash account not found. Please verify the account ID and try again");
 
     const allowed = [
       "account_name", "custodian_name", "location", "cash_limit", "is_active",
@@ -106,8 +106,8 @@ class CompanyCashAccountService {
   // ── DELETE /companycashaccount/delete/:id (soft delete) ─────────────────
   static async softDelete(id) {
     const rec = await CompanyCashAccountModel.findById(id);
-    if (!rec)            throw new Error("Company cash account not found");
-    if (rec.is_deleted)  throw new Error("Already deleted");
+    if (!rec)            throw new Error("Company cash account not found. Please verify the account ID and try again");
+    if (rec.is_deleted)  throw new Error("Company cash account has already been deactivated");
 
     rec.is_deleted = true;
     rec.is_active  = false;

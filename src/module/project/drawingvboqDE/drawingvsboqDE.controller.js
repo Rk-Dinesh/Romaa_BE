@@ -107,11 +107,11 @@ export const bulkInsertCustomHeadingsController = async (req, res) => {
 export const bulkInsertCustomHeadingsControllerNew = async (req, res, next) => {
   let filePath = null;
   try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded. Please attach a file to import" });
     const { tender_id } = req.query;
     const { nametype } = req.body;
     if (!tender_id)
-      return res.status(400).json({ error: "tender_id is required" });
+      return res.status(400).json({ status: false, message: "Tender ID is required for bulk import" });
     filePath = path.join(
       __dirname,
       "../../../../uploads",
@@ -121,7 +121,7 @@ export const bulkInsertCustomHeadingsControllerNew = async (req, res, next) => {
     const dataRows = await parseFileToJson(filePath, req.file.originalname);
 
     if (dataRows.length === 0) {
-      return res.status(400).json({ status: false, error: "File is empty" });
+      return res.status(400).json({ status: false, message: "The uploaded file contains no data. Please verify the file and try again" });
     }
 
     const result =
@@ -138,7 +138,7 @@ export const bulkInsertCustomHeadingsControllerNew = async (req, res, next) => {
         data: result,
       });
   } catch (error) {
-    res.status(400).json({ status: false, error: error.message });
+    res.status(400).json({ status: false, message: error.message });
   } finally {
     // 5. Cleanup: Delete file after processing
     if (filePath && fs.existsSync(filePath)) {

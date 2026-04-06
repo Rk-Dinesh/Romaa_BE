@@ -3,7 +3,7 @@ import NMRAttendanceService from "./nmrAttendance.service.js";
 export const createAttendance = async (req, res) => {
   try {
     const record = await NMRAttendanceService.createAttendance(req.body);
-    res.status(201).json({ status: true, message: "NMR Attendance created", data: record });
+    res.status(201).json({ status: true, message: "NMR attendance recorded successfully", data: record });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -14,7 +14,7 @@ export const createFromDLP = async (req, res) => {
     const { dlr_id } = req.params;
     const { verified_by } = req.body;
     const record = await NMRAttendanceService.createFromDLP(dlr_id, { verified_by });
-    res.status(201).json({ status: true, message: "NMR Attendance created from DLP", data: record });
+    res.status(201).json({ status: true, message: "NMR attendance created from Daily Labour Report successfully", data: record });
   } catch (error) {
     res.status(400).json({ status: false, message: error.message });
   }
@@ -67,7 +67,7 @@ export const updateAttendance = async (req, res) => {
   try {
     const { id } = req.params;
     const record = await NMRAttendanceService.updateAttendance(id, req.body);
-    res.status(200).json({ status: true, message: "Attendance updated", data: record });
+    res.status(200).json({ status: true, message: "NMR attendance updated successfully", data: record });
   } catch (error) {
     res.status(400).json({ status: false, message: error.message });
   }
@@ -78,7 +78,7 @@ export const approveAttendance = async (req, res) => {
     const { id } = req.params;
     const { verified_by } = req.body;
     const record = await NMRAttendanceService.approveAttendance(id, verified_by);
-    res.status(200).json({ status: true, message: "Attendance approved", data: record });
+    res.status(200).json({ status: true, message: "NMR attendance approved successfully", data: record });
   } catch (error) {
     res.status(400).json({ status: false, message: error.message });
   }

@@ -49,7 +49,7 @@ class DLPService {
   // Bulk create multiple Daily Labour Reports in one request
   static async bulkCreateReports(reports) {
     if (!Array.isArray(reports) || reports.length === 0) {
-      throw new Error("reports must be a non-empty array");
+      throw new Error("At least one daily labour report entry is required");
     }
 
     const docs = reports.map((payload) => ({
@@ -130,16 +130,16 @@ class DLPService {
   // Get a single report with full work_entries + attendance_entries
   static async getReportById(id) {
     const report = await DLRModel.findById(id);
-    if (!report) throw new Error("Daily Labour Report not found");
+    if (!report) throw new Error("Daily Labour Report not found. Please verify the report ID and try again");
     return report;
   }
 
   // Update work_entries and/or attendance_entries on a PENDING report
   static async updateReport(id, payload) {
     const report = await DLRModel.findById(id);
-    if (!report) throw new Error("Daily Labour Report not found");
+    if (!report) throw new Error("Daily Labour Report not found. Please verify the report ID and try again");
     if (report.status !== "PENDING") {
-      throw new Error("Only PENDING reports can be edited");
+      throw new Error("Only pending reports can be modified. This report has already been processed");
     }
 
     if (payload.work_entries !== undefined) {
@@ -157,7 +157,7 @@ class DLPService {
   // Approve or Reject a report
   static async updateStatus(id, status, remark) {
     const report = await DLRModel.findById(id);
-    if (!report) throw new Error("Daily Labour Report not found");
+    if (!report) throw new Error("Daily Labour Report not found. Please verify the report ID and try again");
     if (!["APPROVED", "REJECTED"].includes(status)) {
       throw new Error("Status must be APPROVED or REJECTED");
     }
@@ -223,7 +223,7 @@ class DLPService {
   // Delete a PENDING report
   static async deleteReport(id) {
     const report = await DLRModel.findById(id);
-    if (!report) throw new Error("Daily Labour Report not found");
+    if (!report) throw new Error("Daily Labour Report not found. Please verify the report ID and try again");
     if (report.status !== "PENDING") {
       throw new Error("Only PENDING reports can be deleted");
     }

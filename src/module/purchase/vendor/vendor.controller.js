@@ -4,7 +4,7 @@ import VendorService from "./vendor.service.js";
 export const createVendor = async (req, res) => {
   try {
     const data = await VendorService.addVendor(req.body);
-    res.status(201).json({ status: true, message: "Vendor created", data });
+    res.status(201).json({ status: true, message: "Vendor registered successfully", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -34,7 +34,7 @@ export const getAllVendorsSelect = async (req, res) => {
 export const getVendorById = async (req, res) => {
   try {
     const data = await VendorService.getVendorById(req.params.vendor_id);
-    if (!data) return res.status(404).json({ status: false, message: "Vendor not found" });
+    if (!data) return res.status(404).json({ status: false, message: "Vendor record not found. Please verify the vendor ID and try again" });
     res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -55,8 +55,8 @@ export const getActiveVendors = async (req, res) => {
 export const updateVendor = async (req, res) => {
   try {
     const data = await VendorService.updateVendor(req.params.vendor_id, req.body);
-    if (!data) return res.status(404).json({ status: false, message: "Vendor not found" });
-    res.status(200).json({ status: true, message: "Vendor updated", data });
+    if (!data) return res.status(404).json({ status: false, message: "Vendor record not found. Please verify the vendor ID and try again" });
+    res.status(200).json({ status: true, message: "Vendor details updated successfully", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -66,8 +66,8 @@ export const updateVendor = async (req, res) => {
 export const deleteVendor = async (req, res) => {
   try {
     const data = await VendorService.deleteVendor(req.params.vendor_id);
-    if (!data) return res.status(404).json({ status: false, message: "Vendor not found" });
-    res.status(200).json({ status: true, message: "Vendor deleted" });
+    if (!data) return res.status(404).json({ status: false, message: "Vendor record not found. Please verify the vendor ID and try again" });
+    res.status(200).json({ status: true, message: "Vendor removed from the system successfully" });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

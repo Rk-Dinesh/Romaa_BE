@@ -935,7 +935,7 @@ static async getEmployeeMonthlyStats(employeeId, month, year) {
     if (attendance === null) {
       return {
         date: date,
-       status:"not yet punch in or punch out",
+       status:"No attendance recorded yet for this date",
        punchType:null
       };
     }

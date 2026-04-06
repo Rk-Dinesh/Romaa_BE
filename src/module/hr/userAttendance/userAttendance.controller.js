@@ -24,7 +24,7 @@ export const uploadDocument = async (req, res) => {
   if (size > maxSize) {
     return res
       .status(400)
-      .json({ status: false, message: "File size exceeds limit" });
+      .json({ status: false, message: "File size exceeds the 1MB limit. Please upload a smaller file" });
   }
   try {
     const uploadResult = await uploadFileToS3(
@@ -92,7 +92,7 @@ export const getMonthlyReport = async (req, res) => {
   try {
     const { month, year } = req.query; // e.g., month=10, year=2023
     
-    if(!month || !year) throw new AppError("Month and Year required", 400);
+    if(!month || !year) throw new AppError("Month and year are required to generate the attendance report", 400);
 
     const result = await UserAttendanceService.getMonthlyAttendanceReport(month, year);
     res.status(200).json({

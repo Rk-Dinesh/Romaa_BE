@@ -4,6 +4,9 @@ import RAQuantityModel from "./rateanalysisquantities.model.js";
 class RateAnalysisQuantitiesService {
   static async getRateAnalysisQuantities(tender_id, nametype) {
     const rateAnalysis = await WorkItemModel.findOne({ tender_id });
+    if (!rateAnalysis) {
+      throw new Error("Rate analysis record not found for this tender. Please verify the Tender ID and try again.");
+    }
     const freeze = rateAnalysis.freeze;
     const allowed = [
       "consumable_material",
@@ -32,6 +35,9 @@ class RateAnalysisQuantitiesService {
 
     static async getRateAnalysisQuantitiesAllowed(tender_id, nametype) {
     const rateAnalysis = await WorkItemModel.findOne({ tender_id });
+    if (!rateAnalysis) {
+      throw new Error("Rate analysis record not found for this tender. Please verify the Tender ID and try again.");
+    }
     const freeze = rateAnalysis.freeze;
     const allowed = [
       "consumable_material",

@@ -34,7 +34,7 @@ export const getById = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const data = await BankTransferService.create(req.body);
-    res.status(201).json({ status: true, message: "Bank transfer created", data });
+    res.status(201).json({ status: true, message: "Bank transfer created successfully", data });
   } catch (err) {
     res.status(400).json({ status: false, message: err.message });
   }
@@ -44,7 +44,7 @@ export const create = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const data = await BankTransferService.update(req.params.id, req.body);
-    res.status(200).json({ status: true, message: "Bank transfer updated", data });
+    res.status(200).json({ status: true, message: "Bank transfer updated successfully", data });
   } catch (err) {
     res.status(400).json({ status: false, message: err.message });
   }
@@ -54,7 +54,7 @@ export const update = async (req, res) => {
 export const deleteDraft = async (req, res) => {
   try {
     const data = await BankTransferService.deleteDraft(req.params.id);
-    res.status(200).json({ status: true, message: "Bank transfer deleted", data });
+    res.status(200).json({ status: true, message: "Bank transfer removed successfully", data });
   } catch (err) {
     res.status(400).json({ status: false, message: err.message });
   }
@@ -65,7 +65,7 @@ export const approve = async (req, res) => {
   try {
     const approvedBy = req.user?._id || null;
     const data = await BankTransferService.approve(req.params.id, approvedBy);
-    res.status(200).json({ status: true, message: "Bank transfer approved", data });
+    res.status(200).json({ status: true, message: "Bank transfer approved and account balances updated successfully", data });
   } catch (err) {
     res.status(400).json({ status: false, message: err.message });
   }

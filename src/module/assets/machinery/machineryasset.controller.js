@@ -3,7 +3,7 @@ import MachineryAssetService from "./machineryasset.service.js";
 export const createMachineryAsset = async (req, res) => {
   try {
     const result = await MachineryAssetService.addMachineryAsset(req.body);
-    res.status(201).json({ status: true, message: "Machinery Asset created", data: result });
+    res.status(201).json({ status: true, message: "Machinery asset registered successfully", data: result });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -15,7 +15,7 @@ export const getMachineryAsset = async (req, res) => {
     const { assetId } = req.params; // Expecting string like "EX-01"
     const result = await MachineryAssetService.getAssetByAssetId(assetId);
     
-    if (!result) return res.status(404).json({ status: false, message: "Asset not found" });
+    if (!result) return res.status(404).json({ status: false, message: "Machinery asset not found. Please verify the asset ID and try again" });
     
     res.status(200).json({ status: true, data: result });
   } catch (error) {
@@ -28,7 +28,7 @@ export const updateMachineryAsset = async (req, res) => {
   try {
     const { assetId } = req.params;
     const result = await MachineryAssetService.updateAssetDetails(assetId, req.body);
-    res.status(200).json({ status: true, message: "Asset updated", data: result });
+    res.status(200).json({ status: true, message: "Machinery asset details updated successfully", data: result });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

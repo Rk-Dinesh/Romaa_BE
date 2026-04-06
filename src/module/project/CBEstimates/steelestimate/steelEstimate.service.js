@@ -134,8 +134,8 @@ class SteelEstimateService {
             session.endSession();
 
             return {
-                success: true,
-                message: `Successfully processed bill ${targetDoc.bill_id}. Items: ${items.length}`,
+                status: true,
+                message: `Steel estimate for bill ${targetDoc.bill_id} processed successfully. Total items: ${items.length}`,
                 data: targetDoc,
             };
 

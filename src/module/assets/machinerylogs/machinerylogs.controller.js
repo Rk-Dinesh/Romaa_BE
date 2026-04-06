@@ -9,7 +9,7 @@ export const createBulkLogs = async (req, res) => {
     if (!logs || !Array.isArray(logs)) {
       return res.status(400).json({ 
         status: false,
-        message: "Invalid format. 'logs' must be an array." 
+        message: "Invalid format. Machinery logs must be provided as an array"
       });
     }
 
@@ -17,7 +17,7 @@ export const createBulkLogs = async (req, res) => {
 
     return res.status(201).json({
       status: true,
-      message: `${createdLogs.length} logs created successfully`,
+      message: "Machinery usage logs recorded successfully",
       data: createdLogs,
     });
   } catch (error) {

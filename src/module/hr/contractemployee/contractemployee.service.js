@@ -9,10 +9,10 @@ class ContractWorkerService {
     const idcode = "CW";
     await IdcodeServices.addIdCode(idname, idcode);
     const worker_id = await IdcodeServices.generateCode(idname);
-    if (!worker_id) throw new Error("Failed to generate worker ID");
+    if (!worker_id) throw new Error("Unable to generate contract worker ID. Please contact system administrator");
 
     if (!workerData.contractor_id) {
-      throw new Error("contractor_id is required");
+      throw new Error("Contractor ID is required to register a contract worker");
     }
 
     // Verify contractor exists
@@ -20,7 +20,7 @@ class ContractWorkerService {
       contractor_id: workerData.contractor_id,
       isDeleted: { $ne: true },
     });
-    if (!contractor) throw new Error("Contractor not found");
+    if (!contractor) throw new Error("Associated contractor not found. Please verify the contractor ID before adding a worker");
 
     const worker = new ContractWorkerModel({ worker_id, ...workerData });
     const saved = await worker.save();
@@ -155,14 +155,14 @@ class ContractWorkerService {
       worker_id,
       isDeleted: { $ne: true },
     });
-    if (!worker) throw new Error("Worker not found");
+    if (!worker) throw new Error("Contract worker record not found. Please verify the worker ID and try again");
 
     // Verify new contractor exists
     const newContractor = await ContractorModel.findOne({
       contractor_id: new_contractor_id,
       isDeleted: { $ne: true },
     });
-    if (!newContractor) throw new Error("Target contractor not found");
+    if (!newContractor) throw new Error("Target contractor not found. Please verify the contractor ID for transfer");
 
     const old_contractor_id = worker.contractor_id;
 

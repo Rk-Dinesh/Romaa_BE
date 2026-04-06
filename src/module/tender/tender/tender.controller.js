@@ -357,7 +357,8 @@ export const updateEmdDetails = async (req, res) => {
 
     res.status(200).json({ status: true, message: "EMD deposit details updated successfully.", data: updatedEmd });
   } catch (error) {
-    res.status(400).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -367,7 +368,8 @@ export const getEmdTracking = async (req, res) => {
     const emdTracking = await TenderService.getemd_tracking(tender_id);
     res.status(200).json({ status: true, data: emdTracking });
   } catch (error) {
-    res.status(400).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -377,7 +379,8 @@ export const getSecurityDepositTracking = async (req, res) => {
     const securityDepositTracking = await TenderService.getsecurity_deposit_tracking(tender_id);
     res.status(200).json({ status: true, data: securityDepositTracking });
   } catch (error) {
-    res.status(400).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: error.message });
   }
 };  
 
@@ -391,7 +394,8 @@ export const updateSDDetails = async (req, res) => {
 
     res.status(200).json({ status: true, message: "Security Deposit details updated successfully.", data: updatedEmd });
   } catch (error) {
-    res.status(400).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -422,7 +426,8 @@ export const saveTenderProcessStep = async (req, res) => {
     const updatedProcess = await TenderService.saveTenderProcessStep(req.body.tender_id, req.body);
     res.status(200).json({ status: true, message: "Tender process step saved successfully.", processData: updatedProcess });
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message });
+    const code = err.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: err.message });
   }
 };
 
@@ -432,7 +437,7 @@ export const saveTenderProcessStepaws = async (req, res) => {
   const { tender_id, step_key, notes, date, time } = req.body;
 
   if (!tender_id || !step_key) {
-    return res.status(400).json({ status: false, message: "tender_id and step_key are required" });
+    return res.status(400).json({ status: false, message: "Tender ID and step key are required to save a process step." });
   }
 
   try {
@@ -464,7 +469,8 @@ export const saveTenderProcessStepaws = async (req, res) => {
       processData: updatedProcess,
     });
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message });
+    const code = err.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: err.message });
   }
 };
 
@@ -482,7 +488,8 @@ export const savePreliminarySiteWork = async (req, res) => {
     const updatedWork = await TenderService.savePreliminarySiteWork(req.body.tender_id, req.body);
     res.status(200).json({ status: true, message: "Preliminary site work saved successfully.", processData: updatedWork });
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message });
+    const code = err.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: err.message });
   }
 };
 
@@ -491,7 +498,7 @@ export const savePreliminarySiteWorkaws = async (req, res) => {
   const { tender_id, step_key, notes, date, time } = req.body;
 
   if (!tender_id || !step_key) {
-    return res.status(400).json({ status: false, message: "tender_id and step_key are required" });
+    return res.status(400).json({ status: false, message: "Tender ID and step key are required to save a preliminary site work step." });
   }
 
   try {
@@ -523,7 +530,8 @@ export const savePreliminarySiteWorkaws = async (req, res) => {
       processData: updatedProcess,
     });
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message });
+    const code = err.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: err.message });
   }
 };
 
@@ -550,7 +558,8 @@ export const updateFinancialGenerals = async (req, res) => {
 
     res.status(200).json({ status: true, message: "Financial generals updated successfully.", data: updatedFinancialGenerals });
   } catch (error) {
-    res.status(400).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 }
 
@@ -586,6 +595,7 @@ export const updateGenerlSetup = async (req, res) => {
 
     res.status(200).json({ status: true, message: "General setup updated successfully.", data: updatedGenerlSetup });
   } catch (error) {
-    res.status(400).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 }

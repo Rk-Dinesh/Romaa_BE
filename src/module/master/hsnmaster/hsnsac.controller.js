@@ -13,9 +13,9 @@ export const createHsnSac = async (req, res) => {
     // Optional: inject req.user._id if tracking who created it
     // req.body.createdBy = req.user._id; 
     const result = await HsnSacService.createHsnSac(req.body);
-    res.status(201).json({ success: true, message: "Record created successfully", data: result });
+    res.status(201).json({ status: true, message: "HSN/SAC code registered successfully", data: result });
   } catch (error) {
-    res.status(400).json({ success: false, message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };
 
@@ -45,7 +45,7 @@ export const bulkUploadHsnSac = async (req, res, next) => {
     // 5. Send Response
     res.status(200).json({
       status: true,
-      message: "HSN/SAC CSV data processed successfully",
+      message: "HSN/SAC master data imported successfully",
       data: result,
     });
 
@@ -66,18 +66,18 @@ export const bulkUploadHsnSac = async (req, res, next) => {
 export const getAllHsnSac = async (req, res) => {
   try {
     const result = await HsnSacService.getAllHsnSac(req.query);
-    res.status(200).json({ success: true, data: result.data, meta: result.meta });
+    res.status(200).json({ status: true, data: result.data, meta: result.meta });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
 export const getHsnSacById = async (req, res) => {
   try {
     const result = await HsnSacService.getHsnSacById(req.params.id);
-    res.status(200).json({ success: true, data: result });
+    res.status(200).json({ status: true, data: result });
   } catch (error) {
-    res.status(404).json({ success: false, message: error.message });
+    res.status(404).json({ status: false, message: error.message });
   }
 };
 
@@ -85,18 +85,18 @@ export const updateHsnSac = async (req, res) => {
   try {
     // Optional: req.body.updatedBy = req.user._id;
     const result = await HsnSacService.updateHsnSac(req.params.id, req.body);
-    res.status(200).json({ success: true, message: "Record updated successfully", data: result });
+    res.status(200).json({ status: true, message: "Record updated successfully", data: result });
   } catch (error) {
-    res.status(400).json({ success: false, message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };
 
 export const deleteHsnSac = async (req, res) => {
   try {
     await HsnSacService.deleteHsnSac(req.params.id);
-    res.status(200).json({ success: true, message: "Record deleted successfully" });
+    res.status(200).json({ status: true, message: "Record deleted successfully" });
   } catch (error) {
-    res.status(400).json({ success: false, message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };
 
@@ -104,8 +104,8 @@ export const toggleHsnSacStatus = async (req, res) => {
   try {
     const result = await HsnSacService.toggleStatus(req.params.id);
     const statusText = result.isActive ? "Activated" : "Deactivated";
-    res.status(200).json({ success: true, message: `Record ${statusText} successfully`, data: result });
+    res.status(200).json({ status: true, message: `Record ${statusText} successfully`, data: result });
   } catch (error) {
-    res.status(400).json({ success: false, message: error.message });
+    res.status(400).json({ status: false, message: error.message });
   }
 };

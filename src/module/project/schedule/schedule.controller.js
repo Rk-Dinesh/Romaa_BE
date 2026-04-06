@@ -10,17 +10,17 @@ const __dirname = path.dirname(__filename);
 export const uploadScheduleCSV = async (req, res, next) => {
   try {
     if (!req.file) {
-      return res.status(400).json({ error: "No file uploaded" });
+      return res.status(400).json({ status: false, message: "No file uploaded. Please attach a CSV file containing the project schedule" });
     }
 
     const { created_by_user, tender_id } = req.body;
 
     if (!created_by_user) {
-      return res.status(400).json({ error: "created_by_user is required" });
+      return res.status(400).json({ status: false, message: "Created by user is required to track schedule upload history" });
     }
 
     if (!tender_id) {
-      return res.status(400).json({ error: "tender_id is required" });
+      return res.status(400).json({ status: false, message: "Tender ID is required. Please select a project before uploading the schedule" });
     }
 
     const csvRows = [];
@@ -38,18 +38,18 @@ export const uploadScheduleCSV = async (req, res, next) => {
       .on("end", async () => {
         try {
           if (csvRows.length === 0) {
-            return res.status(400).json({ error: "CSV file is empty" });
+            return res.status(400).json({ status: false, message: "The uploaded CSV file contains no data. Please ensure the file has valid schedule rows" });
           }
 
           const result = await ScheduleService.bulkInsert(csvRows, created_by_user, tender_id);
 
-          res.status(200).json({
+          res.status(201).json({
             status: true,
-            message: "Schedule created successfully",
+            message: "Project schedule created successfully",
             data: result,
           });
         } catch (error) {
-          res.status(400).json({ status: false, error: error.message });
+          res.status(500).json({ status: false, message: error.message });
         } finally {
           if (fs.existsSync(filePath)) {
             fs.unlinkSync(filePath);

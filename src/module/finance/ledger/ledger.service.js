@@ -58,7 +58,7 @@ class LedgerService {
     // Required field validation
     const required = ["supplier_type", "supplier_id", "vch_date", "vch_type"];
     for (const field of required) {
-      if (!data[field]) throw new Error(`postEntry: '${field}' is required`);
+      if (!data[field]) throw new Error(`Ledger posting failed: '${field}' is required for ledger entry creation`);
     }
 
     // Double-entry sanity: exactly one side should be > 0 (the other must be 0).
@@ -67,8 +67,8 @@ class LedgerService {
     const cr = Number(data.credit_amt) || 0;
     if (data.vch_type !== "Journal" && dr > 0 && cr > 0) {
       throw new Error(
-        `postEntry: both debit_amt (${dr}) and credit_amt (${cr}) are > 0 for ${data.vch_type}. ` +
-        `A single ledger line must be either Dr or Cr, not both.`
+        `Ledger posting failed: Both debit (${dr}) and credit (${cr}) amounts are positive for ${data.vch_type} voucher. ` +
+        `A single ledger entry must be either debit or credit, not both`
       );
     }
 
@@ -80,7 +80,7 @@ class LedgerService {
       }).lean();
       if (existing) {
         throw new Error(
-          `postEntry: duplicate — ledger entry for ${data.vch_type} ${data.vch_no || data.vch_ref} already exists`
+          `Ledger entry for ${data.vch_type} ${data.vch_no || data.vch_ref} has already been posted. Duplicate posting prevented`
         );
       }
     }

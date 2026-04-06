@@ -129,8 +129,8 @@ static async bulkInsert(csvRows, tender_id, bill_id, created_by_user) {
         session.endSession();
 
         return {
-            success: true,
-            message: `Successfully processed bill ${targetDoc.bill_id}. Items: ${items.length}`,
+            status: true,
+            message: `Billing estimate for bill ${targetDoc.bill_id} processed successfully. Total items: ${items.length}`,
             data: targetDoc,
         };
 

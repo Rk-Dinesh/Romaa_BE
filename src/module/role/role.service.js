@@ -16,7 +16,7 @@ class RoleService {
     // Generate the specific ID
     const role_id = await IdcodeServices.generateCode(idname);
 
-    if (!role_id) throw new Error("Failed to generate Role ID");
+    if (!role_id) throw new Error("Unable to generate role ID. Please contact system administrator");
 
     const newRole = new RoleModel({
       role_id,

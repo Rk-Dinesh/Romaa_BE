@@ -85,14 +85,14 @@ class ClientCNService {
   // GET /clientcreditnote/:id
   static async getById(id) {
     const ccn = await ClientCNModel.findById(id).lean();
-    if (!ccn) throw new Error("Client credit note not found");
+    if (!ccn) throw new Error("Client credit note record not found. Please verify the credit note ID and try again");
     return ccn;
   }
 
   // POST /clientcreditnote/create
   static async createCCN(payload) {
     if (!payload.bill_ref && !payload.bill_id) {
-      throw new Error("bill_ref or bill_id is required");
+      throw new Error("Bill reference or bill ID is required to create a client credit note");
     }
 
     // Auto-fill client & tender details from the original bill
@@ -102,7 +102,7 @@ class ClientCNService {
         : { bill_id: payload.bill_id }
     ).select("_id bill_id tender_id tender_name client_id client_name client_ref status").lean();
 
-    if (!bill) throw new Error("Original bill not found");
+    if (!bill) throw new Error("Original client bill not found. Please verify the bill reference and try again");
     if (bill.status === "Draft" || bill.status === "Rejected") {
       throw new Error(`Cannot raise a credit note against a bill with status '${bill.status}'`);
     }
@@ -144,9 +144,9 @@ class ClientCNService {
   // PATCH /clientcreditnote/update/:id
   static async updateCCN(id, payload) {
     const ccn = await ClientCNModel.findById(id);
-    if (!ccn) throw new Error("Client credit note not found");
+    if (!ccn) throw new Error("Client credit note record not found. Please verify the credit note ID and try again");
     if (ccn.status === "Approved") {
-      throw new Error("Cannot edit an approved credit note");
+      throw new Error("Cannot edit an approved client credit note");
     }
 
     const allowed = [
@@ -164,9 +164,9 @@ class ClientCNService {
   // DELETE /clientcreditnote/delete/:id
   static async deleteCCN(id) {
     const ccn = await ClientCNModel.findById(id);
-    if (!ccn) throw new Error("Client credit note not found");
+    if (!ccn) throw new Error("Client credit note record not found. Please verify the credit note ID and try again");
     if (ccn.status === "Approved") {
-      throw new Error("Cannot delete an approved credit note");
+      throw new Error("Cannot delete an approved client credit note");
     }
     await ccn.deleteOne();
     return { deleted: true, ccn_no: ccn.ccn_no };
@@ -175,12 +175,12 @@ class ClientCNService {
   // PATCH /clientcreditnote/approve/:id
   static async approveCCN(id) {
     const ccn = await ClientCNModel.findById(id);
-    if (!ccn) throw new Error("Client credit note not found");
+    if (!ccn) throw new Error("Client credit note record not found. Please verify the credit note ID and try again");
     if (ccn.status === "Approved") {
-      throw new Error("Credit note is already approved");
+      throw new Error("Client credit note has already been approved");
     }
     if (ccn.status === "Rejected") {
-      throw new Error("Rejected credit notes cannot be approved");
+      throw new Error("Rejected client credit notes cannot be approved. Please create a new credit note instead");
     }
 
     ccn.status = "Approved";
@@ -233,9 +233,9 @@ class ClientCNService {
     }
 
     const ccn = await ClientCNModel.findById(id);
-    if (!ccn) throw new Error("Client credit note not found");
+    if (!ccn) throw new Error("Client credit note record not found. Please verify the credit note ID and try again");
     if (ccn.status === "Approved") {
-      throw new Error("Cannot change status of an approved credit note");
+      throw new Error("Cannot change the status of an approved client credit note");
     }
 
     ccn.status = newStatus;

@@ -17,12 +17,12 @@ class EmployeeService {
     await IdcodeServices.addIdCode(idname, idcode);
     const employeeId = await IdcodeServices.generateCode(idname);
 
-    if (!employeeId) throw new Error("Failed to generate employee ID");
+    if (!employeeId) throw new Error("Unable to generate employee ID. Please contact the system administrator");
 
     // B. Check if Role exists
     if (employeeData.role) {
       const roleExists = await RoleModel.findById(employeeData.role);
-      if (!roleExists) throw new Error("Invalid Role ID provided");
+      if (!roleExists) throw new Error("The specified role does not exist. Please select a valid role from the system");
     }
 
     // C. Create User
@@ -38,11 +38,11 @@ class EmployeeService {
   static async loginUser(email, password) {
     // A. Find User
     const user = await EmployeeModel.findOne({ email }).select("+password").populate("role");
-    if (!user) throw new Error("User does not exist");
+    if (!user) throw new Error("No account found with this email address. Please check your credentials and try again");
 
     // B. Check Password
     const isPasswordValid = await user.isPasswordCorrect(password);
-    if (!isPasswordValid) throw new Error("Invalid Password");
+    if (!isPasswordValid) throw new Error("Incorrect password. Please verify your password and try again");
 
     // C. Generate Tokens
     const accessToken = user.generateAccessToken();
@@ -76,7 +76,7 @@ class EmployeeService {
       // --- CASE 1: Assigning a Role ---
       // Validate role exists
       const role = await RoleModel.findById(roleId);
-      if (!role) throw new Error("Role not found");
+      if (!role) throw new Error("The specified role was not found in the system. Please verify the role ID and try again");
       updateData.role = roleId;
 
     } else {
@@ -92,7 +92,7 @@ class EmployeeService {
       { new: true }
     ).populate("role");
 
-    if (!updatedEmployee) throw new Error("Employee not found");
+    if (!updatedEmployee) throw new Error("Employee record not found. Please verify the employee ID and try again");
 
     // Notify employee about role change
     if (roleId) {
@@ -125,7 +125,7 @@ class EmployeeService {
   // Get Users by Specific Role (e.g., Get all "Site Engineers")
   static async getUsersByRole(roleName) {
     const role = await RoleModel.findOne({ roleName: roleName.toUpperCase() });
-    if (!role) throw new Error("Role not found");
+    if (!role) throw new Error("No role found matching the specified name. Please check the role name and try again");
 
     return await EmployeeModel.find({ role: role._id, isDeleted: { $ne: true } }).select("-password");
   }
@@ -154,7 +154,7 @@ class EmployeeService {
       { $set: { isDeleted: true, status: "Inactive" } },
       { new: true }
     );
-    if (!employee) throw new Error("Employee not found");
+    if (!employee) throw new Error("Employee record not found or has already been deactivated. Please verify the employee ID");
     return employee;
   }
 
@@ -217,18 +217,18 @@ class EmployeeService {
       { new: true, runValidators: true }
     ).populate("role");
 
-    if (!updatedEmployee) throw new Error("Employee not found");
+    if (!updatedEmployee) throw new Error("Employee record not found. Please verify the employee ID and try again");
     return updatedEmployee;
   }
 
   static async resetPassword(userId, oldPassword, newPassword) {
     // 1. Find user and explicitly select password (hidden by default)
     const employee = await EmployeeModel.findOne({ employeeId: userId }).select("+password");
-    if (!employee) throw new Error("Employee not found");
+    if (!employee) throw new Error("Employee record not found. Please verify your account details");
 
     // 2. Check if old password is correct
     const isMatch = await bcrypt.compare(oldPassword, employee.password);
-    if (!isMatch) throw new Error("Incorrect old password");
+    if (!isMatch) throw new Error("The current password you entered is incorrect. Please try again");
 
     // 3. Assign new password (The pre('save') middleware in Model will hash it)
     employee.password = newPassword;
@@ -250,7 +250,7 @@ class EmployeeService {
       });
 
       if (validProjects !== projectIds.length) {
-        throw new Error("One or more Site/Project IDs are invalid");
+        throw new Error("One or more of the specified project or site IDs could not be found. Please verify and try again");
       }
     }
 
@@ -268,7 +268,7 @@ class EmployeeService {
       .populate("role", "roleName"); // Populate role if needed for context
 
     if (!updatedEmployee) {
-      throw new Error("Employee not found");
+      throw new Error("Employee record not found. Please verify the employee ID and try again");
     }
 
     // Notify employee about project assignment
@@ -297,15 +297,15 @@ class EmployeeService {
     const employee = await EmployeeModel.findOne({ email });
 
     if (!employee) {
-      throw new Error("User with this email does not exist.");
+      throw new Error("No account found with this email address. Please verify and try again.");
     }
 
     if (employee.role === null) {
-      throw new Error("User is not authorized to reset password.");
+      throw new Error("This account does not have system access. Please contact the HR administrator to request access.");
     }
 
     if (employee.status !== "Active") {
-      throw new Error("Account is inactive. Contact Admin.");
+      throw new Error("This account is currently inactive. Please contact the HR administrator for assistance.");
     }
 
     // 2. Generate 6-digit OTP

@@ -33,7 +33,7 @@ function validateEntriesBalance(entries) {
 async function resolveSupplier(supplier_type, supplier_id) {
   if (supplier_type === "Vendor") {
     const vendor = await VendorModel.findOne({ vendor_id: supplier_id }).lean();
-    if (!vendor) throw new Error(`Vendor '${supplier_id}' not found`);
+    if (!vendor) throw new Error(`Vendor '${supplier_id}' not found. Please verify the vendor ID and try again`);
     return {
       supplier_ref:   vendor._id,
       supplier_name:  vendor.company_name,
@@ -43,7 +43,7 @@ async function resolveSupplier(supplier_type, supplier_id) {
 
   if (supplier_type === "Contractor") {
     const contractor = await ContractorModel.findOne({ contractor_id: supplier_id }).lean();
-    if (!contractor) throw new Error(`Contractor '${supplier_id}' not found`);
+    if (!contractor) throw new Error(`Contractor '${supplier_id}' not found. Please verify the contractor ID and try again`);
     return {
       supplier_ref:   contractor._id,
       supplier_name:  contractor.contractor_name,
@@ -53,7 +53,7 @@ async function resolveSupplier(supplier_type, supplier_id) {
 
   if (supplier_type === "Client") {
     const client = await ClientModel.findOne({ client_id: supplier_id }).lean();
-    if (!client) throw new Error(`Client '${supplier_id}' not found`);
+    if (!client) throw new Error(`Client '${supplier_id}' not found. Please verify the client ID and try again`);
     return {
       supplier_ref:   client._id,
       supplier_name:  client.client_name,
@@ -61,7 +61,7 @@ async function resolveSupplier(supplier_type, supplier_id) {
     };
   }
 
-  throw new Error(`Invalid supplier_type '${supplier_type}'. Must be Vendor, Contractor, or Client`);
+  throw new Error(`Invalid supplier type '${supplier_type}'. Accepted values are: Vendor, Contractor, Client`);
 }
 
 // ── Build document from payload ───────────────────────────────────────────────
@@ -305,14 +305,14 @@ class ReceiptVoucherService {
   // GET /receiptvoucher/:id
   static async getById(id) {
     const doc = await ReceiptVoucherModel.findById(id).lean();
-    if (!doc) throw new Error("Receipt voucher not found");
+    if (!doc) throw new Error("Receipt voucher not found. Please verify the voucher ID and try again");
     return doc;
   }
 
   // POST /receiptvoucher/create
   static async create(payload) {
-    if (!payload.supplier_id)   throw new Error("supplier_id is required");
-    if (!payload.supplier_type) throw new Error("supplier_type is required");
+    if (!payload.supplier_id)   throw new Error("Supplier ID is required to create a receipt voucher");
+    if (!payload.supplier_type) throw new Error("Supplier type is required to create a receipt voucher");
 
     const supplierData = await resolveSupplier(payload.supplier_type, payload.supplier_id);
     Object.assign(payload, supplierData);
@@ -325,7 +325,7 @@ class ReceiptVoucherService {
 
     // If creating directly as approved, bank_account_code must be present
     if (doc.status === "approved" && !doc.bank_account_code) {
-      throw new Error("bank_account_code is required when creating an approved receipt voucher");
+      throw new Error("Bank account code is required when creating an approved receipt voucher");
     }
 
     const saved = await ReceiptVoucherModel.create(doc);
@@ -342,8 +342,8 @@ class ReceiptVoucherService {
   // PATCH /receiptvoucher/update/:id
   static async update(id, payload) {
     const rv = await ReceiptVoucherModel.findById(id);
-    if (!rv) throw new Error("Receipt voucher not found");
-    if (rv.status === "approved") throw new Error("Cannot edit an approved receipt voucher");
+    if (!rv) throw new Error("Receipt voucher not found. Please verify the voucher ID and try again");
+    if (rv.status === "approved") throw new Error("Cannot edit an approved receipt voucher. Create a reversal entry instead");
 
     const allowed = [
       "rv_date", "document_year", "receipt_mode", "bank_account_code", "bank_name", "bank_ref",
@@ -360,8 +360,8 @@ class ReceiptVoucherService {
   // DELETE /receiptvoucher/delete/:id
   static async deleteDraft(id) {
     const rv = await ReceiptVoucherModel.findById(id);
-    if (!rv) throw new Error("Receipt voucher not found");
-    if (rv.status === "approved") throw new Error("Cannot delete an approved receipt voucher");
+    if (!rv) throw new Error("Receipt voucher not found. Please verify the voucher ID and try again");
+    if (rv.status === "approved") throw new Error("Cannot delete an approved receipt voucher. Create a reversal entry instead");
     await rv.deleteOne();
     return { deleted: true, rv_no: rv.rv_no };
   }
@@ -370,8 +370,8 @@ class ReceiptVoucherService {
   // body may include { bank_account_code } to set it at approval time
   static async approve(id, body = {}) {
     const rv = await ReceiptVoucherModel.findById(id);
-    if (!rv)                      throw new Error("Receipt voucher not found");
-    if (rv.status === "approved") throw new Error("Already approved");
+    if (!rv)                      throw new Error("Receipt voucher not found. Please verify the voucher ID and try again");
+    if (rv.status === "approved") throw new Error("Receipt voucher has already been approved");
 
     // Allow setting bank_account_code at approval time
     if (body.bank_account_code) {
@@ -380,7 +380,7 @@ class ReceiptVoucherService {
 
     // Validate BEFORE any state changes
     if (!rv.bank_account_code) {
-      throw new Error("bank_account_code is required — pass it in the approve request body or set it on the voucher first");
+      throw new Error("Bank account code is required to approve this receipt voucher. Please provide it in the request or update the voucher first");
     }
 
     rv.status = "approved";

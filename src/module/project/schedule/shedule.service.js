@@ -161,7 +161,7 @@ static async updateSchedule(tenderId, payload) {
             const { daily_updates, new_start_dates, revised_end_dates } = payload;
             const schedule = await ScheduleModel.findOne({ tender_id: tenderId });
 
-            if (!schedule) throw new Error("Schedule not found");
+            if (!schedule) throw new Error("Project schedule not found for the specified tender. Please verify the tender ID and try again");
 
             for (let item of schedule.items) {
                 let isModified = false;
@@ -314,7 +314,7 @@ static async updateSchedule(tenderId, payload) {
 
         try {
             const schedule = await ScheduleModel.findOne({ tender_id }).session(session);
-            if (!schedule) throw new Error(`Schedule not found for tender_id: ${tender_id}`);
+            if (!schedule) throw new Error(`Project schedule not found for tender '${tender_id}'. Please upload the schedule before updating dates`);
 
             for (const row of csvRows) {
                 const wbs_id = row.wbs_id?.trim();

@@ -10,7 +10,7 @@ class ContractorService {
     const idcode = "CON";
     await IdcodeServices.addIdCode(idname, idcode);
     const contractor_id = await IdcodeServices.generateCode(idname);
-    if (!contractor_id) throw new Error("Failed to generate contractor ID");
+    if (!contractor_id) throw new Error("Unable to generate contractor ID. Please contact system administrator");
 
     const contractor = new ContractorModel({
       contractor_id,

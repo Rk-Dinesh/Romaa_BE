@@ -17,7 +17,7 @@ class WorkOrderDoneService {
     const workOrderDoc = await WorkOrderRequestModel.findOne({ requestId: payload.work_order_id });
 
     if (!workOrderDoc) {
-      throw new Error("Work Order not found");
+      throw new Error("Work order not found. Please verify the work order ID and try again");
     }
 
     const processedItems = (payload.dailyWorkDone || []).map((item) => ({
@@ -83,7 +83,7 @@ class WorkOrderDoneService {
 
     static async bulkCreateWorkDone(payloads) {
         if (!Array.isArray(payloads) || payloads.length === 0) {
-            throw new Error("payloads must be a non-empty array");
+            throw new Error("At least one work order completion entry is required");
         }
 
         const idname = "WorkDone";
@@ -102,7 +102,7 @@ class WorkOrderDoneService {
         // Validate all work orders exist before doing any mutations
         for (const payload of payloads) {
             if (!workOrderMap[payload.work_order_id]) {
-                throw new Error(`Work Order not found: ${payload.work_order_id}`);
+                throw new Error(`Work order not found: ${payload.work_order_id}. Please verify the work order ID and try again`);
             }
         }
 

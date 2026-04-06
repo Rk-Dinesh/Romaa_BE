@@ -55,7 +55,7 @@ function resolveGstRates(payload) {
 async function resolveSupplier(supplier_type, supplier_id) {
   if (supplier_type === "Vendor") {
     const vendor = await VendorModel.findOne({ vendor_id: supplier_id }).lean();
-    if (!vendor) throw new Error(`Vendor '${supplier_id}' not found`);
+    if (!vendor) throw new Error(`Vendor record '${supplier_id}' not found. Please verify the vendor ID and try again`);
     return {
       supplier_ref:   vendor._id,
       supplier_name:  vendor.company_name,
@@ -65,7 +65,7 @@ async function resolveSupplier(supplier_type, supplier_id) {
 
   if (supplier_type === "Contractor") {
     const contractor = await ContractorModel.findOne({ contractor_id: supplier_id }).lean();
-    if (!contractor) throw new Error(`Contractor '${supplier_id}' not found`);
+    if (!contractor) throw new Error(`Contractor record '${supplier_id}' not found. Please verify the contractor ID and try again`);
     return {
       supplier_ref:   contractor._id,
       supplier_name:  contractor.contractor_name,
@@ -73,7 +73,7 @@ async function resolveSupplier(supplier_type, supplier_id) {
     };
   }
 
-  throw new Error(`Invalid supplier_type '${supplier_type}'. Must be Vendor or Contractor`);
+  throw new Error(`Invalid supplier type '${supplier_type}'. Accepted values are: Vendor, Contractor`);
 }
 
 // ── Build document from payload ───────────────────────────────────────────────

@@ -14,7 +14,7 @@ class PurchaseRequestService {
     await IdcodeServices.addIdCode(idname, idcode);
     const requestId = await IdcodeServices.generateCode(idname);
     const tenderName = await TenderModel.findOne({ tender_id: purchaseData.projectId }).select("tender_name tender_project_name");
-    if (!tenderName) throw new Error("Tender not found");
+    if (!tenderName) throw new Error("Associated tender not found for purchase order request");
     const purchaseRequest = new PurchaseRequestModel({
       requestId,
       ...purchaseData,
@@ -106,26 +106,26 @@ class PurchaseRequestService {
   static async addVendorQuotationWithTenderCheck({ purchaseRequestId, vendorId, quoteData, tenderId }) {
     // 1. Check vendor is permitted for tender
     const permittedRecord = await VendorPermittedModel.findOne({ tender_id: tenderId });
-    if (!permittedRecord) throw new Error('TenderId not found');
+    if (!permittedRecord) throw new Error('No permitted vendor list found for the specified tender');
 
     // Vendor is permitted if found in permittedRecord.listOfPermittedVendors with a matching vendor_id
     const isPermitted = permittedRecord.listOfPermittedVendors.some(
       v => v.vendor_id === vendorId
     );
-    if (!isPermitted) throw new Error('Not a permitted vendor');
+    if (!isPermitted) throw new Error('Vendor is not in the permitted vendor list for this tender');
 
 
     // 2. Check vendor is registered in Vendor collection (for auto-fill details)
     const vendor = await VendorModel.findOne({ vendor_id: vendorId });
-    if (!vendor) throw new Error("Vendor not registered");
+    if (!vendor) throw new Error("Vendor is not registered in the system");
 
     const purchasePermittedVendor = await PurchaseRequestModel.findById({ _id: purchaseRequestId });
-    if (!purchasePermittedVendor) throw new Error('PurchaseRequest not found');
-    if (purchasePermittedVendor.status === "Vendor Approved" || purchasePermittedVendor.status === "Purchase Order Issued" || purchasePermittedVendor.status === "Completed" ) throw new Error('Already Approved , No more quotations allowed');
+    if (!purchasePermittedVendor) throw new Error('Purchase order request not found');
+    if (purchasePermittedVendor.status === "Vendor Approved" || purchasePermittedVendor.status === "Purchase Order Issued" || purchasePermittedVendor.status === "Completed" ) throw new Error('Purchase order already approved, no further quotations allowed');
     const isPermittedVendor = purchasePermittedVendor.permittedVendor.some(
       v => v.vendorId === vendorId
     );
-    if (!isPermittedVendor) throw new Error('Not a permitted vendor');
+    if (!isPermittedVendor) throw new Error('Vendor is not in the permitted vendor list for this purchase order request');
 
     // 3. Compute totalQuotedValue from quoteItems
     const totalQuotedValue = Array.isArray(quoteData.quoteItems)
@@ -154,7 +154,7 @@ class PurchaseRequestService {
     result.status = "Quotation Received";
     await result.save();
     
-    if (!result) throw new Error('PurchaseRequest not found');
+    if (!result) throw new Error('Purchase order request not found');
     return result;
   }
 
@@ -171,7 +171,7 @@ class PurchaseRequestService {
     const purchaseRequest = await PurchaseRequestModel.findOne({ requestId: purchaseRequestId });
 
     if (!purchaseRequest) {
-      throw new Error(`Purchase Request with ID '${purchaseRequestId}' not found`);
+      throw new Error(`Purchase order request '${purchaseRequestId}' not found`);
     }
 
     // 2. Find the specific quotation to approve
@@ -180,7 +180,7 @@ class PurchaseRequestService {
     );
 
     if (!vendorQuotation) {
-      throw new Error(`Quotation ID '${quotationId}' not found in this request`);
+      throw new Error(`Vendor quotation '${quotationId}' not found in this purchase order request`);
     }
 
     // 3. Update approval statuses
@@ -243,7 +243,7 @@ class PurchaseRequestService {
     const purchaseRequest = await PurchaseRequestModel.findOne({ requestId: purchaseRequestId });
     
     if (!purchaseRequest) {
-      throw new Error(`Purchase Request with ID '${purchaseRequestId}' not found`);
+      throw new Error(`Purchase order request '${purchaseRequestId}' not found`);
     }
 
     // 2. Find the specific quotation
@@ -252,7 +252,7 @@ class PurchaseRequestService {
     );
 
     if (!vendorQuotation) {
-      throw new Error(`Quotation ID '${quotationId}' not found`);
+      throw new Error(`Vendor quotation '${quotationId}' not found in this purchase order request`);
     }
 
     // 3. Update only this quotation's status to "Rejected"
@@ -317,7 +317,7 @@ class PurchaseRequestService {
     );
 
     if (!updated) {
-      throw new Error(`Purchase Request with ID ${requestId} not found`);
+      throw new Error(`Purchase order request '${requestId}' not found`);
     }
 
     return updated;
@@ -330,7 +330,7 @@ class PurchaseRequestService {
       { new: true }
     );
     if (!updated) {
-      throw new Error(`Purchase Request with ID ${requestId} not found`);
+      throw new Error(`Purchase order request '${requestId}' not found`);
     }
     return updated;
   }

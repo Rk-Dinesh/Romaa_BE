@@ -30,7 +30,7 @@ export const getAllWorkItems = async (req, res) => {
 export const getWorkItemById = async (req, res) => {
   try {
     const item = await WorkItemService.getWorkItemById(req.params.id);
-    // if (!item) return res.status(404).json({ status: false, message: 'WorkItem not found' });
+    if (!item) return res.status(404).json({ status: false, message: 'Rate analysis record not found. Please verify the ID and try again.' });
     res.status(200).json({ status: true, data: item });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -40,8 +40,9 @@ export const getWorkItemById = async (req, res) => {
 export const getWorkItemsByTenderId = async (req, res) => {
   try {
     const { tenderId } = req.query;
+    if (!tenderId) return res.status(400).json({ status: false, message: 'Tender ID is required to retrieve rate analysis data.' });
     const item = await WorkItemService.getWorkItemsByTenderId(tenderId);
-    // if (!item) return res.status(404).json({ status: false, message: 'WorkItems not found for this tender_id' });
+    if (!item) return res.status(404).json({ status: false, message: 'Rate analysis record not found for this tender. Please verify the Tender ID and try again.' });
     res.status(200).json({ status: true, data: item });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -51,7 +52,8 @@ export const getWorkItemsByTenderId = async (req, res) => {
 export const updateWorkItem = async (req, res) => {
   try {
     const updated = await WorkItemService.updateWorkItem(req.params.id, req.body);
-    res.status(200).json({ status: true, message: 'Rate Analysis work item updated successfully.', data: updated });
+    if (!updated) return res.status(404).json({ status: false, message: 'Rate analysis record not found. Please verify the ID and try again.' });
+    res.status(200).json({ status: true, message: 'Rate analysis work item updated successfully.', data: updated });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -60,7 +62,8 @@ export const updateWorkItem = async (req, res) => {
 export const deleteWorkItem = async (req, res) => {
   try {
     const deleted = await WorkItemService.deleteWorkItem(req.params.id);
-    res.status(200).json({ status: true, message: 'Rate Analysis work item deleted successfully.', data: deleted });
+    if (!deleted) return res.status(404).json({ status: false, message: 'Rate analysis record not found. Please verify the ID and try again.' });
+    res.status(200).json({ status: true, message: 'Rate analysis work item deleted successfully.', data: deleted });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -136,10 +139,12 @@ export const updateRateAnalysis = async (req, res) => {
   const { work_items } = req.body;
 
   try {
+    if (!tender_id) return res.status(400).json({ status: false, message: "Tender ID is required to update rate analysis data." });
     const updatedDoc = await WorkItemService.updateRateAnalysis(work_items, tender_id);
-    res.status(200).json({ status: true, message: "Rate Analysis updated successfully.", data: updatedDoc });
+    res.status(200).json({ status: true, message: "Rate analysis updated successfully.", data: updatedDoc });
   } catch (err) {
-    res.status(500).json({ status: false, message: err.message });
+    const statusCode = err.message.includes("not found") ? 404 : 500;
+    res.status(statusCode).json({ status: false, message: err.message });
   }
 };
 

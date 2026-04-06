@@ -11,7 +11,7 @@ dotenv.config();
 
 export const uploadDocument = async (req, res) => {
   if (!req.file)
-    return res.status(400).json({ status: false, message: "No file uploaded" });
+    return res.status(400).json({ status: false, message: "No file uploaded. Please attach a document to proceed" });
 
   const { tender_id, uploaded_by, description } = req.body;
   if (!tender_id || !uploaded_by) {
@@ -19,7 +19,7 @@ export const uploadDocument = async (req, res) => {
       .status(400)
       .json({
         status: false,
-        message: "tender_id and uploaded_by are required",
+        message: "Tender ID and uploader information are required to upload a document",
       });
   }
 
@@ -58,7 +58,7 @@ export const uploadDocument = async (req, res) => {
 
     res.status(201).json({
       status: true,
-      message: "File uploaded to S3 and metadata saved to DB successfully",
+      message: "Tender document uploaded successfully",
       file_url: fileUrl,
       tender_document: tenderDoc,
     });
@@ -71,7 +71,7 @@ export const uploadMultipleDocuments = async (req, res) => {
   if (!req.files || req.files.length === 0) {
     return res
       .status(400)
-      .json({ status: false, message: "No files uploaded" });
+      .json({ status: false, message: "No files uploaded. Please attach at least one document" });
   }
 
   const { tender_id, uploaded_by, description } = req.body;
@@ -80,7 +80,7 @@ export const uploadMultipleDocuments = async (req, res) => {
       .status(400)
       .json({
         status: false,
-        message: "tender_id and uploaded_by are required",
+        message: "Tender ID and uploader information are required to upload a document",
       });
   }
 

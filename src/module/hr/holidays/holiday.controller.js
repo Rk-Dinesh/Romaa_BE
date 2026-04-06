@@ -10,9 +10,9 @@ const __dirname = path.dirname(__filename);
 export const addHoliday = async (req, res) => {
   try {
     const result = await CalendarService.addHoliday(req.body);
-    res.status(201).json({ success: true, message: "Holiday added", data: result });
+    res.status(201).json({ status: true, message: "Holiday added to calendar successfully", data: result });
   } catch (err) {
-    res.status(err.statusCode || 500).json({ success: false, message: err.message });
+    res.status(err.statusCode || 500).json({ status: false, message: err.message });
   }
 };
 
@@ -20,9 +20,9 @@ export const getHolidays = async (req, res) => {
   try {
     const { year } = req.query; // ?year=2026
     const result = await CalendarService.getHolidays(year || new Date().getFullYear());
-    res.status(200).json({ success: true, data: result });
+    res.status(200).json({ status: true, data: result });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ status: false, message: err.message });
   }
 };
 
@@ -30,16 +30,16 @@ export const getHolidaysList = async (req, res) => {
   try {
     const { year } = req.query; // ?year=2026
     const result = await CalendarService.getHolidaysList(year || new Date().getFullYear());
-    res.status(200).json({ success: true, data: result });
+    res.status(200).json({ status: true, data: result });
   } catch (err) {
-    res.status(500).json({ success: false, message: err.message });
+    res.status(500).json({ status: false, message: err.message });
   }
 };
 
 export const bulkInsertHolidaysController = async (req, res, next) => {
   let filePath = null;
   try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded. Please attach a CSV file with holiday data" });
     filePath = path.join(
       __dirname,
       "../../../../uploads",
@@ -49,7 +49,7 @@ export const bulkInsertHolidaysController = async (req, res, next) => {
     const dataRows = await parseFileToJson(filePath, req.file.originalname);
 
     if (dataRows.length === 0) {
-      return res.status(400).json({ status: false, error: "File is empty" });
+      return res.status(400).json({ status: false, message: "The uploaded file contains no data. Please verify the file and try again" });
     }
 
     const result =
@@ -60,11 +60,11 @@ export const bulkInsertHolidaysController = async (req, res, next) => {
       .status(200)
       .json({
         status: true,
-        message: "CSV data uploaded successfully",
+        message: "Holiday calendar imported successfully",
         data: result,
       });
   } catch (error) {
-    res.status(400).json({ status: false, error: error.message });
+    res.status(400).json({ status: false, message: error.message });
   } finally {
     // 5. Cleanup: Delete file after processing
     if (filePath && fs.existsSync(filePath)) {

@@ -21,7 +21,7 @@ export const createRole = async (req, res) => {
   } catch (error) {
     // Handle duplicate key error (E11000) for roleName or role_id
     if (error.code === 11000) {
-      return res.status(400).json({ status: false, message: "Role Name or ID already exists" });
+      return res.status(409).json({ status: false, message: "A role with this name already exists in the system. Please use a different role name" });
     }
     res.status(500).json({ status: false, message: error.message });
   }
@@ -51,7 +51,7 @@ export const getAllRolesForUserDropdown = async (req, res) => {
 export const getRoleById = async (req, res) => {
   try {
     const data = await RoleService.getRoleById(req.params.role_id);
-    if (!data) return res.status(404).json({ status: false, message: "Role not found" });
+    if (!data) return res.status(404).json({ status: false, message: "Role not found. Please verify the role ID and try again" });
     res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -62,7 +62,7 @@ export const getRoleById = async (req, res) => {
 export const updateRole = async (req, res) => {
   try {
     const data = await RoleService.updateRole(req.params.role_id, req.body);
-    if (!data) return res.status(404).json({ status: false, message: "Role not found" });
+    if (!data) return res.status(404).json({ status: false, message: "Role not found. Please verify the role ID and try again" });
     res.status(200).json({ status: true, message: "Role updated successfully", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -73,8 +73,8 @@ export const updateRole = async (req, res) => {
 export const deleteRole = async (req, res) => {
   try {
     const data = await RoleService.deleteRole(req.params.role_id);
-    if (!data) return res.status(404).json({ status: false, message: "Role not found" });
-    res.status(200).json({ status: true, message: "Role deleted (deactivated) successfully" });
+    if (!data) return res.status(404).json({ status: false, message: "Role not found. Please verify the role ID and try again" });
+    res.status(200).json({ status: true, message: "Role deactivated successfully" });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

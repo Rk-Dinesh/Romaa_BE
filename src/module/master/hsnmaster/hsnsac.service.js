@@ -146,7 +146,7 @@ class HsnSacService {
   // 4. Get Single by ID
   static async getHsnSacById(id) {
     const record = await HsnSacMasterModel.findById(id);
-    if (!record) throw new Error("Record not found.");
+    if (!record) throw new Error("HSN/SAC record not found. Please verify the code and try again");
     return record;
   }
 
@@ -155,7 +155,7 @@ class HsnSacService {
     // Prevent updating to an existing code
     if (updateData.code) {
       const existing = await HsnSacMasterModel.findOne({ code: updateData.code, _id: { $ne: id } });
-      if (existing) throw new Error(`Code '${updateData.code}' is already in use by another record.`);
+      if (existing) throw new Error(`HSN/SAC code '${updateData.code}' is already assigned to another entry`);
     }
 
     const updatedRecord = await HsnSacMasterModel.findByIdAndUpdate(id, updateData, {
@@ -163,22 +163,22 @@ class HsnSacService {
       runValidators: true,
     });
     
-    if (!updatedRecord) throw new Error("Record not found.");
+    if (!updatedRecord) throw new Error("HSN/SAC record not found. Please verify the code and try again");
     return updatedRecord;
   }
 
   // 6. Hard Delete
   static async deleteHsnSac(id) {
     const deletedRecord = await HsnSacMasterModel.findByIdAndDelete(id);
-    if (!deletedRecord) throw new Error("Record not found.");
+    if (!deletedRecord) throw new Error("HSN/SAC record not found. Please verify the code and try again");
     return deletedRecord;
   }
 
   // 7. Toggle Active Status (Soft Delete alternative)
   static async toggleStatus(id) {
     const record = await HsnSacMasterModel.findById(id);
-    if (!record) throw new Error("Record not found.");
-    
+    if (!record) throw new Error("HSN/SAC record not found. Please verify the code and try again");
+
     record.isActive = !record.isActive;
     return await record.save();
   }

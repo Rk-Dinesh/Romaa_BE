@@ -12,7 +12,7 @@ class CalendarService {
 
     const exists = await HolidayModel.findOne({ date: targetDate });
     if (exists) {
-      throw { statusCode: 409, message: "A holiday already exists on this date." };
+      throw { statusCode: 409, message: "A holiday is already registered on this date. Please choose a different date or update the existing entry" };
     }
 
     const holiday = new HolidayModel({

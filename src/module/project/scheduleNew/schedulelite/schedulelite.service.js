@@ -187,8 +187,8 @@ class ScheduleLiteService {
             session.endSession();
 
             return {
-                success: true,
-                message: `Synced Schedule. Updated/Created: ${leafTasksToSave.length}, Deleted: ${deleteResult.deletedCount}`,
+                status: true,
+                message: `Project schedule synced successfully. Updated/Created: ${leafTasksToSave.length}, Deleted: ${deleteResult.deletedCount}`,
                 data: scheduleDoc
             };
 
@@ -521,7 +521,7 @@ class ScheduleLiteService {
             await session.commitTransaction();
             session.endSession();
 
-            return { success: true, message: `Synced Schedule (Independent Levels).`, data: scheduleDoc };
+            return { status: true, message: `Project schedule synced successfully with independent levels.`, data: scheduleDoc };
 
         } catch (err) {
             await session.abortTransaction();
@@ -739,7 +739,7 @@ class ScheduleLiteService {
             await session.commitTransaction();
             session.endSession();
 
-            return { success: true, message: `Synced Schedule.`, data: scheduleDoc };
+            return { status: true, message: `Project schedule synced successfully.`, data: scheduleDoc };
 
         } catch (err) {
             await session.abortTransaction();
@@ -754,7 +754,7 @@ class ScheduleLiteService {
         const scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).lean();
 
         if (!scheduleDoc) {
-            throw new Error("Schedule not found");
+            throw new Error("Project schedule not found. Please verify the project ID and try again");
         }
 
         // 2. Extract all WBS IDs from the nested structure
@@ -819,7 +819,7 @@ class ScheduleLiteService {
         const scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).lean();
 
         if (!scheduleDoc) {
-            throw new Error("Schedule not found");
+            throw new Error("Project schedule not found. Please verify the project ID and try again");
         }
 
         // 2. Extract ALL IDs
@@ -924,7 +924,7 @@ class ScheduleLiteService {
         const scheduleDoc = await ScheduleLiteModel.findOne({ tender_id }).lean();
 
         if (!scheduleDoc) {
-            throw new Error("Schedule not found");
+            throw new Error("Project schedule not found. Please verify the project ID and try again");
         }
 
         // 2. Extract ALL IDs
@@ -1284,20 +1284,20 @@ class ScheduleLiteService {
             const newQuantity = Number(quantity);
             const targetRowIndex = Number(row_index);
 
-            if (!updateDateStr) throw new Error("Date is required.");
-            if (isNaN(newQuantity)) throw new Error("Valid quantity is required.");
+            if (!updateDateStr) throw new Error("Date is required. Please provide a valid date.");
+            if (isNaN(newQuantity)) throw new Error("Valid quantity is required. Please provide a numeric value.");
 
             // Parse Date to UTC midnight
             const updateDate = new Date(updateDateStr);
             const updateKey = updateDate.toISOString().split('T')[0];
 
             const tenderDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
-            if (!tenderDoc) throw new Error("Tender not found.");
+            if (!tenderDoc) throw new Error("Project schedule not found. Please verify the project ID and try again.");
 
             const flatNodes = this.flattenStructure(tenderDoc.structure);
             const targetNode = flatNodes.find(n => n.row_index === targetRowIndex);
 
-            if (!targetNode) throw new Error(`Row ${targetRowIndex} not found.`);
+            if (!targetNode) throw new Error(`Schedule row ${targetRowIndex} not found. Please verify the row index and try again.`);
 
             // Hybrid Populate
             if (targetNode.wbs_id) {
@@ -1347,7 +1347,7 @@ class ScheduleLiteService {
 
             await session.commitTransaction();
             session.endSession();
-            return { success: true, message: "Daily quantity updated." };
+            return { status: true, message: "Daily quantity updated successfully." };
 
         } catch (error) {
             await session.abortTransaction();
@@ -1368,7 +1368,7 @@ class ScheduleLiteService {
 
             // 1. Fetch the Structure (This loads L1, L2, L3, and L4 stubs)
             const tenderDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
-            if (!tenderDoc) throw new Error("Tender not found.");
+            if (!tenderDoc) throw new Error("Project schedule not found. Please verify the project ID and try again.");
 
             const flatNodes = this.flattenStructure(tenderDoc.structure);
 
@@ -1421,7 +1421,7 @@ class ScheduleLiteService {
             });
 
             const targetNode = fullTaskMap.get(targetRowIndex);
-            if (!targetNode) throw new Error(`Row ${targetRowIndex} not found.`);
+            if (!targetNode) throw new Error(`Schedule row ${targetRowIndex} not found. Please verify the row index and try again.`);
 
             let isTargetUpdated = false;
 
@@ -1563,7 +1563,7 @@ class ScheduleLiteService {
 
             // 1. Fetch & Flatten Structure
             const tenderDoc = await ScheduleLiteModel.findOne({ tender_id }).session(session);
-            if (!tenderDoc) throw new Error("Tender not found.");
+            if (!tenderDoc) throw new Error("Project schedule not found. Please verify the project ID and try again.");
 
             const flatNodes = this.flattenStructure(tenderDoc.structure);
             const nodesMap = new Map();

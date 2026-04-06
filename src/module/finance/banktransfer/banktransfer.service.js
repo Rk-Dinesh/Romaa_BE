@@ -78,7 +78,7 @@ class BankTransferService {
   // GET /banktransfer/:id
   static async getById(id) {
     const doc = await BankTransferModel.findById(id).lean();
-    if (!doc) throw new Error("Bank transfer not found");
+    if (!doc) throw new Error("Bank transfer record not found. Please verify the transfer ID and try again");
     return doc;
   }
 
@@ -123,8 +123,8 @@ class BankTransferService {
   // PATCH /banktransfer/update/:id
   static async update(id, payload) {
     const bt = await BankTransferModel.findById(id);
-    if (!bt) throw new Error("Bank transfer not found");
-    if (bt.status === "approved") throw new Error("Cannot edit an approved bank transfer");
+    if (!bt) throw new Error("Bank transfer record not found. Please verify the transfer ID and try again");
+    if (bt.status === "approved") throw new Error("Approved bank transfers cannot be edited. Please create a new transfer instead");
 
     // If changing accounts, re-validate
     if (payload.from_account_code) {
@@ -159,8 +159,8 @@ class BankTransferService {
   // DELETE /banktransfer/delete/:id
   static async deleteDraft(id) {
     const bt = await BankTransferModel.findById(id);
-    if (!bt) throw new Error("Bank transfer not found");
-    if (bt.status === "approved") throw new Error("Cannot delete an approved bank transfer");
+    if (!bt) throw new Error("Bank transfer record not found. Please verify the transfer ID and try again");
+    if (bt.status === "approved") throw new Error("Approved bank transfers cannot be deleted");
     await bt.deleteOne();
     return { deleted: true, transfer_no: bt.transfer_no };
   }
@@ -172,8 +172,8 @@ class BankTransferService {
   //   2. Update account balances (Dr to_account, Cr from_account)
   static async approve(id, approvedBy = null) {
     const bt = await BankTransferModel.findById(id);
-    if (!bt)                       throw new Error("Bank transfer not found");
-    if (bt.status === "approved")  throw new Error("Already approved");
+    if (!bt)                       throw new Error("Bank transfer record not found. Please verify the transfer ID and try again");
+    if (bt.status === "approved")  throw new Error("Bank transfer is already approved");
     if (!bt.amount || bt.amount <= 0) throw new Error("Transfer amount must be greater than 0");
 
     // Re-validate accounts at approval time

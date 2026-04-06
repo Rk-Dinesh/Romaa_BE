@@ -80,7 +80,7 @@ async function enrichAndValidateLines(lines) {
     const acc = accountMap[line.account_code];
 
     if (!acc) {
-      throw new Error(`Line ${i + 1}: account '${line.account_code}' not found in Chart of Accounts`);
+      throw new Error(`Line ${i + 1}: Account '${line.account_code}' not found in Chart of Accounts. Please verify the account code and try again`);
     }
     if (acc.is_group) {
       throw new Error(
@@ -222,15 +222,15 @@ class JournalEntryService {
   // GET /journalentry/:id
   static async getById(id) {
     const je = await JournalEntryModel.findById(id).lean();
-    if (!je) throw new Error("Journal entry not found");
+    if (!je) throw new Error("Journal entry not found. Please verify the entry ID and try again");
     return je;
   }
 
   // POST /journalentry/create
   static async create(payload) {
-    if (!payload.je_no)   throw new Error("je_no is required");
+    if (!payload.je_no)   throw new Error("Journal entry number is required");
     if (!payload.narration || !payload.narration.trim()) {
-      throw new Error("narration is required — explain the purpose of this journal entry");
+      throw new Error("Narration is required — please explain the purpose of this journal entry");
     }
 
     const je_date      = payload.je_date ? new Date(payload.je_date) : new Date();
@@ -274,10 +274,10 @@ class JournalEntryService {
   // PATCH /journalentry/approve/:id
   static async approve(id, approvedBy = null) {
     const je = await JournalEntryModel.findById(id);
-    if (!je)                       throw new Error("Journal entry not found");
-    if (je.status === "approved")  throw new Error("Already approved");
+    if (!je)                       throw new Error("Journal entry not found. Please verify the entry ID and try again");
+    if (je.status === "approved")  throw new Error("Journal entry has already been approved");
     if (!je.narration || !je.narration.trim()) {
-      throw new Error("Cannot approve a journal entry without a narration");
+      throw new Error("Cannot approve a journal entry without a narration. Please add a description first");
     }
 
     je.status      = "approved";
@@ -297,14 +297,14 @@ class JournalEntryService {
   // This is the only way to correct an approved journal entry.
   static async reverse(id, payload = {}) {
     const original = await JournalEntryModel.findById(id);
-    if (!original)                       throw new Error("Journal entry not found");
-    if (original.status !== "approved")  throw new Error("Only approved journal entries can be reversed");
-    if (original.is_reversal)            throw new Error("A reversal entry cannot itself be reversed");
+    if (!original)                       throw new Error("Journal entry not found. Please verify the entry ID and try again");
+    if (original.status !== "approved")  throw new Error("Only approved journal entries can be reversed. Current status: " + original.status);
+    if (original.is_reversal)            throw new Error("A reversal entry cannot itself be reversed. Please reverse the original entry instead");
 
     // Check if already reversed
     const existingReversal = await JournalEntryModel.findOne({ reversal_of: original._id });
     if (existingReversal) {
-      throw new Error(`Already reversed — see JE ${existingReversal.je_no}`);
+      throw new Error(`Journal entry has already been reversed — see reversal ${existingReversal.je_no}`);
     }
 
     const { je_no: nextJeNo } = await JournalEntryService.getNextJeNo();
@@ -388,8 +388,8 @@ class JournalEntryService {
   // PATCH /journalentry/update/:id  — only allowed for draft or pending
   static async update(id, payload) {
     const je = await JournalEntryModel.findById(id);
-    if (!je) throw new Error("Journal entry not found");
-    if (je.status === "approved") throw new Error("Cannot edit an approved journal entry — create a reversal instead");
+    if (!je) throw new Error("Journal entry not found. Please verify the entry ID and try again");
+    if (je.status === "approved") throw new Error("Cannot edit an approved journal entry. Please create a reversal entry instead");
 
     // If lines are being updated, re-validate and re-enrich them
     if (payload.lines) {
@@ -412,8 +412,8 @@ class JournalEntryService {
   // DELETE /journalentry/delete/:id  — only allowed for draft or pending
   static async deleteDraft(id) {
     const je = await JournalEntryModel.findById(id);
-    if (!je) throw new Error("Journal entry not found");
-    if (je.status === "approved") throw new Error("Cannot delete an approved journal entry — create a reversal instead");
+    if (!je) throw new Error("Journal entry not found. Please verify the entry ID and try again");
+    if (je.status === "approved") throw new Error("Cannot delete an approved journal entry. Please create a reversal entry instead");
     await je.deleteOne();
     return { deleted: true, je_no: je.je_no };
   }

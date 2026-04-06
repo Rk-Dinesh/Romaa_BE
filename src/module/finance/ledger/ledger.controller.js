@@ -65,7 +65,7 @@ export const getAllSupplierBalances = async (req, res) => {
 export const getTenderLedger = async (req, res) => {
   try {
     const { tenderId } = req.params;
-    if (!tenderId) return res.status(400).json({ status: false, message: "tenderId is required" });
+    if (!tenderId) return res.status(400).json({ status: false, message: "Tender ID is required to retrieve ledger data" });
 
     const { supplier_id, supplier_type, vch_type, from_date, to_date } = req.query;
     const data = await LedgerService.getTenderLedger(tenderId, {
@@ -82,7 +82,7 @@ export const getTenderLedger = async (req, res) => {
 export const getTenderBalance = async (req, res) => {
   try {
     const { tenderId } = req.params;
-    if (!tenderId) return res.status(400).json({ status: false, message: "tenderId is required" });
+    if (!tenderId) return res.status(400).json({ status: false, message: "Tender ID is required to retrieve ledger data" });
 
     const { supplier_type } = req.query;
     const data = await LedgerService.getTenderBalance(tenderId, { supplier_type });

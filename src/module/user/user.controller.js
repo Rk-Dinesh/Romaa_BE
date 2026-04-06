@@ -5,27 +5,26 @@ export const register = async (req, res) => {
     const user = await UserService.register(req.body);
     res.status(201).json({ status: true, message: "User registered successfully", data: user });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const statusCode = error.message.includes("already exists") ? 409 : 500;
+    res.status(statusCode).json({ status: false, message: error.message });
   }
 };
 
 export const getUserByEmailOrMobile = async (req, res) => {
   try {
-    const {email }= req.query
     const user = await UserService.getUserByEmailOrMobile(req.params.identifier);
-    if (!user) return res.status(404).json({ status: false, message: "User not found" });
+    if (!user) return res.status(404).json({ status: false, message: "No user account found with the provided email or mobile number" });
     res.status(200).json({ status: true, data: user });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-
 export const updateUserById = async (req, res) => {
   try {
     const updatedUser = await UserService.updateUserById(req.params.id, req.body);
-    if (!updatedUser) return res.status(404).json({ status: false, message: "User not found" });
-    res.status(200).json({ status: true, message: "User updated successfully", data: updatedUser });
+    if (!updatedUser) return res.status(404).json({ status: false, message: "User record not found. Please verify the user ID and try again" });
+    res.status(200).json({ status: true, message: "User record updated successfully", data: updatedUser });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -33,8 +32,8 @@ export const updateUserById = async (req, res) => {
 
 export const checkIfUserExistsByMail = async (req, res) => {
   try {
-    const exists = await UserService.checkIfUserExistsByMail(req.params.email);
-    res.status(200).json({ status: true, available: exists });
+    const available = await UserService.checkIfUserExistsByMail(req.params.email);
+    res.status(200).json({ status: true, available });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -42,13 +41,12 @@ export const checkIfUserExistsByMail = async (req, res) => {
 
 export const checkIfUserExistsByMobile = async (req, res) => {
   try {
-    const exists = await UserService.checkIfUserExistsByMobile(req.params.mobile);
-    res.status(200).json({ status: true, available: exists });
+    const available = await UserService.checkIfUserExistsByMobile(req.params.mobile);
+    res.status(200).json({ status: true, available });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
-
 
 export const addRefreshToken = async (req, res) => {
   try {
@@ -58,7 +56,6 @@ export const addRefreshToken = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
-
 
 export const revokeRefreshToken = async (req, res) => {
   try {
@@ -72,7 +69,7 @@ export const revokeRefreshToken = async (req, res) => {
 export const getUserById = async (req, res) => {
   try {
     const user = await UserService.getUserById(req.params.id);
-    if (!user) return res.status(404).json({ status: false, message: "User not found" });
+    if (!user) return res.status(404).json({ status: false, message: "User record not found. Please verify the user ID" });
     res.status(200).json({ status: true, data: user });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -82,13 +79,12 @@ export const getUserById = async (req, res) => {
 export const getUserByMail = async (req, res) => {
   try {
     const user = await UserService.getUserByMail(req.params.email);
-    if (!user) return res.status(404).json({ status: false, message: "User not found" });
+    if (!user) return res.status(404).json({ status: false, message: "No user account found with the provided email address" });
     res.status(200).json({ status: true, data: user });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
-
 
 export const getUsersByPage = async (req, res) => {
   try {
@@ -106,12 +102,10 @@ export const getUsersByPage = async (req, res) => {
   }
 };
 
-
-
 export const getUserByMobile = async (req, res) => {
   try {
     const user = await UserService.getUserByMobile(req.params.mobile);
-    if (!user) return res.status(404).json({ status: false, message: "User not found" });
+    if (!user) return res.status(404).json({ status: false, message: "No user account found with the provided mobile number" });
     res.status(200).json({ status: true, data: user });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -121,18 +115,18 @@ export const getUserByMobile = async (req, res) => {
 export const updateUser = async (req, res) => {
   try {
     const result = await UserService.updateUser(req.body);
-    res.status(200).json({ status: true, message: "User updated", data: result });
+    res.status(200).json({ status: true, message: "User record updated successfully", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const statusCode = error.message.includes("not found") ? 404 : 500;
+    res.status(statusCode).json({ status: false, message: error.message });
   }
 };
-
 
 export const deleteUser = async (req, res) => {
   try {
     const deleted = await UserService.deleteUser(req.params.id);
-    if (!deleted) return res.status(404).json({ status: false, message: "User not found" });
-    res.status(200).json({ status: true, message: "User deleted", data: deleted });
+    if (!deleted) return res.status(404).json({ status: false, message: "User record not found. The account may have already been removed" });
+    res.status(200).json({ status: true, message: "User record deleted successfully", data: deleted });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -140,16 +134,21 @@ export const deleteUser = async (req, res) => {
 
 export const assignRoleToUser = async (req, res) => {
   try {
-    const { userId, role_id } = req.body; // userId = user record _id, role_id = from Roles collection
+    const { userId, role_id } = req.body;
+
+    if (!userId || !role_id) {
+      return res.status(400).json({ status: false, message: "Both user ID and role ID are required to assign a role" });
+    }
+
     const updatedUser = await UserService.assignRoleToUser(userId, role_id);
 
     if (!updatedUser) {
-      return res.status(404).json({ status: false, message: "User not found" });
+      return res.status(404).json({ status: false, message: "User record not found. Please verify the user ID and try again" });
     }
 
     res.status(200).json({
       status: true,
-      message: "Role assigned successfully",
+      message: "Role assigned to user successfully",
       data: updatedUser,
     });
   } catch (error) {
@@ -157,14 +156,18 @@ export const assignRoleToUser = async (req, res) => {
   }
 };
 
-
 export const updateUserRole = async (req, res) => {
   try {
     const { userId, role_id } = req.body;
+
+    if (!userId || !role_id) {
+      return res.status(400).json({ status: false, message: "Both user ID and role ID are required to update the role assignment" });
+    }
+
     const updatedUser = await UserService.updateUserRole(userId, role_id);
 
     if (!updatedUser) {
-      return res.status(404).json({ status: false, message: "User not found" });
+      return res.status(404).json({ status: false, message: "User record not found. Please verify the user ID and try again" });
     }
 
     res.status(200).json({
@@ -176,4 +179,3 @@ export const updateUserRole = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
-

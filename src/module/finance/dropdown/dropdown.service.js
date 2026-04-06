@@ -277,7 +277,7 @@ class DropdownService {
   // type omitted → returns all three groups merged under a "party_type" key.
   // Used for the Supplier selector on Payment Voucher / Credit-Debit Note forms.
   static async getPartiesByTender(tender_id, type) {
-    if (!tender_id) throw new Error("tender_id is required");
+    if (!tender_id) throw new Error("Tender ID is required to retrieve linked parties");
 
     const fetchVendor     = !type || type === "vendor";
     const fetchContractor = !type || type === "contractor";

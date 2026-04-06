@@ -27,7 +27,7 @@ export const addProposalToTender = async (req, res) => {
   }
 };
 
-// 📄 Get EMD record by tender_id
+// Get EMD record by tender_id
 export const getEmdByTender = async (req, res) => {
   try {
     const { tender_id } = req.params;
@@ -46,7 +46,7 @@ export const getEmdByTender = async (req, res) => {
   }
 };
 
-// 📄 Get all EMD records
+// Get all EMD records
 export const getAllEmds = async (req, res) => {
   try {
     const result = await EmdService.getAllEmds();
@@ -56,7 +56,7 @@ export const getAllEmds = async (req, res) => {
   }
 };
 
-// ✏ Update entire EMD record for a tender
+// Update entire EMD record for a tender
 export const updateEmdRecord = async (req, res) => {
   try {
     const { tender_id } = req.params;
@@ -75,7 +75,7 @@ export const updateEmdRecord = async (req, res) => {
   }
 };
 
-// ✏ Update a specific proposal in tender (by proposal_id)
+// Update a specific proposal in tender (by proposal_id)
 export const updateProposalInTender = async (req, res) => {
   try {
     const { tender_id, proposal_id } = req.params;
@@ -172,7 +172,8 @@ export const rejectProposal = async (req, res) => {
       data: result,
     });
   } catch (error) {
-    res.status(400).json({ status: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 

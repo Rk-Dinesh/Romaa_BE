@@ -9,7 +9,7 @@ class VendorService {
     const idcode = "VEN";
     await IdcodeServices.addIdCode(idname, idcode);
     const vendor_id = await IdcodeServices.generateCode(idname);
-    if (!vendor_id) throw new Error("Failed to generate vendor ID");
+    if (!vendor_id) throw new Error("Unable to generate vendor ID. Please contact the system administrator");
 
     const vendor = new VendorModel({
       vendor_id,

@@ -4,7 +4,7 @@ import ClientService from "./client.service.js";
 export const createClient = async (req, res) => {
   try {
     const result = await ClientService.addClient(req.body);
-    res.status(201).json({ status: true, message: "Client created", data: result });
+    res.status(201).json({ status: true, message: "Client registered successfully", data: result });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -14,7 +14,7 @@ export const createClient = async (req, res) => {
 export const getClientById = async (req, res) => {
   try {
     const client = await ClientService.getClientById(req.params.client_id);
-    if (!client) return res.status(404).json({ status: false, message: "Client not found" });
+    if (!client) return res.status(404).json({ status: false, message: "Client record not found. Please verify the client ID and try again" });
     res.status(200).json({ status: true, data: client });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -85,8 +85,8 @@ export const getActiveClients = async (req, res) => {
 export const updateClient = async (req, res) => {
   try {
     const updated = await ClientService.updateClient(req.params.client_id, req.body);
-    if (!updated) return res.status(404).json({ status: false, message: "Client not found" });
-    res.status(200).json({ status: true, message: "Client updated", data: updated });
+    if (!updated) return res.status(404).json({ status: false, message: "Client record not found. Please verify the client ID and try again" });
+    res.status(200).json({ status: true, message: "Client details updated successfully", data: updated });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -96,8 +96,8 @@ export const updateClient = async (req, res) => {
 export const deleteClient = async (req, res) => {
   try {
     const deleted = await ClientService.deleteClient(req.params.client_id);
-    if (!deleted) return res.status(404).json({ status: false, message: "Client not found" });
-    res.status(200).json({ status: true, message: "Client deleted" });
+    if (!deleted) return res.status(404).json({ status: false, message: "Client record not found. Please verify the client ID and try again" });
+    res.status(200).json({ status: true, message: "Client removed successfully" });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

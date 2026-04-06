@@ -23,7 +23,7 @@ class WorkOrderRequestService {
     });
 
     if (!raQuantityDoc) {
-      throw new Error("Tender Quantities not found");
+      throw new Error("Tender quantities not found. Please verify the tender ID and ensure rate analysis quantities exist");
     }
 
     if (workOrderData.materialsRequired && workOrderData.materialsRequired.length > 0) {
@@ -127,7 +127,7 @@ class WorkOrderRequestService {
     const workOrderRequest = await WorkOrderRequestModel.findOne({ requestId: workOrderId });
 
     if (!workOrderRequest) {
-      throw new Error(`Purchase Request with ID '${workOrderId}' not found`);
+      throw new Error(`Work order with ID '${workOrderId}' not found. Please verify the ID and try again`);
     }
 
     // 2. Find the specific quotation to approve
@@ -136,7 +136,7 @@ class WorkOrderRequestService {
     );
 
     if (!contractorQuotation) {
-      throw new Error(`Quotation ID '${quotationId}' not found in this request`);
+      throw new Error(`Contractor quotation '${quotationId}' not found in this work order request`);
     }
 
     // 3. Update approval statuses
@@ -193,7 +193,7 @@ class WorkOrderRequestService {
     const workOrderRequest = await WorkOrderRequestModel.findOne({ requestId: workOrderId });
 
     if (!workOrderRequest) {
-      throw new Error(`Purchase Request with ID '${workOrderId}' not found`);
+      throw new Error(`Work order with ID '${workOrderId}' not found. Please verify the ID and try again`);
     }
 
     // 2. Find the specific quotation
@@ -202,7 +202,7 @@ class WorkOrderRequestService {
     );
 
     if (!contractorQuotation) {
-      throw new Error(`Quotation ID '${quotationId}' not found`);
+      throw new Error(`Contractor quotation '${quotationId}' not found in this work order request`);
     }
 
     // 3. Update only this quotation's status to "Rejected"
@@ -221,16 +221,16 @@ class WorkOrderRequestService {
       "assigned_projects.tender_id": tenderId,
       isDeleted: { $ne: true },
     });
-    if (!contractor) throw new Error('Contractor not permitted for this tender');
+    if (!contractor) throw new Error('Contractor is not assigned to this tender. Please verify the contractor and tender details');
 
     // 2. Check work order exists and is in a valid state
     const workOrderRequest = await WorkOrderRequestModel.findById({ _id: workOrderId });
-    if (!workOrderRequest) throw new Error('WorkOrderRequest not found');
-    if (workOrderRequest.status === "Contractor Approved" || workOrderRequest.status === "Work Order Issued" || workOrderRequest.status === "Completed") throw new Error('Already Approved, No more quotations allowed');
+    if (!workOrderRequest) throw new Error('Work order request not found. Please verify the ID and try again');
+    if (workOrderRequest.status === "Contractor Approved" || workOrderRequest.status === "Work Order Issued" || workOrderRequest.status === "Completed") throw new Error('Work order already approved. No further quotations are allowed');
     const isPermittedContractor = workOrderRequest.permittedContractor.some(
       c => c.contractorId === contractorId
     );
-    if (!isPermittedContractor) throw new Error('Not a permitted contractor');
+    if (!isPermittedContractor) throw new Error('Contractor is not permitted for this work order request');
 
     // 3. Compute totalQuotedValue from quoteItems
     const totalQuotedValue = Array.isArray(quoteData.quoteItems)
@@ -257,7 +257,7 @@ class WorkOrderRequestService {
 
     result.status = "Quotation Received";
     await result.save();
-    if (!result) throw new Error('WorkOrderRequest not found');
+    if (!result) throw new Error('Work order request not found. Please verify the ID and try again');
     return result;
   }
 
@@ -319,7 +319,7 @@ class WorkOrderRequestService {
         { new: true }
       );
       if (!updated) {
-        throw new Error(`WorkOrderRequest with ID ${requestId} not found`);
+        throw new Error(`Work order request with ID '${requestId}' not found. Please verify the ID and try again`);
       }
       return updated;
     }

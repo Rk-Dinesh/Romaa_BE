@@ -5,7 +5,7 @@ import dotenv from "dotenv"
 dotenv.config()
 
 export const generateToken = async (user) => {
-  const getPermission = await RoleService.getRolesById(user.roleId);
+  const getPermission = await RoleService.getRoleById(user.roleId);
   return jwt.sign(
     {
       id: user._id,

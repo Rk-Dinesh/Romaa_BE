@@ -4,6 +4,11 @@ import RoleModel from "../role/role.model.js";
 class NotificationService {
   // --- 1. Create Notification (used by other modules internally + admin API) ---
   static async create(data) {
+    if (!data || !data.title || !data.message) {
+      throw new Error(
+        "Notification title and message are required. Please provide the necessary details and try again."
+      );
+    }
     const notification = new NotificationModel(data);
     return await notification.save();
   }
@@ -14,7 +19,9 @@ class NotificationService {
     try {
       return await this.create(data);
     } catch (err) {
-      console.error("Notification failed:", err.message);
+      console.error(
+        `[NotificationService] Unable to dispatch notification (title: "${data?.title || "unknown"}"): ${err.message}`
+      );
       return null;
     }
   }
@@ -189,7 +196,13 @@ class NotificationService {
   // --- 4. Mark as Read ---
   static async markAsRead(notificationId, userId) {
     const notification = await NotificationModel.findById(notificationId);
-    if (!notification) throw new Error("Notification not found");
+    if (!notification) {
+      const error = new Error(
+        "Notification not found. Please verify the notification ID and try again."
+      );
+      error.statusCode = 404;
+      throw error;
+    }
 
     const existing = notification.recipients.find(
       (r) => r.userId?.toString() === userId.toString()
@@ -274,7 +287,13 @@ class NotificationService {
   // --- 6. Dismiss Notification ---
   static async dismiss(notificationId, userId) {
     const notification = await NotificationModel.findById(notificationId);
-    if (!notification) throw new Error("Notification not found");
+    if (!notification) {
+      const error = new Error(
+        "Notification not found. Please verify the notification ID and try again."
+      );
+      error.statusCode = 404;
+      throw error;
+    }
 
     const existing = notification.recipients.find(
       (r) => r.userId?.toString() === userId.toString()
@@ -303,7 +322,13 @@ class NotificationService {
       .populate("users", "name employeeId department")
       .populate("projects", "tender_id tender_project_name");
 
-    if (!notification) throw new Error("Notification not found");
+    if (!notification) {
+      const error = new Error(
+        "Notification not found. Please verify the notification ID and try again."
+      );
+      error.statusCode = 404;
+      throw error;
+    }
     return notification;
   }
 
@@ -314,7 +339,13 @@ class NotificationService {
       data,
       { new: true, runValidators: true }
     );
-    if (!notification) throw new Error("Notification not found");
+    if (!notification) {
+      const error = new Error(
+        "Notification not found. Unable to update a non-existent notification. Please verify the ID and try again."
+      );
+      error.statusCode = 404;
+      throw error;
+    }
     return notification;
   }
 
@@ -325,7 +356,13 @@ class NotificationService {
       { isActive: false },
       { new: true }
     );
-    if (!notification) throw new Error("Notification not found");
+    if (!notification) {
+      const error = new Error(
+        "Notification not found. Unable to delete a non-existent notification. Please verify the ID and try again."
+      );
+      error.statusCode = 404;
+      throw error;
+    }
     return notification;
   }
 

@@ -86,7 +86,7 @@ export const getBySupplier = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const data = await AccountTreeService.create(req.body);
-    res.status(201).json({ status: true, message: "Account created", data });
+    res.status(201).json({ status: true, message: "Account created successfully in Chart of Accounts", data });
   } catch (error) {
     const code = error.message.includes("required") ||
                  error.message.includes("duplicate") ? 400 : 500;
@@ -98,7 +98,7 @@ export const create = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const data = await AccountTreeService.update(req.params.id, req.body);
-    res.status(200).json({ status: true, message: "Account updated", data });
+    res.status(200).json({ status: true, message: "Account updated successfully", data });
   } catch (error) {
     const code = error.message.includes("not found") ? 404 :
                  error.message.includes("Cannot change") ? 400 : 500;
@@ -110,7 +110,7 @@ export const update = async (req, res) => {
 export const softDelete = async (req, res) => {
   try {
     const data = await AccountTreeService.softDelete(req.params.id);
-    res.status(200).json({ status: true, message: "Account deleted", data });
+    res.status(200).json({ status: true, message: "Account removed successfully from Chart of Accounts", data });
   } catch (error) {
     const code = error.message.includes("not found") ||
                  error.message.includes("Cannot delete") ||

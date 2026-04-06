@@ -8,7 +8,7 @@ class MachineryAssetService {
   static async addMachineryAsset(data) {
     // Check if assetId already exists
     const exists = await MachineryAsset.findOne({ assetId: data.assetId });
-    if (exists) throw new Error(`Asset ID ${data.assetId} already exists`);
+    if (exists) throw new Error(`A machinery asset with ID '${data.assetId}' already exists in the system`);
 
     const asset = new MachineryAsset(data);
     return await asset.save();

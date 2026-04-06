@@ -4,7 +4,7 @@ import ContractorService from "./contractor.service.js";
 export const createContractor = async (req, res) => {
   try {
     const data = await ContractorService.addContractor(req.body);
-    res.status(201).json({ status: true, message: "Contractor created", data });
+    res.status(201).json({ status: true, message: "Contractor registered successfully", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -57,7 +57,7 @@ export const getContractorById = async (req, res) => {
     if (!data)
       return res
         .status(404)
-        .json({ status: false, message: "Contractor not found" });
+        .json({ status: false, message: "Contractor record not found. Please verify the contractor ID and try again" });
     res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -84,10 +84,10 @@ export const updateContractor = async (req, res) => {
     if (!data)
       return res
         .status(404)
-        .json({ status: false, message: "Contractor not found" });
+        .json({ status: false, message: "Contractor record not found. Please verify the contractor ID and try again" });
     res
       .status(200)
-      .json({ status: true, message: "Contractor updated", data });
+      .json({ status: true, message: "Contractor details updated successfully", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -102,8 +102,8 @@ export const deleteContractor = async (req, res) => {
     if (!data)
       return res
         .status(404)
-        .json({ status: false, message: "Contractor not found" });
-    res.status(200).json({ status: true, message: "Contractor deleted" });
+        .json({ status: false, message: "Contractor record not found. Please verify the contractor ID and try again" });
+    res.status(200).json({ status: true, message: "Contractor deactivated successfully" });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -161,7 +161,7 @@ export const getContractorWithEmployees = async (req, res) => {
     if (!data)
       return res
         .status(404)
-        .json({ status: false, message: "Contractor not found" });
+        .json({ status: false, message: "Contractor record not found. Please verify the contractor ID and try again" });
     res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -177,7 +177,7 @@ export const getContractorWithEmployeesbyProject = async (req, res) => {
     if (!data)
       return res
         .status(404)
-        .json({ status: false, message: "Contractor not found" });
+        .json({ status: false, message: "Contractor record not found. Please verify the contractor ID and try again" });
     res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -220,8 +220,8 @@ export const assignProject = async (req, res) => {
     if (!data)
       return res
         .status(404)
-        .json({ status: false, message: "Contractor not found" });
-    res.status(200).json({ status: true, message: "Project assigned", data });
+        .json({ status: false, message: "Contractor record not found. Please verify the contractor ID and try again" });
+    res.status(200).json({ status: true, message: "Project assigned to contractor successfully", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -237,8 +237,8 @@ export const removeProject = async (req, res) => {
     if (!data)
       return res
         .status(404)
-        .json({ status: false, message: "Contractor not found" });
-    res.status(200).json({ status: true, message: "Project withdrawn", data });
+        .json({ status: false, message: "Contractor record not found. Please verify the contractor ID and try again" });
+    res.status(200).json({ status: true, message: "Project assignment withdrawn successfully", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -253,7 +253,7 @@ export const getAssignedProjects = async (req, res) => {
     if (!data)
       return res
         .status(404)
-        .json({ status: false, message: "Contractor not found" });
+        .json({ status: false, message: "Contractor record not found. Please verify the contractor ID and try again" });
     res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -270,10 +270,10 @@ export const updateAccountDetails = async (req, res) => {
     if (!data)
       return res
         .status(404)
-        .json({ status: false, message: "Contractor not found" });
+        .json({ status: false, message: "Contractor record not found. Please verify the contractor ID and try again" });
     res
       .status(200)
-      .json({ status: true, message: "Account details updated", data });
+      .json({ status: true, message: "Contractor bank account details updated successfully", data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

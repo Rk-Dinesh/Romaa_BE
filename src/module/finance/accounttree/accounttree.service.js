@@ -123,14 +123,14 @@ class AccountTreeService {
   // ── GET /accounttree/:id ──────────────────────────────────────────────────
   static async getById(id) {
     const acc = await AccountTreeModel.findById(id).lean();
-    if (!acc || acc.is_deleted) throw new Error(`Account not found`);
+    if (!acc || acc.is_deleted) throw new Error("Account record not found. Please verify the account ID and try again");
     return acc;
   }
 
   // ── GET /accounttree/by-code/:code ───────────────────────────────────────
   static async getByCode(code) {
     const acc = await AccountTreeModel.findOne({ account_code: code, is_deleted: false }).lean();
-    if (!acc) throw new Error(`Account '${code}' not found`);
+    if (!acc) throw new Error(`Account '${code}' not found in Chart of Accounts. Please verify the account code and try again`);
     return acc;
   }
 
@@ -189,7 +189,7 @@ class AccountTreeService {
   // ── PATCH /accounttree/update/:id ─────────────────────────────────────────
   static async update(id, payload) {
     const acc = await AccountTreeModel.findById(id);
-    if (!acc) throw new Error("Account not found");
+    if (!acc) throw new Error("Account record not found. Please verify the account ID and try again");
 
     // Protect system accounts from structural changes
     if (acc.is_system) {
@@ -228,9 +228,9 @@ class AccountTreeService {
   // ── DELETE /accounttree/delete/:id (soft delete) ─────────────────────────
   static async softDelete(id) {
     const acc = await AccountTreeModel.findById(id);
-    if (!acc)            throw new Error("Account not found");
-    if (acc.is_system)   throw new Error("Cannot delete a system account");
-    if (acc.is_deleted)  throw new Error("Already deleted");
+    if (!acc)            throw new Error("Account record not found. Please verify the account ID and try again");
+    if (acc.is_system)   throw new Error("System accounts are protected and cannot be deleted");
+    if (acc.is_deleted)  throw new Error("This account has already been removed");
 
     // Block if this account has children
     const childCount = await AccountTreeModel.countDocuments({

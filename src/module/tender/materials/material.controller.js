@@ -7,14 +7,14 @@ import materialService from "./material.service.js";
 export const addMaterialReceived = async (req, res) => {
   try {
     const result = await materialService.addMaterialReceived(req.body);
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      status: true,
       message: result.message,
-      data: result 
+      data: result
     });
   } catch (error) {
-    console.error("Error receiving material:", error);
-    res.status(500).json({ success: false, message: error.message });
+    const code = error.message.includes("not found") || error.message.includes("not been set up") ? 404 : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -25,14 +25,16 @@ export const addMaterialReceived = async (req, res) => {
 export const addMaterialIssued = async (req, res) => {
   try {
     const result = await materialService.addMaterialIssued(req.body);
-    res.status(200).json({ 
-      success: true, 
+    res.status(200).json({
+      status: true,
       message: result.message,
-      details: result.details 
+      data: { details: result.details }
     });
   } catch (error) {
-    console.error("Error issuing material:", error);
-    res.status(500).json({ success: false, message: error.message });
+    const code = error.message.includes("not found") || error.message.includes("not been set up") ? 404
+      : error.message.includes("Insufficient stock") || error.message.includes("Stock update conflict") ? 409
+      : 400;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -48,12 +50,12 @@ export const getStockStatus = async (req, res) => {
     const result = await materialService.getMaterialStockStatus(tender_id, category);
 
     res.status(200).json({
-      success: true,
+      status: true,
       data: result.stock_data,
       total_items: result.total_items
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
@@ -68,13 +70,14 @@ export const getItemLedger = async (req, res) => {
     const result = await materialService.getItemLedger(tender_id, item_id);
 
     res.status(200).json({
-      success: true,
+      status: true,
       item_name: result.item_name,
       current_stock: result.current_stock,
       history: result.history
     });
   } catch (error) {
-    res.status(500).json({ success: false, message: error.message });
+    const code = error.message.includes("not found") ? 404 : 500;
+    res.status(code).json({ status: false, message: error.message });
   }
 };
 

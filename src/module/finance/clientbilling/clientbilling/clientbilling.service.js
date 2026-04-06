@@ -341,12 +341,12 @@ class BillingService {
   // Allowed transitions: Draft/Submitted/Checked → Approved
   static async approveBill(id) {
     const bill = await BillingModel.findById(id);
-    if (!bill) throw new Error("Bill not found");
+    if (!bill) throw new Error("Client bill record not found. Please verify the bill ID and try again");
     if (bill.status === "Approved" || bill.status === "Paid") {
-      throw new Error(`Bill is already ${bill.status} — cannot approve again`);
+      throw new Error(`Client bill is already ${bill.status} and cannot be approved again`);
     }
     if (bill.status === "Rejected") {
-      throw new Error("Rejected bills cannot be approved");
+      throw new Error("Rejected client bills cannot be approved. Please create a new bill");
     }
 
     // Look up tender for client details

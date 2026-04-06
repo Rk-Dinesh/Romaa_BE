@@ -53,15 +53,15 @@ class WorkDoneService {
 
   static async getReportById(id) {
     const report = await WorkDoneModel.findById(id);
-    if (!report) throw new Error("Work done report not found");
+    if (!report) throw new Error("Site work completion report not found. Please verify the report ID and try again");
     return report;
   }
 
   static async updateReport(id, payload) {
     const report = await WorkDoneModel.findById(id);
-    if (!report) throw new Error("Work done report not found");
+    if (!report) throw new Error("Site work completion report not found. Please verify the report ID and try again");
     if (report.status === "Approved") {
-      throw new Error("Approved reports cannot be edited");
+      throw new Error("Approved reports cannot be modified. Please contact the project manager for corrections");
     }
 
     if (payload.dailyWorkDone !== undefined) {
@@ -79,9 +79,9 @@ class WorkDoneService {
 
   static async updateStatus(id, status) {
     const report = await WorkDoneModel.findById(id);
-    if (!report) throw new Error("Work done report not found");
+    if (!report) throw new Error("Site work completion report not found. Please verify the report ID and try again");
     if (!["Draft", "Submitted", "Approved", "Rejected"].includes(status)) {
-      throw new Error("Invalid status value");
+      throw new Error("Invalid report status. Accepted values are: PENDING, APPROVED, REJECTED");
     }
     report.status = status;
     return await report.save();
@@ -103,7 +103,7 @@ class WorkDoneService {
 
   static async deleteReport(id) {
     const report = await WorkDoneModel.findById(id);
-    if (!report) throw new Error("Work done report not found");
+    if (!report) throw new Error("Site work completion report not found. Please verify the report ID and try again");
     if (report.status === "Approved") {
       throw new Error("Approved reports cannot be deleted");
     }

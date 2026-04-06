@@ -11,7 +11,7 @@ class MachineLogService {
    */
   static async bulkCreateLogs(logsArray, userId) {
     if (!Array.isArray(logsArray) || logsArray.length === 0) {
-      throw new Error("No logs provided for creation.");
+      throw new Error("At least one machinery usage log entry is required");
     }
 
     // 1. Process and sanitize each log entry before saving

@@ -347,17 +347,17 @@ class WeeklyBillingService {
   static async approveBill(billId, approvedBy = null) {
     const bill = await WeeklyBillingModel.findById(billId);
     if (!bill) {
-      const err = new Error("Bill not found");
+      const err = new Error("Weekly billing record not found. Please verify the bill ID and try again");
       err.statusCode = 404;
       throw err;
     }
     if (bill.status === "Approved") {
-      const err = new Error("Bill is already approved");
-      err.statusCode = 400;
+      const err = new Error("Weekly bill is already approved and cannot be approved again");
+      err.statusCode = 409;
       throw err;
     }
     if (bill.status === "Cancelled") {
-      const err = new Error("Cannot approve a cancelled bill");
+      const err = new Error("Cancelled weekly bills cannot be approved. Please create a new bill instead");
       err.statusCode = 400;
       throw err;
     }

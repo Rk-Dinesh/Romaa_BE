@@ -96,7 +96,7 @@ export const getById = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const data = await PaymentVoucherService.create(req.body);
-    res.status(201).json({ status: true, message: "Payment voucher created", data });
+    res.status(201).json({ status: true, message: "Payment voucher created successfully", data });
   } catch (error) {
     const code = error.message.includes("required") ||
                  error.message.includes("not found") ||
@@ -109,7 +109,7 @@ export const create = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const data = await PaymentVoucherService.update(req.params.id, req.body);
-    res.status(200).json({ status: true, message: "Payment voucher updated", data });
+    res.status(200).json({ status: true, message: "Payment voucher updated successfully", data });
   } catch (error) {
     const code = error.message.includes("not found") || error.message.includes("Cannot") ? 400 : 500;
     res.status(code).json({ status: false, message: error.message });
@@ -120,7 +120,7 @@ export const update = async (req, res) => {
 export const deleteDraft = async (req, res) => {
   try {
     const data = await PaymentVoucherService.deleteDraft(req.params.id);
-    res.status(200).json({ status: true, message: "Payment voucher deleted", data });
+    res.status(200).json({ status: true, message: "Payment voucher draft removed successfully", data });
   } catch (error) {
     const code = error.message.includes("not found") || error.message.includes("Cannot") ? 400 : 500;
     res.status(code).json({ status: false, message: error.message });
@@ -131,7 +131,7 @@ export const deleteDraft = async (req, res) => {
 export const approve = async (req, res) => {
   try {
     const data = await PaymentVoucherService.approve(req.params.id, req.body);
-    res.status(200).json({ status: true, message: "Payment voucher approved", data });
+    res.status(200).json({ status: true, message: "Payment voucher approved and posted to ledger successfully", data });
   } catch (error) {
     const code = error.message.includes("not found") ||
                  error.message.includes("Already") ? 400 : 500;

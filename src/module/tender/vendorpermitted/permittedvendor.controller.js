@@ -6,12 +6,10 @@ import VendorPermittedService from "./permittedvendor.service.js";
 export const addPermittedVendors = async (req, res) => {
   try {
     const { tender_id, vendors } = req.body;
-    console.log("Received vendors:", vendors);
-    
     const result = await VendorPermittedService.addPermittedVendors(tender_id, vendors);
     res.status(201).json({
       status: true,
-      message: "Vendors permitted and added to tender successfully",
+      message: "Permitted vendors added to the tender successfully.",
       data: result
     });
   } catch (error) {
@@ -27,7 +25,7 @@ export const getPermittedVendors = async (req, res) => {
     const { tender_id } = req.params;
     const result = await VendorPermittedService.getPermittedVendorsByTender(tender_id);
     if (!result) {
-      return res.status(404).json({ status: false, message: "No permitted vendors found" });
+      return res.status(404).json({ status: false, message: "No permitted vendors found for this tender. Please add vendors before viewing." });
     }
     res.status(200).json({ status: true, data: result });
   } catch (error) {
@@ -43,9 +41,10 @@ export const updatePermittedVendor = async (req, res) => {
     const { tender_id, vendor_id } = req.params;
     const updateData = req.body;
     const result = await VendorPermittedService.updatePermittedVendor(tender_id, vendor_id, updateData);
-    res.status(200).json({ status: true, message: "Permitted vendor updated", data: result });
+    res.status(200).json({ status: true, message: "Permitted vendor details updated successfully.", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const statusCode = error.message.includes("not found") ? 404 : 500;
+    res.status(statusCode).json({ status: false, message: error.message });
   }
 };
 
@@ -56,9 +55,10 @@ export const removePermittedVendor = async (req, res) => {
   try {
     const { tender_id, vendor_id } = req.params;
     const result = await VendorPermittedService.removePermittedVendor(tender_id, vendor_id);
-    res.status(200).json({ status: true, message: "Vendor removed from tender", data: result });
+    res.status(200).json({ status: true, message: "Permitted vendor removed from the tender successfully.", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    const statusCode = error.message.includes("not found") ? 404 : 500;
+    res.status(statusCode).json({ status: false, message: error.message });
   }
 };
 
@@ -75,13 +75,12 @@ export const getpaginatedVendor = async (req, res) => {
       search
     );
 
-    res.json({
-      success: true,
+    res.status(200).json({
+      status: true,
       total: result.total,
       data: result.vendors,
     });
   } catch (error) {
-    console.error("Error fetching permitted vendors:", error);
-    res.status(500).json({ success: false, message: "Server Error" });
+    res.status(500).json({ status: false, message: "Unable to retrieve permitted vendors. Please try again later." });
   }
 };

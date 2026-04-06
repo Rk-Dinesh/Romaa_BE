@@ -3,7 +3,7 @@ import WorkDoneService from "./workdone.service.js";
 export const createReport = async (req, res) => {
   try {
     const report = await WorkDoneService.createReport(req.body);
-    res.status(201).json({ status: true, message: "Work done report created", data: report });
+    res.status(201).json({ status: true, message: "Site work completion report submitted successfully", data: report });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -34,7 +34,7 @@ export const updateReport = async (req, res) => {
   try {
     const { id } = req.params;
     const report = await WorkDoneService.updateReport(id, req.body);
-    res.status(200).json({ status: true, message: "Report updated", data: report });
+    res.status(200).json({ status: true, message: "Site work completion report updated successfully", data: report });
   } catch (error) {
     res.status(400).json({ status: false, message: error.message });
   }

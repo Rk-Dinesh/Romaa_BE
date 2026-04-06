@@ -9,10 +9,10 @@ class UserService {
     try {
       const idname = "EMPLOYEE";
       const idcode = "EMP";
-      const generateCode = await IdcodeServices.addIdCode(idname, idcode);
+      await IdcodeServices.addIdCode(idname, idcode);
       const user_id = await IdcodeServices.generateCode(idname);
       if (!user_id) {
-        throw new Error("Failed to generate user ID.");
+        throw new Error("Failed to generate employee ID. Please contact the system administrator");
       }
 
       const hashedPassword = await bcrypt.hash(userData.password, 10);
@@ -30,9 +30,13 @@ class UserService {
       return user;
     } catch (err) {
       logger.error("Error in user registration:", err ? err.message : err);
-      throw new Error("User registration failed.");
+      if (err.code === 11000) {
+        throw new Error("A user with this email or mobile number already exists in the system");
+      }
+      throw new Error(err.message || "User registration failed. Please verify the provided details and try again");
     }
   }
+
   static async getUserByEmailOrMobile(identifier) {
     try {
       const user = await UserModel.findOne({
@@ -41,9 +45,11 @@ class UserService {
 
       return user;
     } catch (error) {
-      throw new Error("Error fetching user by email or mobile: " + error);
+      logger.error("Error fetching user by email or mobile: " + error);
+      throw new Error("Unable to retrieve user details. Please try again later");
     }
   }
+
   static async updateUserById(userId, updateData) {
     try {
       const updatedUser = await UserModel.findByIdAndUpdate(
@@ -53,9 +59,11 @@ class UserService {
       );
       return updatedUser;
     } catch (error) {
-      throw new Error("Error updating user by Id: " + error);
+      logger.error("Error updating user by ID: " + error);
+      throw new Error("Failed to update user record. Please verify the details and try again");
     }
   }
+
   static async checkIfUserExistsByMail(email) {
     try {
       const user = await UserModel.findOne({
@@ -64,9 +72,11 @@ class UserService {
       });
       return !user;
     } catch (error) {
-      throw new Error("Error checking user existence: " + error);
+      logger.error("Error checking user existence by email: " + error);
+      throw new Error("Unable to verify email availability. Please try again later");
     }
   }
+
   static async checkIfUserExistsByMobile(mobile) {
     try {
       const user = await UserModel.findOne({
@@ -75,9 +85,11 @@ class UserService {
       });
       return !user;
     } catch (error) {
-      throw new Error("Error checking user existence: " + error);
+      logger.error("Error checking user existence by mobile: " + error);
+      throw new Error("Unable to verify mobile number availability. Please try again later");
     }
   }
+
   static async addRefreshToken(refreshToken, userId) {
     try {
       const result = await UserModel.updateOne(
@@ -87,10 +99,8 @@ class UserService {
 
       return result.modifiedCount > 0;
     } catch (error) {
-      throw new Error(
-        "Error updating refresh token: " +
-          (error instanceof Error ? error.message : error)
-      );
+      logger.error("Error storing refresh token: " + (error instanceof Error ? error.message : error));
+      throw new Error("Failed to update session token. Please sign in again");
     }
   }
 
@@ -101,10 +111,8 @@ class UserService {
       });
       return result !== null;
     } catch (error) {
-      throw new Error(
-        "Error updating refresh token: " +
-          (error instanceof Error ? error.message : error)
-      );
+      logger.error("Error revoking refresh token: " + (error instanceof Error ? error.message : error));
+      throw new Error("Failed to revoke session token. Please try signing out again");
     }
   }
 
@@ -113,7 +121,8 @@ class UserService {
       const user = await UserModel.findById(id);
       return user;
     } catch (error) {
-      throw new Error("Error fetching users: " + error);
+      logger.error("Error fetching user by ID: " + error);
+      throw new Error("Unable to retrieve user record. Please verify the user ID and try again");
     }
   }
 
@@ -125,38 +134,39 @@ class UserService {
       });
       return user;
     } catch (error) {
-      throw new Error("Error checking user existence: " + error);
+      logger.error("Error fetching user by email: " + error);
+      throw new Error("Unable to retrieve user record by email. Please try again later");
     }
   }
 
- static async getUsersByPage(pageData) {
-  try {
-    const { skip, limit, search, searchBy } = pageData;
+  static async getUsersByPage(pageData) {
+    try {
+      const { skip, limit, search, searchBy } = pageData;
 
-  ;
+      const filter = search && searchBy ? { [searchBy]: new RegExp(search, "i") } : {};
 
-    const [data, total] = await Promise.all([
-      UserModel.find(search ? { [searchBy]: new RegExp(search, "i") } : {})
-        .sort({ _id: 1 }) // Always ascending by _id
-        .skip(skip)
-        .limit(limit),
-      UserModel.countDocuments(filter),
-    ]);
+      const [data, total] = await Promise.all([
+        UserModel.find(filter)
+          .sort({ _id: 1 })
+          .skip(skip)
+          .limit(limit),
+        UserModel.countDocuments(filter),
+      ]);
 
-    return {
-      data,
-      total,
-      limit,
-      skip,
-      search,
-      searchBy,
-      totalPages: Math.ceil(total / limit),
-    };
-  } catch (error) {
-    throw new Error("Error fetching paginated users: " + error.message);
+      return {
+        data,
+        total,
+        limit,
+        skip,
+        search,
+        searchBy,
+        totalPages: Math.ceil(total / limit),
+      };
+    } catch (error) {
+      logger.error("Error fetching paginated users: " + error.message);
+      throw new Error("Unable to retrieve user list. Please adjust your search criteria and try again");
+    }
   }
-}
-
 
   static async getUserByMobile(mobile) {
     try {
@@ -166,7 +176,8 @@ class UserService {
       });
       return user;
     } catch (error) {
-      throw new Error("Error checking user existence: " + error);
+      logger.error("Error fetching user by mobile: " + error);
+      throw new Error("Unable to retrieve user record by mobile number. Please try again later");
     }
   }
 
@@ -176,13 +187,13 @@ class UserService {
       const update = { $set: { ...userData } };
       const result = await UserModel.updateOne(query, update);
       if (result.matchedCount === 0) {
-        throw new Error("User not found");
+        throw new Error("User record not found. Please verify the user ID and try again");
       }
       return result;
     } catch (error) {
       throw error instanceof Error
         ? error
-        : new Error("Unknown error occurred while updating user.");
+        : new Error("An unexpected error occurred while updating the user record");
     }
   }
 
@@ -190,20 +201,21 @@ class UserService {
     try {
       return await UserModel.findOneAndDelete(id);
     } catch (error) {
-      throw new Error("Error deleting user: " + error);
+      logger.error("Error deleting user: " + error);
+      throw new Error("Failed to delete user record. Please try again later");
     }
   }
 
   static async assignRoleToUser(userId, role_id) {
     try {
-      // Assuming userId is Mongo _id
       return await UserModel.findByIdAndUpdate(
         userId,
         { $set: { roleId: role_id } },
         { new: true }
       );
     } catch (error) {
-      throw new Error("Error assigning role to user: " + error.message);
+      logger.error("Error assigning role to user: " + error.message);
+      throw new Error("Failed to assign role to user. Please verify the user and role details and try again");
     }
   }
 
@@ -216,7 +228,8 @@ class UserService {
         { new: true }
       );
     } catch (error) {
-      throw new Error("Error updating user role: " + error.message);
+      logger.error("Error updating user role: " + error.message);
+      throw new Error("Failed to update the user's role assignment. Please verify the details and try again");
     }
   }
 }

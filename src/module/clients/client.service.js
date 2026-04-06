@@ -10,7 +10,7 @@ class ClientService {
       const idcode = "CLI";
       await IdcodeServices.addIdCode(idname, idcode);
       const client_id = await IdcodeServices.generateCode(idname);
-      if (!client_id) throw new Error("Failed to generate client ID");
+      if (!client_id) throw new Error("Unable to generate client ID. Please contact system administrator");
 
       const newClient = new ClientModel({ client_id, ...clientData });
       const saved = await newClient.save();
@@ -24,7 +24,7 @@ class ClientService {
 
       return saved;
     } catch (error) {
-      throw new Error("Error creating client: " + error.message);
+      throw new Error("Unable to register client. " + error.message);
     }
   }
 

@@ -36,7 +36,7 @@ export const getById = async (req, res) => {
 export const create = async (req, res) => {
   try {
     const data = await CompanyBankAccountService.create(req.body, req.user?.emp_id || "");
-    res.status(201).json({ status: true, message: "Company bank account created", data });
+    res.status(201).json({ status: true, message: "Company bank account registered successfully", data });
   } catch (error) {
     const code = error.message.includes("required") ||
                  error.message.includes("already exists") ? 400 : 500;
@@ -48,7 +48,7 @@ export const create = async (req, res) => {
 export const update = async (req, res) => {
   try {
     const data = await CompanyBankAccountService.update(req.params.id, req.body);
-    res.status(200).json({ status: true, message: "Company bank account updated", data });
+    res.status(200).json({ status: true, message: "Company bank account updated successfully", data });
   } catch (error) {
     const code = error.message.includes("not found") ? 404 : 500;
     res.status(code).json({ status: false, message: error.message });
@@ -59,7 +59,7 @@ export const update = async (req, res) => {
 export const softDelete = async (req, res) => {
   try {
     const data = await CompanyBankAccountService.softDelete(req.params.id);
-    res.status(200).json({ status: true, message: "Company bank account deleted", data });
+    res.status(200).json({ status: true, message: "Company bank account deactivated successfully", data });
   } catch (error) {
     const code = error.message.includes("not found") ||
                  error.message.includes("Already") ? 400 : 500;

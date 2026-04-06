@@ -13,14 +13,14 @@ class CompanyBankAccountService {
   // ── GET /companybankaccount/:id ───────────────────────────────────────────
   static async getById(id) {
     const rec = await CompanyBankAccountModel.findById(id).lean();
-    if (!rec || rec.is_deleted) throw new Error("Company bank account not found");
+    if (!rec || rec.is_deleted) throw new Error("Company bank account not found. Please verify the account ID and try again");
     return rec;
   }
 
   // ── GET /companybankaccount/by-code/:code ─────────────────────────────────
   static async getByCode(account_code) {
     const rec = await CompanyBankAccountModel.findOne({ account_code, is_deleted: false }).lean();
-    if (!rec) throw new Error(`Company bank account '${account_code}' not found`);
+    if (!rec) throw new Error(`Company bank account '${account_code}' not found. Please verify the account code and try again`);
     return rec;
   }
 
@@ -30,14 +30,14 @@ class CompanyBankAccountService {
   static async create(payload, created_by = "") {
     const { account_code, account_name, bank_name, account_number } = payload;
 
-    if (!account_code)   throw new Error("account_code is required");
-    if (!account_name)   throw new Error("account_name is required");
-    if (!bank_name)      throw new Error("bank_name is required");
-    if (!account_number) throw new Error("account_number is required");
+    if (!account_code)   throw new Error("Account code is required to register a company bank account");
+    if (!account_name)   throw new Error("Account name is required to register a company bank account");
+    if (!bank_name)      throw new Error("Bank name is required to register a company bank account");
+    if (!account_number) throw new Error("Account number is required to register a company bank account");
 
     // Ensure no duplicate
     const existing = await CompanyBankAccountModel.findOne({ account_code, is_deleted: false });
-    if (existing) throw new Error(`Company bank account '${account_code}' already exists`);
+    if (existing) throw new Error(`Company bank account with code '${account_code}' already exists. Please use a different account code`);
 
     // Create/ensure AccountTree leaf for this bank account
     const treeExists = await AccountTreeModel.findOne({ account_code, is_deleted: false });
@@ -73,7 +73,7 @@ class CompanyBankAccountService {
   // ── PATCH /companybankaccount/update/:id ──────────────────────────────────
   static async update(id, payload) {
     const rec = await CompanyBankAccountModel.findById(id);
-    if (!rec || rec.is_deleted) throw new Error("Company bank account not found");
+    if (!rec || rec.is_deleted) throw new Error("Company bank account not found. Please verify the account ID and try again");
 
     const allowed = [
       "account_name", "bank_name", "branch_name", "account_number", "ifsc_code",
@@ -100,8 +100,8 @@ class CompanyBankAccountService {
   // ── DELETE /companybankaccount/delete/:id (soft delete) ──────────────────
   static async softDelete(id) {
     const rec = await CompanyBankAccountModel.findById(id);
-    if (!rec)            throw new Error("Company bank account not found");
-    if (rec.is_deleted)  throw new Error("Already deleted");
+    if (!rec)            throw new Error("Company bank account not found. Please verify the account ID and try again");
+    if (rec.is_deleted)  throw new Error("Company bank account has already been deactivated");
 
     rec.is_deleted = true;
     rec.is_active  = false;

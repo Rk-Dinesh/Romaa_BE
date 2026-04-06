@@ -341,15 +341,15 @@ class PurchaseBillService {
   // GET /purchasebill/:id
   static async getPurchaseBillById(id) {
     const bill = await PurchaseBillModel.findById(id).lean();
-    if (!bill) throw new Error("Purchase bill not found");
+    if (!bill) throw new Error("Purchase bill record not found. Please verify the bill ID and try again");
     return bill;
   }
 
   // PATCH /purchasebill/update/:id
   static async updatePurchaseBill(id, payload) {
     const bill = await PurchaseBillModel.findById(id);
-    if (!bill) throw new Error("Purchase bill not found");
-    if (bill.status === "approved") throw new Error("Cannot edit an approved purchase bill");
+    if (!bill) throw new Error("Purchase bill record not found. Please verify the bill ID and try again");
+    if (bill.status === "approved") throw new Error("Cannot edit an approved purchase bill. Approved bills are locked for audit integrity");
 
     const allowed = ["doc_date", "invoice_no", "invoice_date", "credit_days", "narration", "line_items", "additional_charges", "place_of_supply"];
     for (const field of allowed) {

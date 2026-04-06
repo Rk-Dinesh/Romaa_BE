@@ -10,7 +10,7 @@ export const uploadBillingCSV = async (req, res, next) => {
 
   let filePath = null;
   try {
-    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+    if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded" });
 
     const {
       tender_id,
@@ -25,7 +25,7 @@ export const uploadBillingCSV = async (req, res, next) => {
       created_by_user,
     } = req.body;
 
-    if (!tender_id) return res.status(400).json({ error: "tender_id is required" });
+    if (!tender_id) return res.status(400).json({ status: false, message: "tender_id is required" });
 
     // Parse JSON fields that arrive as strings from multipart form-data
     let deductions = [];
@@ -33,7 +33,7 @@ export const uploadBillingCSV = async (req, res, next) => {
       try {
         deductions = JSON.parse(deductionsRaw);
       } catch {
-        return res.status(400).json({ status: false, error: "deductions must be valid JSON" });
+        return res.status(400).json({ status: false, message: "deductions must be valid JSON" });
       }
     }
 
@@ -54,13 +54,16 @@ export const uploadBillingCSV = async (req, res, next) => {
     const dataRows = await parseFileToJson(filePath, req.file.originalname);
 
     if (dataRows.length === 0) {
-      return res.status(400).json({ status: false, error: "File is empty" });
+      return res.status(400).json({ status: false, message: "Uploaded file contains no data rows" });
     }
 
     const result = await BillingService.bulkInsert(dataRows, tender_id, meta);
-    res.status(200).json({ status: true, message: "CSV data uploaded successfully", data: result });
+    res.status(201).json({ status: true, message: "Client billing data uploaded successfully", data: result });
   } catch (error) {
-    res.status(400).json({ status: false, error: error.message });
+    const code = error.message.includes("not found") ? 404
+               : error.message.includes("status") || error.message.includes("Zero items") || error.message.includes("headers") ? 400
+               : 500;
+    res.status(code).json({ status: false, message: error.message });
   } finally {
     // 5. Cleanup: Delete file after processing
     if (filePath && fs.existsSync(filePath)) {
@@ -78,9 +81,9 @@ export const getHistory = async (req, res) => {
   try {
     const { tender_id } = req.params;
     const history = await BillingService.getBillHistory(tender_id);
-    res.status(200).json({ success: true, count: history.length, data: history });
+    res.status(200).json({ status: true, count: history.length, data: history });
   } catch (error) {
-    res.status(500).json({ success: false, error: error.message });
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 
@@ -91,7 +94,7 @@ export const getDetails = async (req, res) => {
     const bill_id   = req.query.bill_id?.trim();
     if (!tender_id || !bill_id) return res.status(400).json({ status: false, message: "tender_id and bill_id query params are required" });
     const bill = await BillingService.getBillDetails(tender_id, bill_id);
-    if (!bill) return res.status(404).json({ status: false, message: "Bill not found" });
+    if (!bill) return res.status(404).json({ status: false, message: "Client bill record not found. Please verify the tender ID and bill ID" });
     res.status(200).json({ status: true, data: bill });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -133,7 +136,7 @@ export const updateBillingCSV = async (req, res) => {
     if (dataRows.length === 0) return res.status(400).json({ status: false, message: "File is empty" });
 
     const result = await BillingService.updateBillByCSV(dataRows, bill_id, meta);
-    res.status(200).json({ status: true, message: "Bill updated successfully", data: result });
+    res.status(200).json({ status: true, message: "Client bill updated successfully", data: result });
   } catch (error) {
     const code = error.message.includes("not found") ? 404
                : error.message.includes("Draft")     ? 400 : 500;
@@ -152,7 +155,7 @@ export const getBillById = async (req, res) => {
     const tender_id = req.query.tender_id?.trim();
     if (!bill_id || !tender_id) return res.status(400).json({ status: false, message: "tender_id and bill_id query params are required" });
     const bill = await BillingService.getBillById(tender_id, bill_id);
-    if (!bill) return res.status(404).json({ status: false, message: "Bill not found" });
+    if (!bill) return res.status(404).json({ status: false, message: "Client bill record not found. Please verify the tender ID and bill ID" });
     res.status(200).json({ status: true, data: bill });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -169,7 +172,7 @@ export const deleteBill = async (req, res) => {
 
     res.status(200).json({
       status: true,
-      message: `Bill "${result.bill_id}" deleted successfully along with ${result.steel_estimates_deleted} steel estimate(s) and ${result.billing_estimates_deleted} billing estimate(s)`,
+      message: `Client bill "${result.bill_id}" removed successfully along with ${result.steel_estimates_deleted} steel estimate(s) and ${result.billing_estimates_deleted} billing estimate(s)`,
       data: result,
     });
   } catch (error) {
@@ -183,10 +186,10 @@ export const deleteBill = async (req, res) => {
 export const approveBill = async (req, res) => {
   try {
     const bill = await BillingService.approveBill(req.params.id);
-    res.status(200).json({ status: true, message: "Bill approved", data: bill });
+    res.status(200).json({ status: true, message: "Client bill approved and posted to ledger", data: bill });
   } catch (error) {
-    const code = error.message.includes("not found") ? 404
-               : error.message.includes("already") || error.message.includes("cannot") ? 400
+    const code = error.message.includes("not found") || error.message.includes("No client") ? 404
+               : error.message.includes("already") || error.message.includes("cannot") || error.message.includes("Cannot") ? 400
                : 500;
     res.status(code).json({ status: false, message: error.message });
   }

@@ -28,7 +28,7 @@ export const getBillDetail = async (req, res) => {
     if (!billNo) return fail(res, "billNo is required", 400);
 
     const data = await service.getBillDetail(decodeURIComponent(billNo));
-    if (!data) return fail(res, "Bill not found", 404);
+    if (!data) return fail(res, "Weekly billing record not found. Please verify the bill number and try again", 404);
 
     return ok(res, data);
   } catch (err) {
@@ -114,7 +114,7 @@ export const generateBill = async (req, res) => {
       sub_bills, created_by,
     });
 
-    return ok(res, bill, "Bill generated successfully", 201);
+    return ok(res, bill, "Weekly bill generated successfully", 201);
   } catch (err) {
     return fail(res, err.message, err.statusCode || 500);
   }
@@ -128,7 +128,7 @@ export const approveBill = async (req, res) => {
     const approvedBy = req.user?._id || null;
 
     const updated = await service.approveBill(billId, approvedBy);
-    return ok(res, updated, "Bill approved and posted to ledger");
+    return ok(res, updated, "Weekly bill approved and posted to ledger successfully");
   } catch (err) {
     return fail(res, err.message, err.statusCode || 500);
   }
@@ -144,9 +144,9 @@ export const updateStatus = async (req, res) => {
     if (!status) return fail(res, "status is required", 400);
 
     const updated = await service.updateBillStatus(billId, status);
-    if (!updated) return fail(res, "Bill not found", 404);
+    if (!updated) return fail(res, "Weekly billing record not found. Please verify the bill ID and try again", 404);
 
-    return ok(res, updated, `Bill status updated to ${status}`);
+    return ok(res, updated, `Weekly bill status updated to ${status} successfully`);
   } catch (err) {
     return fail(res, err.message, err.statusCode || 500);
   }

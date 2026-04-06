@@ -4,7 +4,7 @@ export const bulkCreateReports = async (req, res) => {
   try {
     const reports = Array.isArray(req.body) ? req.body : req.body.reports;
     const result = await DLPService.bulkCreateReports(reports);
-    res.status(201).json({ status: true, message: "Reports created", count: result.length, data: result });
+    res.status(201).json({ status: true, message: "Daily Labour Reports submitted successfully", count: result.length, data: result });
   } catch (error) {
     res.status(400).json({ status: false, message: error.message });
   }
@@ -13,7 +13,7 @@ export const bulkCreateReports = async (req, res) => {
 export const createReport = async (req, res) => {
   try {
     const report = await DLPService.createReport(req.body);
-    res.status(201).json({ status: true, message: "Report created", data: report });
+    res.status(201).json({ status: true, message: "Daily Labour Report submitted successfully", data: report });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

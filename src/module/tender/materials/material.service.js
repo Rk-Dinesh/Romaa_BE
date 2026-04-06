@@ -177,8 +177,8 @@ class MaterialService {
       await session.commitTransaction();
 
       return {
-        success: true,
-        message: `Stock updated and metadata synced for: ${processedItems.join(", ")}`,
+        status: true,
+        message: `Material stock updated and metadata synced for: ${processedItems.join(", ")}`,
         grn_bill_no:   grnBillNo,
         party_bill_no: partyBillNo,
       };
@@ -275,8 +275,8 @@ class MaterialService {
       await session.commitTransaction();
 
       return {
-        success: true,
-        message: "Materials issued successfully",
+        status: true,
+        message: "Materials issued successfully.",
         details: issuedLog,
       };
     } catch (error) {
@@ -324,7 +324,7 @@ class MaterialService {
    */
   static async getItemLedger(tender_id, item_id) {
     const materialDoc = await MaterialModel.findOne({ tender_id, "items._id": item_id }).lean();
-    if (!materialDoc) throw new Error("Material item not found in the project inventory.");
+    if (!materialDoc) throw new Error("Material item not found in the project inventory. Please verify the Tender ID and item ID.");
 
     const item = materialDoc.items.find((i) => i._id.toString() === item_id);
 

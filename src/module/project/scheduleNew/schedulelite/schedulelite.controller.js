@@ -17,13 +17,13 @@ export const uploadScheduleCSV = async (req, res, next) => {
   try {
     // 1. Basic Validation
     if (!req.file) {
-      return res.status(400).json({ status: false, error: "No file uploaded" });
+      return res.status(400).json({ status: false, message: "No file uploaded. Please attach a CSV file and try again" });
     }
 
     const { created_by_user, tender_id } = req.body;
 
     if (!tender_id) {
-      return res.status(400).json({ status: false, error: "tender_id is required" });
+      return res.status(400).json({ status: false, message: "Tender ID is required to upload a project schedule" });
     }
 
     // 2. Prepare File Path
@@ -33,20 +33,20 @@ export const uploadScheduleCSV = async (req, res, next) => {
     const dataRows = await parseFileToJson(filePath, req.file.originalname);
 
     if (dataRows.length === 0) {
-      return res.status(400).json({ status: false, error: "File is empty" });
+      return res.status(400).json({ status: false, message: "The uploaded file contains no data. Please check the file and try again" });
     }
 
     // 4. Call Service
     const result = await ScheduleLiteService.bulkInsert(dataRows, tender_id);
 
-    res.status(200).json({
+    res.status(201).json({
       status: true,
-      message: "Schedule created successfully",
+      message: "Project schedule created successfully",
       data: result,
     });
 
   } catch (error) {
-    res.status(400).json({ status: false, error: error.message });
+    res.status(500).json({ status: false, message: error.message });
   } finally {
     // 5. Cleanup: Delete file after processing
     if (filePath && fs.existsSync(filePath)) {
@@ -65,13 +65,13 @@ export const uploadScheduleDatesCSV = async (req, res, next) => {
   try {
     // 1. Basic Validation
     if (!req.file) {
-      return res.status(400).json({ status: false, error: "No file uploaded" });
+      return res.status(400).json({ status: false, message: "No file uploaded. Please attach a CSV file and try again" });
     }
 
     const { created_by_user, tender_id } = req.body;
 
     if (!tender_id) {
-      return res.status(400).json({ status: false, error: "tender_id is required" });
+      return res.status(400).json({ status: false, message: "Tender ID is required to update the project schedule" });
     }
 
     // 2. Prepare File Path
@@ -81,7 +81,7 @@ export const uploadScheduleDatesCSV = async (req, res, next) => {
     const dataRows = await parseFileToJson(filePath, req.file.originalname);
 
     if (dataRows.length === 0) {
-      return res.status(400).json({ status: false, error: "File is empty" });
+      return res.status(400).json({ status: false, message: "The uploaded file contains no data. Please check the file and try again" });
     }
 
     // 4. Call Service
@@ -89,12 +89,12 @@ export const uploadScheduleDatesCSV = async (req, res, next) => {
 
     res.status(200).json({
       status: true,
-      message: "Schedule Updated successfully",
+      message: "Project schedule dates updated successfully",
       data: result,
     });
 
   } catch (error) {
-    res.status(400).json({ status: false, error: error.message });
+    res.status(500).json({ status: false, message: error.message });
   } finally {
     // 5. Cleanup: Delete file after processing
     if (filePath && fs.existsSync(filePath)) {
@@ -112,7 +112,7 @@ export const getSchedule = async (req, res) => {
         const { tender_id } = req.params;
 
         if (!tender_id) {
-            return res.status(400).json({ status: false, message: "Tender ID is required" });
+            return res.status(400).json({ status: false, message: "Tender ID is required to retrieve the project schedule" });
         }
 
         const data = await ScheduleLiteService.getPopulatedSchedule(tender_id);
@@ -132,7 +132,7 @@ export const getAllSchedule = async (req, res) => {
         const { tender_id } = req.params;
 
         if (!tender_id) {
-            return res.status(400).json({ status: false, message: "Tender ID is required" });
+            return res.status(400).json({ status: false, message: "Tender ID is required to retrieve all project schedules" });
         }
 
         const data = await ScheduleLiteService.getPopulatedScheduleAll(tender_id);
@@ -152,7 +152,7 @@ export const getDailySchedule = async (req, res) => {
         const { tender_id } = req.params;
 
         if (!tender_id) {
-            return res.status(400).json({ status: false, message: "Tender ID is required" });
+            return res.status(400).json({ status: false, message: "Tender ID is required to retrieve the daily schedule" });
         }
 
         const data = await ScheduleLiteService.getPopulatedScheduleDaily(tender_id);
@@ -176,7 +176,7 @@ export const updateRowSchedule = async (req, res) => {
 
 
         if (!tender_id) {
-            return res.status(400).json({ status: false, message: "Tender ID is required" });
+            return res.status(400).json({ status: false, message: "Tender ID is required to update the project schedule row" });
         }
 
         const data = await ScheduleLiteService.updateRowSchedule(tender_id, payload);
@@ -198,7 +198,7 @@ export const updateDailyQuantity = async (req, res) => {
 
 
         if (!tender_id) {
-            return res.status(400).json({ status: false, message: "Tender ID is required" });
+            return res.status(400).json({ status: false, message: "Tender ID is required to update daily quantities" });
         }
 
         const data = await ScheduleLiteService.updateDailyQuantity(tender_id, payload);
@@ -220,7 +220,7 @@ export const updateDailyQuantityBulk = async (req, res) => {
 
 
         if (!tender_id) {
-            return res.status(400).json({ status: false, message: "Tender ID is required" });
+            return res.status(400).json({ status: false, message: "Tender ID is required to bulk update daily quantities" });
         }
 
         const data = await ScheduleLiteService.bulkUpdateDailyQuantities(tender_id, payload);

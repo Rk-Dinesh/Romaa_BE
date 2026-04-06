@@ -32,7 +32,7 @@ class NMRAttendanceService {
    */
   static async createFromDLP(dlr_id, { verified_by } = {}) {
     const dlr = await DLRModel.findById(dlr_id);
-    if (!dlr) throw new Error("DLP report not found");
+    if (!dlr) throw new Error("Daily Labour Report not found. Please verify the DLP report ID and try again");
 
     // Prevent duplicates: one NMR per project+contractor+date
     const existing = await NMRAttendanceModel.findOne({
@@ -40,7 +40,7 @@ class NMRAttendanceService {
       contractor_id: dlr.contractor_id,
       attendance_date: dlr.report_date,
     });
-    if (existing) throw new Error("NMR attendance already exists for this date and contractor");
+    if (existing) throw new Error("NMR attendance record already exists for this contractor on the selected date");
 
     const attendance_list = dlr.work_entries.map((e) => ({
       worker_id: e.worker_id,
@@ -80,7 +80,7 @@ class NMRAttendanceService {
   // Get a single record with full attendance_list
   static async getById(id) {
     const record = await NMRAttendanceModel.findById(id);
-    if (!record) throw new Error("NMR Attendance record not found");
+    if (!record) throw new Error("NMR attendance record not found. Please verify the record ID and try again");
     return record;
   }
 
@@ -168,8 +168,8 @@ class NMRAttendanceService {
   // Update attendance_list on a SUBMITTED record
   static async updateAttendance(id, payload) {
     const record = await NMRAttendanceModel.findById(id);
-    if (!record) throw new Error("NMR Attendance record not found");
-    if (record.status !== "SUBMITTED") throw new Error("Only SUBMITTED records can be edited");
+    if (!record) throw new Error("NMR attendance record not found. Please verify the record ID and try again");
+    if (record.status !== "SUBMITTED") throw new Error("Only submitted attendance records can be modified. Current status: " + record.status);
 
     if (payload.attendance_list !== undefined) {
       record.attendance_list = payload.attendance_list.map((w) => ({
@@ -190,7 +190,7 @@ class NMRAttendanceService {
   // Approve a record
   static async approveAttendance(id, verified_by) {
     const record = await NMRAttendanceModel.findById(id);
-    if (!record) throw new Error("NMR Attendance record not found");
+    if (!record) throw new Error("NMR attendance record not found. Please verify the record ID and try again");
     record.status = "APPROVED";
     if (verified_by) record.verified_by = verified_by;
     return await record.save();
