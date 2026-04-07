@@ -102,6 +102,7 @@ export const uploadBidCSV = async (req, res, next) => {
       revision,
       prepared_by,
       approved_by,
+      gst,
     } = req.body;
     if (!created_by_user)
       return res.status(400).json({ status: false, message: "Created by user is required." });
@@ -127,6 +128,7 @@ export const uploadBidCSV = async (req, res, next) => {
       parsedRevision,
       prepared_by,
       approved_by,
+      gst,
     );
     res
       .status(200)

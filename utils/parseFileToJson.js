@@ -52,7 +52,7 @@ export const parseFileToJson = (filePath, originalName) => {
           rows.push(rowData);
         });
 
-        resolve(rows);
+        resolve(rows.filter((r) => Object.values(r).some((v) => v !== null && v !== undefined && v !== "")));
       } catch (err) {
         reject(err);
       }
@@ -72,7 +72,10 @@ export const parseFileToJson = (filePath, originalName) => {
             trimmedRow[cleanKey] =
               typeof value === "string" ? value.trim() : value;
           }
-          rows.push(trimmedRow);
+          // Skip rows where every value is empty (trailing newline in CSV)
+          if (Object.values(trimmedRow).some((v) => v !== "")) {
+            rows.push(trimmedRow);
+          }
         })
         .on("end", () => resolve(rows))
         .on("error", (error) => reject(error));

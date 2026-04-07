@@ -115,7 +115,8 @@ class BidService {
     phase = "",
     parsedRevision = 1,
     prepared_by = "",
-    approved_by = ""
+    approved_by = "",
+    gst = 0
   ) {
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -247,6 +248,7 @@ class BidService {
         bid.prepared_by = prepared_by || bid.prepared_by;
         bid.approved_by = approved_by || bid.approved_by;
         bid.created_by_user = createdByUser || bid.created_by_user;
+        bid.gst = gst !== undefined ? Number(gst) : bid.gst;
       } else {
         const idNameBid = "BID";
         const idCodeBid = "BID";
@@ -272,6 +274,7 @@ class BidService {
           prepared_by,
           approved_by,
           created_by_user: createdByUser,
+          gst: gst !== undefined ? Number(gst) : 0,
           prepared_date: new Date(),
           approved_date: new Date(),
         });

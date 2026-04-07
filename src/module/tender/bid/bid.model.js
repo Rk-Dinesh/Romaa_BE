@@ -42,6 +42,7 @@ const bidSchema = new mongoose.Schema(
         uploaded_at: { type: Date, default: Date.now }
       }
     ],
+    gst: { type: Number, default: 0 },                       // GST percentage
     created_by_user: { type: String, default: "ADMIN" },    // Origin user
     // Audit
     deleted: { type: Boolean, default: false },      // Soft-delete flag (optional)
