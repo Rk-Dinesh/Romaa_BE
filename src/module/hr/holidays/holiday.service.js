@@ -65,20 +65,52 @@ class CalendarService {
     const targetDate = new Date(dateInput);
     targetDate.setUTCHours(0, 0, 0, 0);
 
-    // A. Check Weekly Offs (e.g., Sunday)
-    // 0 = Sunday, 6 = Saturday
-    const dayOfWeek = targetDate.getDay();
+    const dayOfWeek = targetDate.getDay(); // 0=Sun, 6=Sat
+
+    // A. Sunday → always off
     if (dayOfWeek === 0) {
       return { isWorkingDay: false, reason: "Weekly Off (Sunday)" };
     }
 
-    // B. Check Specific Holidays
+    // B. 2nd / 4th Saturday → off
+    if (CalendarService.isSecondOrFourthSaturday(targetDate)) {
+      return { isWorkingDay: false, reason: "Weekly Off (2nd/4th Saturday)" };
+    }
+
+    // C. Named holiday in DB
     const holiday = await HolidayModel.findOne({ date: targetDate });
     if (holiday) {
       return { isWorkingDay: false, reason: holiday.name };
     }
 
     return { isWorkingDay: true, reason: "Regular Working Day" };
+  }
+
+  // --- 4a. DELETE HOLIDAY ---
+  static async deleteHoliday(id) {
+    const holiday = await HolidayModel.findByIdAndDelete(id);
+    if (!holiday) throw { statusCode: 404, message: "Holiday not found" };
+    return holiday;
+  }
+
+  // --- 4b. UPDATE HOLIDAY ---
+  static async updateHoliday(id, data) {
+    const { date, name, type, description } = data;
+    const update = {};
+    if (name)        update.name = name;
+    if (type)        update.type = type;
+    if (description) update.description = description;
+    if (date) {
+      const d = new Date(date);
+      d.setUTCHours(0, 0, 0, 0);
+      // Check for collision with another document
+      const clash = await HolidayModel.findOne({ date: d, _id: { $ne: id } });
+      if (clash) throw { statusCode: 409, message: "Another holiday already exists on that date" };
+      update.date = d;
+    }
+    const updated = await HolidayModel.findByIdAndUpdate(id, { $set: update }, { new: true });
+    if (!updated) throw { statusCode: 404, message: "Holiday not found" };
+    return updated;
   }
 
 static isSecondOrFourthSaturday(dateObj) {
@@ -93,7 +125,7 @@ static isSecondOrFourthSaturday(dateObj) {
     return weekNumber === 2 || weekNumber === 4;
   }
 
-  // --- 4. BULK INSERT WITH AUTO-WEEKOFF CALCULATION ---
+  // --- 5. BULK INSERT WITH AUTO-WEEKOFF CALCULATION ---
 static async bulkInsertHolidaysFromCsv(csvRows) {
     // We use a Map to ensure unique dates (Key: Date Timestamp)
     const operationsMap = new Map(); 

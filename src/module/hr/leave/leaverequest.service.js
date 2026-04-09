@@ -48,14 +48,13 @@ class LeaveService {
 
   // --- HELPER: Remove Attendance on Cancellation ---
   static async clearAttendanceForLeave(leaveRequest) {
-    // Delete the "On Leave" records for this range.
-    // Safety Check: We ONLY delete records that don't have a check-in time.
-    // This prevents deleting a record where they came to work despite being on leave.
+    // Only delete records that have no actual punch-in (timeline is empty).
+    // Preserves records where they physically came to work despite being on leave.
     await UserAttendanceModel.deleteMany({
       employeeId: leaveRequest.employeeId,
       date: { $gte: leaveRequest.fromDate, $lte: leaveRequest.toDate },
       status: "On Leave",
-      "checkIn.time": { $exists: false },
+      "timeline.0": { $exists: false },
     });
   }
 
@@ -272,16 +271,17 @@ class LeaveService {
     const leaveRequest = await LeaveRequestModel.findById(leaveRequestId);
     if (!leaveRequest) throw { statusCode: 404, message: "Request not found." };
 
-    // Prevent re-approving
-    if (
-      ["Approved", "Rejected", "Cancelled", "HR Approved","Manager Approved"].includes(
-        leaveRequest.status,
-      )
-    ) {
-      throw {
-        statusCode: 400,
-        message: `Request is already ${leaveRequest.status}`,
-      };
+    // State machine guard
+    if (action === "Approve") {
+      if (role === "Manager" && leaveRequest.status !== "Pending") {
+        throw { statusCode: 400, message: `Cannot approve: request is already ${leaveRequest.status}` };
+      }
+      if (role === "HR" && leaveRequest.status !== "Manager Approved") {
+        throw { statusCode: 400, message: `HR can only approve Manager-approved requests. Current status: ${leaveRequest.status}` };
+      }
+    }
+    if (action === "Reject" && ["Rejected", "Cancelled", "HR Approved"].includes(leaveRequest.status)) {
+      throw { statusCode: 400, message: `Request is already ${leaveRequest.status}` };
     }
 
     if (action === "Approve") {
@@ -353,11 +353,16 @@ class LeaveService {
       // 3. Auto-Sync Attendance
       await this.fillAttendanceForLeave(leaveRequest);
 
-      // 4. Update Status (If HR role involved, might go to "HR Approved", else "Approved")
-      // Assuming Manager Approval is final for now based on your flow:
-      leaveRequest.status = "Manager Approved";
-      leaveRequest.finalApprovedBy = actionBy;
-      leaveRequest.finalApprovalDate = new Date();
+      // 4. Update Status based on approver role:
+      //    Manager → "Manager Approved" (awaiting HR sign-off)
+      //    HR      → "HR Approved"      (fully approved)
+      if (role === "HR") {
+        leaveRequest.status = "HR Approved";
+        leaveRequest.finalApprovedBy = actionBy;
+        leaveRequest.finalApprovalDate = new Date();
+      } else {
+        leaveRequest.status = "Manager Approved";
+      }
     } else if (action === "Reject") {
       leaveRequest.status = "Rejected";
       leaveRequest.rejectionReason = remarks;
@@ -405,10 +410,11 @@ class LeaveService {
       throw { statusCode: 400, message: "Request is already inactive" };
     }
 
-    // A. Refund Balance (If it was approved and not LWP)
+    // A. Refund balance if leave was already approved (Manager or HR)
     if (
-      leaveRequest.status === "Approved" &&
-      leaveRequest.leaveType !== "LWP"
+      ["Manager Approved", "HR Approved"].includes(leaveRequest.status) &&
+      leaveRequest.leaveType !== "LWP" &&
+      leaveRequest.leaveType !== "CompOff"
     ) {
       await EmployeeModel.findByIdAndUpdate(leaveRequest.employeeId, {
         $inc: {
@@ -416,8 +422,8 @@ class LeaveService {
         },
       });
 
-      // B. [FIX] Clear Attendance Records
-      // await this.clearAttendanceForLeave(leaveRequest);
+      // B. Clear the pre-filled "On Leave" attendance records
+      await this.clearAttendanceForLeave(leaveRequest);
     }
 
     leaveRequest.status = "Cancelled";
@@ -443,11 +449,9 @@ class LeaveService {
       .populate("coveringEmployeeId", "name designation");
   }
 
-  // --- 5. GET PENDING APPROVALS ---
+  // --- 5. GET PENDING APPROVALS (Manager view) ---
   static async getPendingLeavesForManager(managerId) {
-    const team = await EmployeeModel.find({ reportsTo: managerId }).select(
-      "_id",
-    );
+    const team = await EmployeeModel.find({ reportsTo: managerId }).select("_id");
     const teamIds = team.map((t) => t._id);
 
     return await LeaveRequestModel.find({
@@ -456,6 +460,23 @@ class LeaveService {
     })
       .populate("employeeId", "name designation photoUrl leaveBalance")
       .sort({ fromDate: 1 });
+  }
+
+  // --- 6. GET ALL LEAVES (HR view) ---
+  // Returns Pending OR Manager-approved leaves across the entire company
+  static async getAllPendingLeaves({ status, fromDate, toDate } = {}) {
+    const query = {};
+    if (status) {
+      query.status = status;
+    } else {
+      query.status = { $in: ["Pending", "Manager Approved"] };
+    }
+    if (fromDate) query.fromDate = { $gte: new Date(fromDate) };
+    if (toDate)   query.toDate   = { $lte: new Date(toDate) };
+
+    return await LeaveRequestModel.find(query)
+      .populate("employeeId", "name designation department photoUrl")
+      .sort({ createdAt: 1 });
   }
 }
 

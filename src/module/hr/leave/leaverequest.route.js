@@ -1,21 +1,27 @@
 import { Router } from "express";
-import { 
-  applyLeave, 
-  actionLeave, 
-  getMyLeaves, 
+import {
+  applyLeave,
+  actionLeave,
+  getMyLeaves,
   cancelLeave,
-  getTeamLeaves 
+  getTeamLeaves,
+  getAllPendingLeaves,
 } from "./leaverequest.controller.js";
+import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 
 const LeaveRoute = Router();
 
-// Employee Actions
-LeaveRoute.post("/apply", applyLeave);
-LeaveRoute.get("/my-history", getMyLeaves); // ?employeeId=...
+// Employee actions
+LeaveRoute.post("/apply",       verifyJWT, applyLeave);
+LeaveRoute.get("/my-history",   verifyJWT, getMyLeaves);
+LeaveRoute.post("/cancel",      verifyJWT, cancelLeave);
 
-// Manager Actions
-LeaveRoute.get("/team-pending", getTeamLeaves); // ?managerId=...
-LeaveRoute.post("/action", actionLeave); // Approve/Reject
-LeaveRoute.post("/cancel", cancelLeave); // Cancel Leave
+// Manager actions
+LeaveRoute.get("/team-pending", verifyJWT, getTeamLeaves);
+LeaveRoute.post("/action",      verifyJWT, actionLeave); // role:"Manager" → Manager Approved
+
+// HR actions
+LeaveRoute.get("/all-pending",  verifyJWT, verifyPermission("hr", "leave", "read"),   getAllPendingLeaves);
+// HR second-level approval reuses the same /action endpoint with role:"HR" in body
 
 export default LeaveRoute;

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { getDistanceFromLatLonInMeters } from "../../../../utils/geofunction.js";
 import CalendarService from "../holidays/holiday.service.js";
 import LeaveRequestModel from "../leave/leaverequest.model.js";
@@ -907,8 +908,8 @@ static async getEmployeeMonthlyStats(employeeId, month, year) {
       return {
         date: att.date.toISOString().split("T")[0],
         status: status,
-        inTime: timeline.length > 0 ? timeline[0].time : "--:--",
-        outTime: lastPunch ? lastPunch.time : "--:--",
+        inTime: timeline.length > 0 && timeline[0].timestamp ? new Date(timeline[0].timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "--:--",
+        outTime: lastPunch?.timestamp ? new Date(lastPunch.timestamp).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "--:--",
         isLate: att.flags?.isLateEntry || false,
         isRegularized: att.regularization?.status === "Approved",
       };

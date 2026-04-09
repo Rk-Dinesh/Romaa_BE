@@ -37,7 +37,7 @@ class EmployeeService {
   // --- 2. Login Logic ---
   static async loginUser(email, password) {
     // A. Find User
-    const user = await EmployeeModel.findOne({ email }).select("+password").populate("role");
+    const user = await EmployeeModel.findOne({ email, isDeleted: { $ne: true } }).select("+password").populate("role");
     if (!user) throw new Error("No account found with this email address. Please check your credentials and try again");
 
     // B. Check Password

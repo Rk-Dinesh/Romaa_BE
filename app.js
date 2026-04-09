@@ -42,6 +42,8 @@ import machinerylogrouter from "./src/module/assets/machinerylogs/machinerylogs.
 import AttendanceRoute from "./src/module/hr/userAttendance/userAttendance.route.js";
 import CalendarRoute from "./src/module/hr/holidays/holiday.route.js";
 import LeaveRoute from "./src/module/hr/leave/leaverequest.route.js";
+import GeofenceRoute from "./src/module/hr/geofence/geofence.route.js";
+import PayrollRoute from "./src/module/hr/payroll/payroll.route.js";
 import { startAbsenteeismCron } from "./utils/dailyAbsenteeism.js";
 import cron from "node-cron";
 import hsnSacRouter from "./src/module/master/hsnmaster/hsnsac.router.js";
@@ -186,6 +188,8 @@ app.use("/machinerylogs", machinerylogrouter);
 app.use("/attendance", AttendanceRoute);
 app.use("/calendar", CalendarRoute);
 app.use("/leave", LeaveRoute);
+app.use("/geofence", GeofenceRoute);
+app.use("/payroll", PayrollRoute);
 app.use("/hsn", hsnSacRouter);
 app.use("/notification", notificationRoute);
 app.use("/dashboard", dashboardRoute);

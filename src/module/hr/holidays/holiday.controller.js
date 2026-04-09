@@ -36,6 +36,24 @@ export const getHolidaysList = async (req, res) => {
   }
 };
 
+export const deleteHoliday = async (req, res) => {
+  try {
+    await CalendarService.deleteHoliday(req.params.id);
+    res.status(200).json({ status: true, message: "Holiday deleted successfully" });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ status: false, message: err.message });
+  }
+};
+
+export const updateHoliday = async (req, res) => {
+  try {
+    const result = await CalendarService.updateHoliday(req.params.id, req.body);
+    res.status(200).json({ status: true, message: "Holiday updated successfully", data: result });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ status: false, message: err.message });
+  }
+};
+
 export const bulkInsertHolidaysController = async (req, res, next) => {
   let filePath = null;
   try {
