@@ -20,6 +20,15 @@ class detailedestimateService {
     }
 
     const headingKeyPrefix = heading.toLowerCase();
+
+    // Check for duplicate heading
+    const existingHeading = detailedEstimate.detailed_estimate[0].customheadings.find(
+      (h) => h.heading.toLowerCase() === headingKeyPrefix
+    );
+    if (existingHeading) {
+      throw new Error(`Heading '${heading}' already exists. Duplicate headings are not allowed.`);
+    }
+
     const newHeading = {
       heading,
       [`${headingKeyPrefix}abstract`]: abstract,
@@ -106,6 +115,20 @@ class detailedestimateService {
           `Abstract ID(s) ${missingIds.join(", ")} do not exist in the Bill of Quantities. Please verify the IDs and try again.`,
         );
       }
+      // Check for duplicates against existing data in DB
+      const headingObj = estimate.customheadings?.find(
+        (h) => h.heading === baseHeading,
+      );
+      if (headingObj && headingObj[key]) {
+        const existingIds = new Set(headingObj[key].map((item) => item.abstract_id));
+        const alreadyExists = csvAbstractIds.filter((id) => existingIds.has(id));
+        if (alreadyExists.length > 0) {
+          throw new Error(
+            `Abstract ID(s) ${alreadyExists.join(", ")} already exist in '${key}'. Duplicate entries are not allowed.`,
+          );
+        }
+      }
+
       for (const row of csvRows) {
         const amount = Number(row.amount) || 0;
         dataArray.push({
@@ -162,6 +185,17 @@ class detailedestimateService {
         );
       }
 
+      // Check for duplicates against existing detailed data in DB
+      if (headingObj[key] && headingObj[key].length > 0) {
+        const existingDetailedIds = new Set(headingObj[key].map((item) => item.abstract_id));
+        const alreadyExists = [...new Set(csvAbstractIds)].filter((id) => existingDetailedIds.has(id));
+        if (alreadyExists.length > 0) {
+          throw new Error(
+            `Detailed entries for Abstract ID(s) ${alreadyExists.join(", ")} already exist in '${key}'. Duplicate entries are not allowed.`,
+          );
+        }
+      }
+
       const grouped = {};
       for (const row of csvRows) {
         if (!grouped[row.abstract_id]) {
@@ -213,6 +247,12 @@ class detailedestimateService {
     headingObj[key].push(...dataArray);
 
     if (type === "abstract") {
+      // Check for duplicate heading in generalabstract
+      const existingGA = estimate.generalabstract.find((g) => g.heading === baseHeading);
+      if (existingGA) {
+        throw new Error(`Heading '${baseHeading}' already exists in General Abstract. Duplicate headings are not allowed.`);
+      }
+
       estimate.generalabstract.push({
         heading: baseHeading,
         total_amount: totalAmount,
@@ -361,6 +401,30 @@ class detailedestimateService {
             throw new Error(`Abstract ID(s) ${missingIds.join(", ")} do not exist in the Bill of Quantities. Please verify the IDs and try again.`);
         }
 
+        // Check for duplicates against existing abstract data in DB
+        const existingHeadingObj = estimate.customheadings?.find(
+          (h) => h.heading === baseHeading,
+        );
+        if (existingHeadingObj && existingHeadingObj[abstractKey]) {
+          const existingAbstractIds = new Set(existingHeadingObj[abstractKey].map((item) => item.abstract_id));
+          const alreadyExists = csvAbstractIds.filter((id) => existingAbstractIds.has(id));
+          if (alreadyExists.length > 0) {
+            throw new Error(
+              `Abstract ID(s) ${alreadyExists.join(", ")} already exist in '${abstractKey}'. Duplicate entries are not allowed.`,
+            );
+          }
+        }
+
+        // Check for duplicate heading in generalabstract
+        const existingGeneralAbstract = estimate.generalabstract?.find(
+          (g) => g.heading === baseHeading,
+        );
+        if (existingGeneralAbstract) {
+          throw new Error(
+            `Heading '${baseHeading}' already exists in General Abstract. Duplicate headings are not allowed.`,
+          );
+        }
+
         // Prepare Abstract Data for DB
         for (const row of abstractRows) {
             const amount = Number(row.amount) || 0;
@@ -384,6 +448,23 @@ class detailedestimateService {
     const detailedDataArray = [];
 
     if (detailedRows.length > 0) {
+        // Check for duplicates against existing detailed data in DB
+        const detailedEstimateDoc = await DetailedEstimateModel.findOne({ tender_id });
+        if (detailedEstimateDoc) {
+          const est = detailedEstimateDoc.detailed_estimate[0];
+          const existingHeadObj = est?.customheadings?.find((h) => h.heading === baseHeading);
+          if (existingHeadObj && existingHeadObj[detailedKey] && existingHeadObj[detailedKey].length > 0) {
+            const existingDetailedIds = new Set(existingHeadObj[detailedKey].map((item) => item.abstract_id));
+            const csvDetailedIds = [...new Set(detailedRows.map((r) => r.abstract_id))];
+            const alreadyExists = csvDetailedIds.filter((id) => existingDetailedIds.has(id));
+            if (alreadyExists.length > 0) {
+              throw new Error(
+                `Detailed entries for Abstract ID(s) ${alreadyExists.join(", ")} already exist in '${detailedKey}'. Duplicate entries are not allowed.`,
+              );
+            }
+          }
+        }
+
         // Group detailed rows by their abstract_id
         const grouped = {};
         for (const row of detailedRows) {
