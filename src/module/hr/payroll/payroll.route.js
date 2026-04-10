@@ -7,6 +7,7 @@ import {
   getMonthlyPayrollRun,
   updatePayrollStatus,
   updateTax,
+  exportBankExcel,
 } from "./payroll.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 
@@ -22,5 +23,6 @@ PayrollRoute.get("/monthly-run",        verifyJWT, verifyPermission("hr", "payro
 PayrollRoute.get("/employee/:employeeId", verifyJWT, verifyPermission("hr", "payroll", "read"), getEmployeePayroll);
 PayrollRoute.put("/status/:id",         verifyJWT, verifyPermission("hr", "payroll", "edit"),   updatePayrollStatus);
 PayrollRoute.put("/tax/:id",            verifyJWT, verifyPermission("hr", "payroll", "edit"),   updateTax);
+PayrollRoute.get("/export-excel",       verifyJWT, verifyPermission("hr", "payroll", "read"),   exportBankExcel);
 
 export default PayrollRoute;

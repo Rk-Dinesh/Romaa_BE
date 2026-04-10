@@ -135,6 +135,19 @@ Net Pay is recalculated automatically.
 
 ---
 
+### GET `/payroll/export-excel`
+Download payroll as `.xlsx` for the given month. Permission: `hr.payroll.read`
+
+**Query:** `?month=4&year=2026`
+
+**Response:** Binary `.xlsx` file download (`Content-Disposition: attachment`)
+
+Contains two sheets:
+- **Bank Transfer** — Employee, Bank Name, Account No., IFSC, Net Pay (ready for NEFT upload)
+- **Payroll Detail** — Full breakdown: earnings, deductions, attendance summary per employee
+
+---
+
 ## Payroll Status Flow
 
 ```

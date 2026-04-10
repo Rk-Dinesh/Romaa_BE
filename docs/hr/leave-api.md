@@ -9,17 +9,17 @@ All routes require JWT (`accessToken` cookie or `Authorization: Bearer <token>`)
 
 ## Leave Types
 
-| Type | Balance Field | Notes |
-|---|---|---|
-| `CL` | `leaveBalance.CL` | Casual Leave (default: 12) |
-| `SL` | `leaveBalance.SL` | Sick Leave (default: 12) |
-| `PL` | `leaveBalance.PL` | Privilege / Earned Leave |
-| `LWP` | — | Leave Without Pay — no balance needed |
-| `CompOff` | `leaveBalance.compOff[]` | FIFO deduction from earned comp-offs |
-| `Maternity` | — | No balance check |
-| `Paternity` | — | No balance check |
-| `Bereavement` | — | No balance check |
-| `Permission` | — | Short leave, max 3/month |
+| Type | Balance Field | Default Entitlement | Notes |
+|---|---|---|---|
+| `CL` | `leaveBalance.CL` | 12 days | Casual Leave |
+| `SL` | `leaveBalance.SL` | 12 days | Sick Leave |
+| `PL` | `leaveBalance.PL` | 0 (accrues) | Privilege / Earned Leave |
+| `Maternity` | `leaveBalance.Maternity` | 84 days | Per Maternity Benefit Act |
+| `Paternity` | `leaveBalance.Paternity` | 15 days | Standard company policy |
+| `Bereavement` | `leaveBalance.Bereavement` | 5 days | Immediate family only |
+| `LWP` | — | — | No balance needed |
+| `CompOff` | `leaveBalance.compOff[]` | Earned | FIFO deduction from comp-off credits |
+| `Permission` | — | Max 3/month | Short leave (no day deduction) |
 
 ---
 

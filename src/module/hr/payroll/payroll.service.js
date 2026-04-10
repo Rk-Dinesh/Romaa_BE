@@ -1,3 +1,4 @@
+import ExcelJS from "exceljs";
 import { PayrollModel } from "./payroll.model.js";
 import EmployeeModel from "../employee/employee.model.js";
 import UserAttendanceModel from "../userAttendance/userAttendance.model.js";
@@ -162,6 +163,121 @@ class PayrollService {
       + taxAmount + payroll.deductions.lwpDeduction;
     payroll.netPay = Math.max(0, payroll.earnings.grossPay - payroll.deductions.totalDeductions);
     return await payroll.save();
+  }
+
+  // --- 7. BANK EXPORT — Returns an ExcelJS Workbook buffer ---
+  // Produces two sheets: (1) Bank Transfer Sheet  (2) Full Payroll Detail
+  static async exportBankExcel(month, year) {
+    const records = await PayrollModel.find({ month: parseInt(month), year: parseInt(year) })
+      .populate("employeeId", "name employeeId designation department payroll")
+      .sort({ netPay: -1 })
+      .lean();
+
+    if (!records.length) throw { statusCode: 404, message: `No payroll records found for ${month}/${year}` };
+
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = "Romaa HR";
+    workbook.created = new Date();
+
+    // ── Sheet 1: Bank Transfer (NEFT format) ──────────────────────────────
+    const bankSheet = workbook.addWorksheet("Bank Transfer");
+    bankSheet.columns = [
+      { header: "Sr No",          key: "sr",        width: 6  },
+      { header: "Employee ID",    key: "empId",     width: 12 },
+      { header: "Employee Name",  key: "name",      width: 28 },
+      { header: "Bank Name",      key: "bank",      width: 20 },
+      { header: "Account Number", key: "account",   width: 20 },
+      { header: "IFSC Code",      key: "ifsc",      width: 14 },
+      { header: "Net Pay (₹)",    key: "netPay",    width: 14 },
+      { header: "Status",         key: "status",    width: 12 },
+    ];
+
+    // Style header row
+    bankSheet.getRow(1).font = { bold: true };
+    bankSheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A5F" } };
+    bankSheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+
+    records.forEach((r, i) => {
+      bankSheet.addRow({
+        sr:      i + 1,
+        empId:   r.employeeId?.employeeId || "—",
+        name:    r.employeeId?.name       || "—",
+        bank:    r.employeeId?.payroll?.bankName      || "—",
+        account: r.employeeId?.payroll?.accountNumber || "—",
+        ifsc:    r.employeeId?.payroll?.ifscCode      || "—",
+        netPay:  r.netPay,
+        status:  r.status,
+      });
+    });
+
+    // Total row
+    const totalRow = bankSheet.addRow({
+      sr: "", empId: "", name: "TOTAL", bank: "", account: "", ifsc: "",
+      netPay: records.reduce((s, r) => s + r.netPay, 0),
+      status: "",
+    });
+    totalRow.font = { bold: true };
+
+    // ── Sheet 2: Full Payroll Detail ──────────────────────────────────────
+    const detailSheet = workbook.addWorksheet("Payroll Detail");
+    detailSheet.columns = [
+      { header: "Employee ID",   key: "empId",        width: 12 },
+      { header: "Name",          key: "name",         width: 24 },
+      { header: "Department",    key: "dept",         width: 16 },
+      { header: "Working Days",  key: "workDays",     width: 14 },
+      { header: "Present Days",  key: "presentDays",  width: 14 },
+      { header: "LWP Days",      key: "lwp",          width: 10 },
+      { header: "Basic (₹)",     key: "basic",        width: 12 },
+      { header: "HRA (₹)",       key: "hra",          width: 12 },
+      { header: "DA (₹)",        key: "da",           width: 12 },
+      { header: "OT Pay (₹)",    key: "otPay",        width: 12 },
+      { header: "Gross Pay (₹)", key: "gross",        width: 14 },
+      { header: "PF (₹)",        key: "pf",           width: 12 },
+      { header: "ESI (₹)",       key: "esi",          width: 12 },
+      { header: "TDS (₹)",       key: "tds",          width: 12 },
+      { header: "LWP Dedn (₹)",  key: "lwpDedn",      width: 14 },
+      { header: "Total Dedn (₹)",key: "totalDedn",    width: 14 },
+      { header: "Net Pay (₹)",   key: "netPay",       width: 14 },
+      { header: "Status",        key: "status",       width: 12 },
+    ];
+
+    detailSheet.getRow(1).font = { bold: true };
+    detailSheet.getRow(1).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1E3A5F" } };
+    detailSheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+
+    records.forEach((r) => {
+      detailSheet.addRow({
+        empId:       r.employeeId?.employeeId                          || "—",
+        name:        r.employeeId?.name                                || "—",
+        dept:        r.employeeId?.department                          || "—",
+        workDays:    r.attendanceSummary?.totalWorkingDays             || 0,
+        presentDays: r.attendanceSummary?.presentDays                  || 0,
+        lwp:         r.attendanceSummary?.lwp                          || 0,
+        basic:       r.earnings?.basic                                 || 0,
+        hra:         r.earnings?.hra                                   || 0,
+        da:          r.earnings?.da                                    || 0,
+        otPay:       r.earnings?.overtimePay                           || 0,
+        gross:       r.earnings?.grossPay                              || 0,
+        pf:          r.deductions?.pf                                  || 0,
+        esi:         r.deductions?.esi                                 || 0,
+        tds:         r.deductions?.tax                                 || 0,
+        lwpDedn:     r.deductions?.lwpDeduction                        || 0,
+        totalDedn:   r.deductions?.totalDeductions                     || 0,
+        netPay:      r.netPay                                          || 0,
+        status:      r.status,
+      });
+    });
+
+    // Alternate row shading
+    detailSheet.eachRow((row, rowNum) => {
+      if (rowNum > 1 && rowNum % 2 === 0) {
+        row.eachCell((cell) => {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF0F4F8" } };
+        });
+      }
+    });
+
+    return await workbook.xlsx.writeBuffer();
   }
 }
 

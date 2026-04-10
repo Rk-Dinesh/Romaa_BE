@@ -1,4 +1,5 @@
 import LeaveService from "./leaverequest.service.js";
+import LeaveBalanceHistoryService from "./leaveBalanceHistory.service.js";
 
 export const applyLeave = async (req, res) => {
   try {
@@ -47,6 +48,30 @@ export const getTeamLeaves = async (req, res) => {
     // Manager views their own team; HR can pass ?managerId= to view any manager's team
     const managerId = req.query.managerId || req.user._id;
     const data = await LeaveService.getPendingLeavesForManager(managerId);
+    res.status(200).json({ status: true, data });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+};
+
+// Employee or HR: leave balance transaction history
+export const getBalanceHistory = async (req, res) => {
+  try {
+    // Employee views their own; HR can pass ?employeeId= to view anyone
+    const employeeId = req.query.employeeId || req.user._id;
+    const { leaveType, changeType, page, limit } = req.query;
+    const data = await LeaveBalanceHistoryService.getHistory(employeeId, { leaveType, changeType, page, limit });
+    res.status(200).json({ status: true, data });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+};
+
+export const getYearlySummary = async (req, res) => {
+  try {
+    const employeeId = req.query.employeeId || req.user._id;
+    const year = parseInt(req.query.year) || new Date().getFullYear();
+    const data = await LeaveBalanceHistoryService.getYearlySummary(employeeId, year);
     res.status(200).json({ status: true, data });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });

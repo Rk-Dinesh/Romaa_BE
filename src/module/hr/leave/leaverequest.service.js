@@ -3,6 +3,7 @@ import EmployeeModel from "../employee/employee.model.js";
 import UserAttendanceModel from "../userAttendance/userAttendance.model.js";
 import CalendarService from "../holidays/holiday.service.js";
 import NotificationService from "../../notifications/notification.service.js";
+import LeaveBalanceHistoryService from "./leaveBalanceHistory.service.js";
 
 class LeaveService {
   // --- HELPER: Auto-Fill Attendance on Approval ---
@@ -207,14 +208,20 @@ class LeaveService {
     const employee = await EmployeeModel.findById(employeeId);
     if (!employee) throw { statusCode: 404, message: "Employee not found." };
 
+    // Leave types that use numeric balance fields
+    const BALANCE_CHECKED_TYPES = ["CL", "SL", "PL", "Maternity", "Paternity", "Bereavement"];
+
     if (requestType !== "Short Leave") {
-      const currentBalance = employee.leaveBalance[leaveType] || 0;
-      if (leaveType !== "LWP" && currentBalance < calculatedDays) {
-        throw {
-          statusCode: 400,
-          message: `Insufficient ${leaveType} balance. Need: ${calculatedDays}, Available: ${currentBalance}`,
-        };
+      if (BALANCE_CHECKED_TYPES.includes(leaveType)) {
+        const currentBalance = employee.leaveBalance[leaveType] ?? 0;
+        if (currentBalance < calculatedDays) {
+          throw {
+            statusCode: 400,
+            message: `Insufficient ${leaveType} balance. Need: ${calculatedDays}, Available: ${currentBalance}`,
+          };
+        }
       }
+      // LWP, CompOff, Permission — handled separately (CompOff uses array logic in actionLeave)
     }
 
     // ---------------------------------------------------------
@@ -322,33 +329,49 @@ class LeaveService {
         // Mark them as USED
         for (let i = 0; i < daysToDeduct; i++) {
           const originalIndex = validIndices[i].index;
-          // Update the specific credit in the main array
           employee.leaveBalance.compOff[originalIndex].isUsed = true;
         }
 
-        // Save the updates to the array
         await employee.save();
+
+        // Log CompOff debit (array credits, so balanceBefore = validIndices.length)
+        await LeaveBalanceHistoryService.logDebit({
+          employeeId:    leaveRequest.employeeId,
+          leaveType:     "CompOff",
+          amount:        daysToDeduct,
+          balanceBefore: validIndices.length,
+          leaveRequestId: leaveRequest._id,
+          performedBy:   actionBy,
+          reason: `CompOff Approved (${role}) — ${leaveRequest.fromDate.toISOString().split("T")[0]} to ${leaveRequest.toDate.toISOString().split("T")[0]}`,
+        });
       }
 
       // ---------------------------------------------------------
-      // SCENARIO B: STANDARD LEAVES (CL, SL, PL - Simple Number)
+      // SCENARIO B: BALANCE-TRACKED LEAVES (CL, SL, PL, Maternity, Paternity, Bereavement)
       // ---------------------------------------------------------
-      else if (
-        leaveRequest.leaveType !== "LWP" &&
-        leaveRequest.leaveType !== "Permission"
-      ) {
-        if (
-          employee.leaveBalance[leaveRequest.leaveType] < leaveRequest.totalDays
-        ) {
+      else if (["CL", "SL", "PL", "Maternity", "Paternity", "Bereavement"].includes(leaveRequest.leaveType)) {
+        const available = employee.leaveBalance[leaveRequest.leaveType] ?? 0;
+        if (available < leaveRequest.totalDays) {
           throw {
             statusCode: 400,
-            message: `Cannot Approve. Insufficient balance.`,
+            message: `Cannot Approve. Insufficient ${leaveRequest.leaveType} balance. Available: ${available}, Required: ${leaveRequest.totalDays}`,
           };
         }
-
         employee.leaveBalance[leaveRequest.leaveType] -= leaveRequest.totalDays;
         await employee.save();
+
+        // Log balance debit
+        await LeaveBalanceHistoryService.logDebit({
+          employeeId:    leaveRequest.employeeId,
+          leaveType:     leaveRequest.leaveType,
+          amount:        leaveRequest.totalDays,
+          balanceBefore: available,
+          leaveRequestId: leaveRequest._id,
+          performedBy:   actionBy,
+          reason: `Leave Approved (${role}) — ${leaveRequest.fromDate.toISOString().split("T")[0]} to ${leaveRequest.toDate.toISOString().split("T")[0]}`,
+        });
       }
+      // LWP and Permission — no balance to deduct
 
       // 3. Auto-Sync Attendance
       await this.fillAttendanceForLeave(leaveRequest);
@@ -416,10 +439,22 @@ class LeaveService {
       leaveRequest.leaveType !== "LWP" &&
       leaveRequest.leaveType !== "CompOff"
     ) {
+      const employeeForRefund = await EmployeeModel.findById(leaveRequest.employeeId);
+      const balanceBefore = employeeForRefund?.leaveBalance?.[leaveRequest.leaveType] ?? 0;
+
       await EmployeeModel.findByIdAndUpdate(leaveRequest.employeeId, {
-        $inc: {
-          [`leaveBalance.${leaveRequest.leaveType}`]: leaveRequest.totalDays,
-        },
+        $inc: { [`leaveBalance.${leaveRequest.leaveType}`]: leaveRequest.totalDays },
+      });
+
+      // Log balance credit
+      await LeaveBalanceHistoryService.logCredit({
+        employeeId:    leaveRequest.employeeId,
+        leaveType:     leaveRequest.leaveType,
+        amount:        leaveRequest.totalDays,
+        balanceBefore,
+        leaveRequestId: leaveRequest._id,
+        performedBy:   cancelledBy || null,
+        reason: `Leave Cancelled — ${leaveRequest.totalDays} day(s) refunded`,
       });
 
       // B. Clear the pre-filled "On Leave" attendance records

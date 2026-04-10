@@ -13,7 +13,7 @@ const getFullPermissions = () => {
     project: ["boq_cost", "detailed_estimate", "drawing_boq", "wbs", "schedule", "wo_issuance", "client_billing", "work_progress", "material_quantity", "stocks", "assets"],
     purchase: ["vendor_supplier", "request", "enquiry", "order", "goods_receipt", "bill", "machinery_tracking", "stocks", "assets"],
     site: ["boq_site", "detailed_estimate", "site_drawing", "purchase_request", "material_received", "material_issued", "stock_register", "work_done", "daily_labour_report", "machinery_entry", "site_assets", "weekly_billing", "reconciliation", "planned_vs_achieved"],
-    hr: ["employee", "attendance", "leave", "payroll", "contract_nmr", "nmr", "nmr_attendance"],
+    hr: ["employee", "attendance", "leave", "payroll", "holidays", "geofence", "contract_nmr", "nmr", "nmr_attendance"],
     finance: ["client_billing", "purchase_bill", "contractor_bill", "debit_credit_note", "internal_transfer", "bank_transaction", "journal_entry", "banks", "tds", "cash_entry", "ledger_entry", "supplier_outstanding", "overall_expenses"],
     report: ["project_dashboard", "work_analysis", "client_billing", "financial_report", "pnl", "cash_flow", "expenses_report", "vendor_report", "reconciliation", "actual_vs_billed", "cost_to_complete", "planned_vs_actual", "labour_productivity", "machine_productivity", "collection_projection"],
     settings: ["user", "roles", "master", "assets"]

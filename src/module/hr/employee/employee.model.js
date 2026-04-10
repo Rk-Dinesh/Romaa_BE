@@ -103,15 +103,18 @@ const employeeSchema = new mongoose.Schema(
 
     // --- B. Leave Management (Current Balance) ---
     leaveBalance: {
-      PL: { type: Number, default: 0 }, // Privilege Leave (Resets yearly)
-      CL: { type: Number, default: 12 }, // Casual Leave
-      SL: { type: Number, default: 12 }, // Sick Leave
+      PL:          { type: Number, default: 0  }, // Privilege Leave (accrues monthly)
+      CL:          { type: Number, default: 12 }, // Casual Leave
+      SL:          { type: Number, default: 12 }, // Sick Leave
+      Maternity:   { type: Number, default: 84 }, // 84 calendar days (Maternity Benefit Act)
+      Paternity:   { type: Number, default: 15 }, // 15 days (common policy)
+      Bereavement: { type: Number, default: 5  }, // 5 days
       compOff: [
         {
           earnedDate: { type: Date, required: true }, // The holiday they worked
           expiryDate: { type: Date, required: true }, // e.g., earned + 60 days
-          isUsed: { type: Boolean, default: false },  // Mark true when availed
-          reason: { type: String } // e.g., "Worked on Republic Day"
+          isUsed:     { type: Boolean, default: false },
+          reason:     { type: String }
         }
       ]
     },

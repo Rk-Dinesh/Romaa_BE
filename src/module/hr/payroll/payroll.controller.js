@@ -1,4 +1,5 @@
 import PayrollService from "./payroll.service.js";
+import path from "path";
 
 export const generatePayroll = async (req, res) => {
   try {
@@ -67,6 +68,22 @@ export const updateTax = async (req, res) => {
     const { taxAmount } = req.body;
     const data = await PayrollService.updateTax(req.params.id, taxAmount);
     res.status(200).json({ status: true, message: "TDS updated", data });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ status: false, message: err.message });
+  }
+};
+
+export const exportBankExcel = async (req, res) => {
+  try {
+    const { month, year } = req.query;
+    if (!month || !year) return res.status(400).json({ status: false, message: "month and year are required" });
+
+    const buffer = await PayrollService.exportBankExcel(month, year);
+
+    const filename = `Payroll_${year}_${String(month).padStart(2, "0")}.xlsx`;
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.send(buffer);
   } catch (err) {
     res.status(err.statusCode || 500).json({ status: false, message: err.message });
   }

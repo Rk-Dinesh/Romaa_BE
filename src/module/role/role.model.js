@@ -84,7 +84,9 @@ const RoleSchema = new mongoose.Schema(
         payroll: Actions,
         contract_nmr: Actions,
         nmr: Actions,
-        nmr_attendance: Actions
+        nmr_attendance: Actions,
+        geofence: Actions,
+        scorecard: Actions
       },
 
       // --- Finance Module ---

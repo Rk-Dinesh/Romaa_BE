@@ -45,6 +45,7 @@ import LeaveRoute from "./src/module/hr/leave/leaverequest.route.js";
 import GeofenceRoute from "./src/module/hr/geofence/geofence.route.js";
 import PayrollRoute from "./src/module/hr/payroll/payroll.route.js";
 import { startAbsenteeismCron } from "./utils/dailyAbsenteeism.js";
+import { startYearEndLeaveResetCron } from "./utils/yearEndLeaveReset.js";
 import cron from "node-cron";
 import hsnSacRouter from "./src/module/master/hsnmaster/hsnsac.router.js";
 import notificationRoute from "./src/module/notifications/notification.route.js";
@@ -74,6 +75,7 @@ const PORT = process.env.PORT;
 const app = express();
 connectDB();
 startAbsenteeismCron();
+startYearEndLeaveResetCron();
 
 // Daily: process journal entries scheduled for auto-reversal
 cron.schedule("0 1 * * *", async () => {
@@ -212,7 +214,7 @@ app.use("/finance-dropdown", financeDropdownRouter);
 app.use("/finance", financeDropdownRouter); // alias: /finance/payable-bills, /finance/parties/:tenderId, etc.
 app.use("/banktransfer", bankTransferRouter);
 
-app.get("/", (req, res) => {
+app.get("/", (_req, res) => {
   res.send(`Welcome to Romaa Backend`);
 });
 

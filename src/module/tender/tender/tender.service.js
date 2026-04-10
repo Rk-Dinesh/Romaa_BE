@@ -360,6 +360,7 @@ class TenderService {
     const query = {};
 
     query.workOrder_id = { $nin: [null, ""] };
+    query["emd.approved_emd_details.emd_proposed_company"] = { $nin: [null, ""] };
 
     if (search) {
       const escaped = escapeRegex(search);
