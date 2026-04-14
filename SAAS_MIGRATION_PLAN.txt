@@ -1,0 +1,621 @@
+================================================================================
+  ROMAA_BE → MULTI-TENANT SaaS MIGRATION PLAN
+  Strategy: DATABASE-PER-TENANT
+  Created: 2026-04-14
+================================================================================
+
+OVERVIEW
+--------
+Convert the current single-tenant Romaa_BE into a multi-tenant SaaS platform
+where each customer organization has its own isolated MongoDB database.
+
+Architecture:
+  ┌─────────────────────┐      ┌──────────────────────┐
+  │   MASTER DB         │      │   TENANT DBs         │
+  │  (romaa_master)     │      │  (romaa_org_<id>)    │
+  │                     │      │                      │
+  │  - Organizations    │      │  - Employees         │
+  │  - SuperAdmins      │      │  - Tenders           │
+  │  - Subscriptions    │      │  - Projects          │
+  │  - Plans            │      │  - All business data │
+  │  - Billing          │      │                      │
+  └─────────────────────┘      └──────────────────────┘
+
+================================================================================
+  CURRENT STATE ANALYSIS (what exists today)
+================================================================================
+
+[ENTRY POINT]
+  app.js
+    - Single connectDB() call → one MongoDB URI
+    - Auto-seeds DEV role + admin on every startup
+    - Runs global crons (absenteeism, leave reset, journal auto-reversal)
+
+[DB CONFIG]
+  src/config/db.js
+    - mongoose.connect(process.env.MONGO_URI) → single default connection
+    - All models use `mongoose.model(...)` → bound to default connection
+
+[MODELS] (~60+ models across modules)
+  All models use the pattern:
+    mongoose.model("Employee", EmployeeSchema)
+  → This binds to the DEFAULT mongoose connection (single DB).
+  → Must be refactored to accept a connection dynamically.
+
+[AUTH]
+  src/common/Auth.middlware.js
+    - verifyJWT reads token → loads Employee from default DB
+    - No organization context in JWT payload
+
+[CRONS]
+  utils/dailyAbsenteeism.js
+  utils/yearEndLeaveReset.js
+  app.js:81 (journal auto-reversal)
+    - All run against a single DB → must iterate over all tenant DBs
+
+[ID GENERATION]
+  IdcodeServices (src/module/idcode/)
+    - Generates EMP-001, TND-001 etc.
+    - Currently global → per-tenant DB it becomes naturally isolated
+
+================================================================================
+  PHASE 1 — FOUNDATION (Week 1)
+================================================================================
+
+TASK 1.1: Create Master Database Layer
+  [ ] Create src/config/masterDB.js
+        - Separate mongoose connection via mongoose.createConnection()
+        - Env var: MASTER_MONGO_URI
+  [ ] Create src/module/organization/organization.model.js (on master connection)
+        Fields: name, slug, dbUri, dbName, status (active/suspended/trial),
+                plan, createdAt, trialEndsAt, ownerEmail, contactPhone,
+                logoUrl, timezone, currency
+  [ ] Create src/module/superadmin/superadmin.model.js (on master connection)
+        - Platform-level admins who manage all orgs
+  [ ] Create src/module/subscription/subscription.model.js
+        Fields: organizationId, planId, status, currentPeriodEnd,
+                paymentMethod, stripeCustomerId
+  [ ] Create src/module/plans/plan.model.js
+        Fields: name, price, features, limits (maxUsers, maxTenders, storage)
+
+TASK 1.2: Tenant Connection Manager
+  [ ] Create src/config/tenantConnectionManager.js
+        - LRU cache of mongoose connections (max 100, evict oldest)
+        - getTenantConnection(orgId) → returns cached or new connection
+        - closeTenantConnection(orgId) → graceful disconnect
+        - Handle connection errors, retries, pooling (maxPoolSize: 5 per tenant)
+
+TASK 1.3: Model Factory Pattern
+  [ ] Refactor EVERY model file from:
+        export default mongoose.model("X", XSchema)
+      TO:
+        export const XSchema = new Schema({...});
+        export const getXModel = (conn) => conn.models.X || conn.model("X", XSchema);
+  [ ] Affected files (~60 models): employee, tender, boq, emd, bid,
+      contractor, contractworker, client, vendor, material, rateanalysis,
+      detailedestimate, schedule, scheduleLite, workorder, purchaseRequest,
+      machinery, machinerylogs, workdone, workorderdone, dlp, holiday,
+      leave, userAttendance, nmrAttendance, geofence, payroll, hsnsac,
+      notification, tenderdocument, workorderdocument, purchasebill,
+      weeklyBilling, ledger, creditnote, debitnote, paymentvoucher,
+      receiptvoucher, accounttree, journalentry, companybank, companycash,
+      banktransfer, clientbilling, billingestimate, steelestimate,
+      role, idcode, materialTransaction, siteoverhead, penalty, etc.
+
+================================================================================
+  PHASE 2 — AUTH & REQUEST FLOW (Week 2)
+================================================================================
+
+TASK 2.1: Update JWT Payload
+  [ ] src/module/auth/auth.service.js
+        - Include organizationId in JWT access & refresh tokens
+        - Include organization slug for subdomain/header routing
+
+TASK 2.2: Tenant Resolution Middleware
+  [ ] Create src/common/tenantResolver.middleware.js
+        - Order: verifyJWT → resolveTenant → verifyPermission
+        - Extract organizationId from req.user (JWT)
+        - Alternative: extract from subdomain (acme.romaa.app) or
+          X-Tenant-Slug header for pre-login requests (signup, public)
+        - Load org from master DB → check status (active/suspended)
+        - Get tenant connection from tenantConnectionManager
+        - Attach req.db = tenantConnection
+        - Attach req.org = organization document
+
+TASK 2.3: Refactor verifyJWT Middleware
+  [ ] src/common/Auth.middlware.js
+        - Load Employee from req.db (tenant) instead of default connection
+        - Keep master-level auth separate (for SuperAdmin portal)
+
+TASK 2.4: Update All Services to Use req.db
+  [ ] Change pattern in ALL services from:
+        const emp = await EmployeeModel.find()
+      TO:
+        const Employee = getEmployeeModel(req.db);
+        const emp = await Employee.find()
+  [ ] Pass req.db through controllers → services
+  [ ] Affected: ALL controller + service files (~120 files)
+
+================================================================================
+  PHASE 3 — ONBOARDING & PROVISIONING (Week 3)
+================================================================================
+
+TASK 3.1: Signup / Organization Provisioning Flow
+  [ ] Create src/module/organization/organization.controller.js
+  [ ] Create src/module/organization/organization.service.js
+  [ ] POST /signup endpoint:
+        1. Validate org name, slug uniqueness, owner email
+        2. Create organization record in master DB
+        3. Dynamically create tenant DB (romaa_org_<orgId>)
+        4. Run tenant seeder on new DB:
+             - Default DEV role with all permissions
+             - Default Admin role
+             - Owner Employee user
+             - IdcodeServices counters (EMP, TND, ROL, etc.)
+             - Default holiday calendar
+             - Default geofence zone (optional)
+        5. Create trial subscription (14 days)
+        6. Send welcome email
+        7. Return login credentials
+
+TASK 3.2: Tenant Seeder
+  [ ] Create utils/tenantSeeder.js (takes connection as arg)
+        - Refactor existing utils/seed.js into a reusable function
+        - seedTenant(connection, orgConfig)
+
+TASK 3.3: Organization Management APIs
+  [ ] GET    /master/organizations        (SuperAdmin: list all orgs)
+  [ ] GET    /master/organizations/:id    (details)
+  [ ] PATCH  /master/organizations/:id/suspend
+  [ ] PATCH  /master/organizations/:id/activate
+  [ ] DELETE /master/organizations/:id    (drops tenant DB — soft delete first)
+  [ ] POST   /master/impersonate/:id      (SuperAdmin login-as-tenant)
+
+================================================================================
+  PHASE 4 — CRONS & BACKGROUND JOBS (Week 4)
+================================================================================
+
+TASK 4.1: Multi-Tenant Cron Runner
+  [ ] Create utils/cronRunner.js
+        - runForAllTenants(jobFn) → iterates active orgs, gets connection,
+          runs jobFn(connection, org), handles errors per tenant
+  [ ] Refactor utils/dailyAbsenteeism.js to accept connection
+  [ ] Refactor utils/yearEndLeaveReset.js to accept connection
+  [ ] Refactor app.js:81 (journal auto-reversal) to loop tenants
+  [ ] Consider moving crons to a separate worker process (Bull/BullMQ)
+        for scale — 1000 tenants × daily crons = serial bottleneck
+
+================================================================================
+  PHASE 5 — AWS S3 & FILE STORAGE (Week 4)
+================================================================================
+
+TASK 5.1: Tenant-Scoped S3 Paths
+  [ ] Update utils/awsBucket.js
+        - Prefix all S3 keys with org slug: <orgSlug>/employees/<file>
+        - Pass req.org.slug through to upload functions
+  [ ] Optionally: one S3 bucket per tenant (enterprise tier only)
+
+================================================================================
+  PHASE 6 — BILLING & SUBSCRIPTIONS (Week 5)
+================================================================================
+
+TASK 6.1: Stripe / Razorpay Integration
+  [ ] Create src/module/billing/ module
+  [ ] Webhook handler for subscription events
+  [ ] Middleware: checkSubscriptionActive → blocks API if unpaid/expired
+  [ ] Plan-based feature gating middleware
+        e.g. verifyPlanLimit('maxUsers') before createEmployee
+
+TASK 6.2: Usage Metering
+  [ ] Track per-tenant: active users, storage, API calls
+  [ ] Daily aggregation job → store in master DB for invoicing
+
+================================================================================
+  PHASE 7 — DATA MIGRATION (Week 6)
+================================================================================
+
+TASK 7.1: Migrate Existing Data
+  [ ] Treat current DB as "Tenant Zero"
+  [ ] Create master DB, register existing company as first org
+  [ ] Rename existing DB to romaa_org_<orgId>
+  [ ] Update all active JWT tokens (force re-login) with new orgId claim
+
+TASK 7.2: Schema Migration Framework
+  [ ] Install/build a migration runner (e.g. migrate-mongo)
+  [ ] Migrations must run against EVERY tenant DB on deploy
+  [ ] Track applied migrations per tenant in master DB
+
+================================================================================
+  PHASE 8 — OBSERVABILITY & OPS (Week 6)
+================================================================================
+
+TASK 8.1: Logging
+  [ ] Add organizationId + orgSlug to every Winston log line
+  [ ] src/config/logger.js — tenant-aware log formatter
+
+TASK 8.2: Monitoring
+  [ ] Per-tenant metrics: request count, error rate, DB latency
+  [ ] Alert on suspended/failed tenant connections
+
+TASK 8.3: Backup Strategy
+  [ ] Per-tenant mongodump script (nightly)
+  [ ] Store backups in S3 with tenant prefix
+  [ ] Point-in-time restore runbook
+
+================================================================================
+  FILES TO CREATE (NEW)
+================================================================================
+
+src/config/masterDB.js
+src/config/tenantConnectionManager.js
+src/common/tenantResolver.middleware.js
+src/module/organization/organization.model.js
+src/module/organization/organization.controller.js
+src/module/organization/organization.service.js
+src/module/organization/organization.route.js
+src/module/superadmin/superadmin.model.js
+src/module/superadmin/superadmin.route.js
+src/module/subscription/subscription.model.js
+src/module/plans/plan.model.js
+src/module/billing/billing.service.js
+src/module/billing/billing.webhook.js
+utils/tenantSeeder.js
+utils/cronRunner.js
+utils/migrations/                (directory for migration scripts)
+
+================================================================================
+  FILES TO MODIFY (EXISTING)
+================================================================================
+
+app.js                                  — mount master routes, tenant middleware
+src/config/db.js                        — split into master + tenant
+src/common/Auth.middlware.js            — use req.db
+utils/seed.js                           — refactor into tenantSeeder
+utils/awsBucket.js                      — tenant-scoped S3 keys
+utils/dailyAbsenteeism.js               — accept connection
+utils/yearEndLeaveReset.js              — accept connection
+utils/parseFileToJson.js                — no change
+ALL ~60 model files                     — export schema + factory fn
+ALL ~60 service files                   — use getXModel(req.db)
+ALL ~60 controller files                — pass req.db to services
+
+================================================================================
+  ENVIRONMENT VARIABLES (NEW)
+================================================================================
+
+MASTER_MONGO_URI=mongodb+srv://.../romaa_master
+TENANT_MONGO_URI_TEMPLATE=mongodb+srv://.../romaa_org_{orgId}
+TENANT_DB_PREFIX=romaa_org_
+TENANT_CONNECTION_CACHE_SIZE=100
+TENANT_CONNECTION_IDLE_TIMEOUT=600000      # 10 min
+STRIPE_SECRET_KEY=
+STRIPE_WEBHOOK_SECRET=
+SUPERADMIN_JWT_SECRET=                     # separate from tenant JWT
+
+================================================================================
+  RISKS & MITIGATIONS
+================================================================================
+
+RISK: Connection explosion (1000 tenants × N replicas)
+  → LRU connection pool + idle eviction + maxPoolSize: 3–5 per tenant
+
+RISK: Schema migrations must run on every tenant DB
+  → Automated migration runner in CI/CD, track per-tenant versions
+
+RISK: Cross-tenant queries impossible (no JOIN across DBs)
+  → For platform analytics, build ETL to a warehouse (BigQuery/Redshift)
+
+RISK: MongoDB Atlas cluster DB count limits
+  → Use dedicated (M10+) cluster; shard by tenant groups if > 500 orgs
+
+RISK: Cron jobs become serial bottleneck
+  → Queue-based processing (BullMQ + Redis) with worker concurrency
+
+RISK: Accidental cross-tenant data leak in dev
+  → Integration tests that seed 2 orgs, verify isolation on every endpoint
+
+RISK: Existing customers must re-login (JWT payload change)
+  → Force token rotation on deploy; communicate downtime window
+
+================================================================================
+  TESTING CHECKLIST
+================================================================================
+
+[ ] Create 2+ test organizations, verify zero data leakage
+[ ] Login as Org A, attempt to access Org B resources → must 403/404
+[ ] Run absenteeism cron → verify it processes all orgs independently
+[ ] Suspend an org → verify all API calls return 403
+[ ] Delete an org → verify tenant DB is dropped, master record soft-deleted
+[ ] Connection cache eviction under load (simulate 200 concurrent tenants)
+[ ] Migration runner applies to all tenants
+[ ] SuperAdmin impersonation works without leaking own session
+[ ] Trial expiry blocks write operations but allows read (grace period)
+
+================================================================================
+  EFFORT ESTIMATE
+================================================================================
+
+Phase 1 — Foundation                           5–7 days
+Phase 2 — Auth & request flow                  5–7 days
+Phase 3 — Onboarding                           3–4 days
+Phase 4 — Crons                                2–3 days
+Phase 5 — S3                                   1 day
+Phase 6 — Billing                              4–5 days
+Phase 7 — Data migration                       3–4 days
+Phase 8 — Observability                        2–3 days
+-------------------------------------------------------
+TOTAL                                          25–34 days (5–7 weeks)
+
+With 1 senior dev full-time: ~6 weeks
+With 2 devs in parallel:     ~3.5 weeks
+
+================================================================================
+  EXECUTION ORDER (RECOMMENDED)
+================================================================================
+
+1. Phase 1 (Foundation) — non-breaking, can ship to staging
+2. Refactor models in batches (10 models/day), keep single-tenant working
+3. Phase 2 (Auth) — feature-flagged, toggle per environment
+4. Phase 3 (Onboarding) — build SuperAdmin portal
+5. Deploy to staging → internal dogfood with 2–3 test orgs
+6. Phase 4, 5 (Crons, S3) — hardening
+7. Phase 6 (Billing) — revenue-critical, test heavily
+8. Phase 7 (Migration) — one-time cutover with maintenance window
+9. Phase 8 (Observability) — before going GA
+10. Public launch
+
+================================================================================
+  OPEN QUESTIONS (DECIDE BEFORE STARTING)
+================================================================================
+
+[ ] Subdomain-per-tenant (acme.romaa.app) OR path-based (romaa.app/acme) OR
+    pure JWT-based routing?  → affects DNS, SSL, frontend routing
+[ ] Payment gateway: Stripe, Razorpay, or both?
+[ ] Plan tiers: Free / Starter / Pro / Enterprise? Feature matrix?
+[ ] Data residency: single region or multi-region tenants?
+[ ] Self-hosted option for enterprise? (impacts architecture)
+[ ] SSO / SAML requirement? (enterprise selling point)
+[ ] Audit log requirements? (compliance)
+
+================================================================================
+  PHASE 9 — ADD-ONS (Post-MVP, Prioritized)
+================================================================================
+
+-------------------------------------------------------------------------------
+  TIER A — MUST-HAVE BEFORE ENTERPRISE SALES (Weeks 7–10)
+-------------------------------------------------------------------------------
+
+TASK 9.1: Audit Logs
+  [ ] Create src/module/auditlog/auditlog.model.js (per-tenant)
+        Fields: userId, action, module, resourceId, before, after,
+                ipAddress, userAgent, timestamp
+  [ ] Middleware: auditLogger — captures every write operation
+  [ ] Immutable storage (no UPDATE/DELETE allowed)
+  [ ] API: GET /auditlog with filters (user, module, date range)
+  WHY: Construction clients demand money/approval trails for compliance.
+
+TASK 9.2: Two-Factor Authentication (2FA)
+  [ ] Install speakeasy + qrcode
+  [ ] Add twoFactorSecret, twoFactorEnabled to Employee model
+  [ ] Endpoints: /auth/2fa/setup, /auth/2fa/verify, /auth/2fa/disable
+  [ ] Mandatory for Admin/Owner roles on Enterprise tier
+  [ ] Backup codes (10 one-time-use codes)
+
+TASK 9.3: Automated Testing Foundation
+  [ ] Install Jest + supertest + mongodb-memory-server
+  [ ] Create test/ directory with multi-tenant isolation tests
+  [ ] Priority test suites:
+        - Auth flow (login, refresh, 2FA)
+        - Tenant isolation (create 2 orgs, verify no data leak)
+        - Tender lifecycle (create → bid → award → billing)
+        - Payroll calculation
+        - Attendance geofencing
+  [ ] CI pipeline: GitHub Actions runs tests on every PR
+  [ ] Target: 60% coverage on services layer
+  WHY: Zero tests = scary to ship multi-tenant. Bugs leak between orgs.
+
+TASK 9.4: SSO / SAML / OAuth
+  [ ] Install passport + passport-google-oauth20 + passport-saml
+  [ ] Google Workspace login (easy win)
+  [ ] Microsoft Azure AD / Office 365 (enterprise)
+  [ ] SAML 2.0 (large enterprise IT demands this)
+  [ ] Per-org SSO config stored in master DB
+  [ ] JIT provisioning (auto-create Employee on first SSO login)
+
+-------------------------------------------------------------------------------
+  TIER B — INDIA MARKET DIFFERENTIATORS (Weeks 11–14)
+-------------------------------------------------------------------------------
+
+TASK 9.5: WhatsApp Business API Integration
+  [ ] Integrate Meta WhatsApp Business API or Gupshup/Wati
+  [ ] Use cases:
+        - Attendance OTP via WhatsApp (not just SMS)
+        - Leave approval request to manager
+        - Daily site report summary
+        - Tender submission reminders
+        - Purchase order approvals
+  [ ] Per-org WhatsApp Business account config
+  [ ] Template message approval workflow
+  WHY: India-specific — WhatsApp is how site managers actually communicate.
+
+TASK 9.6: Mobile App Backend Support
+  [ ] Dedicated mobile API endpoints (versioned: /api/v1/mobile/*)
+  [ ] Device registration for push notifications (FCM)
+  [ ] Optimized payloads (smaller than web responses)
+  [ ] Offline sync endpoints:
+        - GET /sync/pull?since=<timestamp> → changed records
+        - POST /sync/push → batch local changes with conflict resolution
+  [ ] Conflict resolution strategy: last-write-wins OR versioned documents
+  [ ] App version gating (force upgrade if version < minSupportedVersion)
+  WHY: Site workers use phones, not laptops. Offline mandatory (poor rural signal).
+
+TASK 9.7: SMS Gateway (Multi-Provider)
+  [ ] Abstract SMS provider (MSG91, Twilio, AWS SNS)
+  [ ] DLT template registration (TRAI compliance in India)
+  [ ] Failover: primary provider fails → auto-switch to secondary
+  [ ] Per-tenant usage tracking for billing
+
+TASK 9.8: E-Invoice & E-Way Bill (GST Compliance)
+  [ ] Integrate with NIC e-invoice portal (IRN generation)
+  [ ] Auto-generate e-way bill on purchase bill creation > ₹50,000
+  [ ] QR code generation for invoices
+  [ ] Store IRN, acknowledgment number
+  [ ] GSTR-1, GSTR-3B report exports
+
+-------------------------------------------------------------------------------
+  TIER C — PLATFORM MATURITY (Weeks 15–18)
+-------------------------------------------------------------------------------
+
+TASK 9.9: Redis Caching Layer
+  [ ] Cache: permissions, org config, HSN master, user profile
+  [ ] Invalidation on writes
+  [ ] Session store (replace in-memory rate limiter)
+  [ ] Per-tenant namespace: <orgId>:<key>
+
+TASK 9.10: Queue System (BullMQ)
+  [ ] Background jobs:
+        - Email sending (nodemailer → queue)
+        - Report generation (heavy Excel/PDF)
+        - Bulk imports (CSV uploads)
+        - S3 file processing
+        - WhatsApp/SMS dispatch
+  [ ] Dedicated worker process (separate from API server)
+  [ ] Per-tenant job prioritization
+  [ ] Bull Board UI for monitoring
+
+TASK 9.11: Webhooks
+  [ ] Per-org webhook subscriptions
+  [ ] Events: tender.approved, bill.paid, employee.onboarded,
+             attendance.flagged, workorder.completed
+  [ ] HMAC signature verification
+  [ ] Retry with exponential backoff (3 attempts)
+  [ ] Webhook delivery logs
+
+TASK 9.12: Public API + API Keys
+  [ ] Per-org API key management (create, revoke, rotate)
+  [ ] Scoped permissions per key
+  [ ] Rate limiting per key (separate from user rate limit)
+  [ ] OpenAPI/Swagger auto-generated docs at /api-docs
+  [ ] API analytics (usage per endpoint per key)
+
+TASK 9.13: Audit & Platform Analytics Dashboard (SuperAdmin)
+  [ ] MRR / ARR tracking
+  [ ] Churn rate
+  [ ] Active orgs, trial-to-paid conversion
+  [ ] Feature usage heatmap (which modules are unused)
+  [ ] Tenant health score (login frequency, data volume, support tickets)
+  [ ] Alerts: sudden drop in usage = churn risk
+
+-------------------------------------------------------------------------------
+  TIER D — GROWTH & NETWORK EFFECTS (Post-PMF)
+-------------------------------------------------------------------------------
+
+TASK 9.14: White-Labeling (Enterprise Plan)
+  [ ] Custom domain per org (acme-projects.com → their tenant)
+  [ ] Custom logo, favicon, color scheme
+  [ ] Custom email sender (from @acme.com via DKIM config)
+  [ ] Custom login page branding
+  [ ] Subdomain-based theme loading
+
+TASK 9.15: Referral Program
+  [ ] Unique referral code per org
+  [ ] Track: referrer → signup → activation
+  [ ] Reward: 1 month free for both (or % discount)
+  [ ] Leaderboard + referral analytics
+
+TASK 9.16: Marketplace Features (Network Effect)
+  [ ] Equipment rental marketplace (orgs rent idle machinery to each other)
+  [ ] Subcontractor ratings & reviews across platform
+  [ ] Material price index (anonymized aggregate data)
+  [ ] Vendor discovery (orgs find verified vendors from platform pool)
+  WHY: Lock-in — once they leave, they lose network access.
+
+TASK 9.17: AI-Powered Features
+  [ ] Photo-based site progress detection (upload site photo → AI classifies stage)
+  [ ] Invoice data extraction (OCR on purchase bills)
+  [ ] Anomaly detection in financial entries
+  [ ] Predictive budget overrun alerts
+  [ ] Chatbot for navigating the app ("show me last month's tender approvals")
+
+TASK 9.18: Advanced Reporting
+  [ ] Custom report builder (drag-drop fields, filters, grouping)
+  [ ] Scheduled reports (daily/weekly email of key metrics)
+  [ ] Export: PDF, Excel, CSV, Google Sheets
+  [ ] Data warehouse sync (BigQuery/Redshift) for enterprise BI
+
+-------------------------------------------------------------------------------
+  TIER E — COMPLIANCE & CERTIFICATIONS (Pre-Enterprise GA)
+-------------------------------------------------------------------------------
+
+TASK 9.19: SOC 2 Type II Preparation (~6 months)
+  [ ] Vendor: Vanta / Drata / Secureframe
+  [ ] Controls: access logs, change management, incident response
+  [ ] Annual third-party audit
+  WHY: Required by any enterprise procurement team.
+
+TASK 9.20: Data Residency & GDPR/DPDP Compliance
+  [ ] Multi-region deployment (India + US + EU)
+  [ ] Data export endpoint (user requests full data dump)
+  [ ] Right-to-delete endpoint (hard-delete with audit trail)
+  [ ] Cookie consent banner config per org
+  [ ] DPA (Data Processing Agreement) templates
+
+TASK 9.21: Status Page & SLA
+  [ ] statuspage.io or Atlassian Statuspage
+  [ ] Public status for: API, DB, S3, email, jobs
+  [ ] Incident communication templates
+  [ ] 99.9% uptime SLA for Pro, 99.95% for Enterprise
+  [ ] Credit policy on SLA breach
+
+-------------------------------------------------------------------------------
+  TIER F — OPERATIONAL EXCELLENCE
+-------------------------------------------------------------------------------
+
+TASK 9.22: Feature Flags (LaunchDarkly / Unleash)
+  [ ] Gradual rollout per tenant
+  [ ] A/B testing new features
+  [ ] Kill switch for broken features
+
+TASK 9.23: Error Tracking & APM
+  [ ] Sentry for error tracking (tagged per tenant)
+  [ ] DataDog / New Relic for APM
+  [ ] Log aggregation (Loki / CloudWatch)
+  [ ] PagerDuty integration for critical alerts
+
+TASK 9.24: Load Testing
+  [ ] k6 / Artillery test scripts
+  [ ] Simulate 1000 concurrent tenants
+  [ ] Identify bottlenecks: DB connections, queue throughput, API latency
+  [ ] Baseline metrics documented
+
+TASK 9.25: Disaster Recovery Runbook
+  [ ] RTO: 4 hours, RPO: 1 hour (Pro); RTO: 1hr, RPO: 15min (Enterprise)
+  [ ] Tested quarterly via chaos drills
+  [ ] Documented restore procedures per component
+
+================================================================================
+  ADD-ON EFFORT ESTIMATE
+================================================================================
+
+Tier A (Must-have enterprise)            3–4 weeks
+Tier B (India market)                    3–4 weeks
+Tier C (Platform maturity)               3–4 weeks
+Tier D (Growth)                          4–6 weeks
+Tier E (Compliance — SOC 2)              6 months (parallel track)
+Tier F (Ops excellence)                  2–3 weeks
+-------------------------------------------------------
+TOTAL ADD-ONS                            15–20 weeks (excluding SOC 2)
+
+================================================================================
+  RECOMMENDED SEQUENCE
+================================================================================
+
+Months 1–2:  Phases 1–8 (Core SaaS migration)
+Month 3:     Tier A (Audit logs, 2FA, Tests, SSO)
+Month 4:     Tier B (WhatsApp, Mobile backend, SMS, E-invoice)
+Month 5:     Tier C (Redis, Queues, Webhooks, Public API)
+Month 6+:    Tier D (White-label, Marketplace, AI) + Tier E/F in parallel
+
+================================================================================
+  END OF PLAN
+================================================================================
