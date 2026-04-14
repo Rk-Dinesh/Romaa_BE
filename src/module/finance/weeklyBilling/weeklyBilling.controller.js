@@ -6,15 +6,23 @@ const ok   = (res, data, msg = "Success", code = 200) =>
 const fail = (res, msg = "Error", code = 500) =>
   res.status(code).json({ status: false, message: msg });
 
-// ── GET /weeklyBilling/api/list/:tenderId ─────────────────────────────────────
+// ── GET /weeklyBilling/api/list/:tenderId?search=&fromdate=&todate=&page=&limit= ─
 export const getBillingList = async (req, res) => {
   try {
     const { tenderId } = req.params;
     if (!tenderId) return fail(res, "tenderId is required", 400);
 
-    const { page, limit } = req.query;
-    const result = await service.getBillingList(tenderId, { page, limit });
-    return res.status(200).json({ status: true, ...result });
+    const { page, limit, search } = req.query;
+    const fromdate = req.query.fromdate || null;
+    const todate   = req.query.todate   || null;
+    const result = await service.getBillingList(tenderId, { page, limit, search, fromdate, todate });
+    return res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (err) {
     return fail(res, err.message, err.statusCode || 500);
   }

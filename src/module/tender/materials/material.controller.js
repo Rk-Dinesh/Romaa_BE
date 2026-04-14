@@ -144,8 +144,18 @@ export const getMaterialInwardHistory = async (req, res) => {
 
 export const getAllProjectsWithGRNSummary = async (req, res) => {
   try {
-    const data = await materialService.getAllProjectsWithGRNSummary();
-    res.status(200).json({ success: true, count: data.length, data });
+    const { page, limit, search, fromdate, todate } = req.query;
+    const result = await materialService.getAllProjectsWithGRNSummary({
+      page, limit, search, fromdate, todate,
+    });
+    res.status(200).json({
+      success: true,
+      status: true,
+      currentPage: result.currentPage,
+      totalPages: result.totalPages,
+      totalCount: result.totalCount,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }

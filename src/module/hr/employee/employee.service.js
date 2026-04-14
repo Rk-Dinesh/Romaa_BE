@@ -159,7 +159,7 @@ class EmployeeService {
   }
 
   // --- 5. Pagination & Search ---
-  static async getEmployeesPaginated(page, limit, search) {
+  static async getEmployeesPaginated(page, limit, search, fromdate, todate) {
     const query = { isDeleted: { $ne: true } };
     if (search) {
       // Escape special regex characters to prevent ReDoS attacks
@@ -167,8 +167,15 @@ class EmployeeService {
       query.$or = [
         { name: { $regex: safeSearch, $options: "i" } },
         { email: { $regex: safeSearch, $options: "i" } },
-        { employeeId: { $regex: safeSearch, $options: "i" } }
+        { employeeId: { $regex: safeSearch, $options: "i" } },
+        { designation: { $regex: safeSearch, $options: "i" } },
+        { department: { $regex: safeSearch, $options: "i" } }
       ];
+    }
+    if (fromdate || todate) {
+      query.joining_date = {};
+      if (fromdate) query.joining_date.$gte = new Date(fromdate);
+      if (todate) query.joining_date.$lte = new Date(todate);
     }
 
     const total = await EmployeeModel.countDocuments(query);

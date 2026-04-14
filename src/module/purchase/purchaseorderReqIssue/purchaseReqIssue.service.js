@@ -56,32 +56,118 @@ class PurchaseRequestService {
     ).sort({  requestDate: -1 }); // field selection
   }
 
-  static async getAllByProjectIdForMaterialReceived(projectId) {
-    return await PurchaseRequestModel.find({ projectId , status: "Purchase Order Issued"}).select(
-      "requestId projectId title description  materialsRequired "
-    ); 
+  static async getAllByProjectIdForMaterialReceived(projectId, filters = {}) {
+    const query = { projectId, status: "Purchase Order Issued" };
+
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { requestId:           { $regex: s, $options: "i" } },
+        { title:               { $regex: s, $options: "i" } },
+        { tender_name:         { $regex: s, $options: "i" } },
+        { tender_project_name: { $regex: s, $options: "i" } },
+        { "selectedVendor.vendor_name": { $regex: s, $options: "i" } },
+      ];
+    }
+
+    if (filters.fromdate || filters.todate) {
+      query.requestDate = {};
+      if (filters.fromdate) query.requestDate.$gte = new Date(filters.fromdate);
+      if (filters.todate) {
+        const to = new Date(filters.todate);
+        to.setHours(23, 59, 59, 999);
+        query.requestDate.$lte = to;
+      }
+    }
+
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      PurchaseRequestModel.find(query)
+        .select("requestId projectId tender_name tender_project_name title description materialsRequired selectedVendor requestDate status")
+        .sort({ requestDate: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      PurchaseRequestModel.countDocuments(query),
+    ]);
+
+    return {
+      data,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit) || 1,
+      totalCount: total,
+    };
   }
 
-  static async getAllByNewRequest() {
-    return await PurchaseRequestModel.find({ status: "Request Raised" }).select(
-      "requestId projectId tender_name tender_project_name title  status requestDate requiredByDate  siteDetails "
-    ).sort({ requestId: -1 }); // field selection
+  static async _paginatedByStatus({ statusFilter, filters, sort, selectFields }) {
+    const query = { status: statusFilter };
+
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { requestId:           { $regex: s, $options: "i" } },
+        { title:               { $regex: s, $options: "i" } },
+        { tender_name:         { $regex: s, $options: "i" } },
+        { tender_project_name: { $regex: s, $options: "i" } },
+        { "selectedVendor.vendor_name": { $regex: s, $options: "i" } },
+      ];
+    }
+
+    if (filters.fromdate || filters.todate) {
+      query.requestDate = {};
+      if (filters.fromdate) query.requestDate.$gte = new Date(filters.fromdate);
+      if (filters.todate) {
+        const to = new Date(filters.todate);
+        to.setHours(23, 59, 59, 999);
+        query.requestDate.$lte = to;
+      }
+    }
+
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      PurchaseRequestModel.find(query).select(selectFields).sort(sort).skip(skip).limit(limit).lean(),
+      PurchaseRequestModel.countDocuments(query),
+    ]);
+
+    return {
+      data,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit) || 1,
+      totalCount: total,
+    };
   }
 
-  static async getAllByQuotationRequested() {
-    return await PurchaseRequestModel.find({
-      status: { $in: ["Quotation Requested", "Quotation Received","Vendor Approved"] }
-    })
-      .select("requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails")
-      .sort({ status: 1, requestDate: -1 }); // 1. Status Ascending (Received first), 2. Newest dates first
+  static async getAllByNewRequest(filters = {}) {
+    return PurchaseRequestService._paginatedByStatus({
+      statusFilter: "Request Raised",
+      filters,
+      sort: { requestId: -1 },
+      selectFields: "requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails",
+    });
   }
 
-    static async getAllByQuotationApproved() {
-    return await PurchaseRequestModel.find({
-      status: { $in: ["Vendor Approved","Purchase Order Issued","Completed"] }
-    })
-      .select("requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails")
-      .sort({ status: 1, requestDate: -1 }); // 1. Status Ascending (Received first), 2. Newest dates first
+  static async getAllByQuotationRequested(filters = {}) {
+    return PurchaseRequestService._paginatedByStatus({
+      statusFilter: { $in: ["Quotation Requested", "Quotation Received", "Vendor Approved"] },
+      filters,
+      sort: { status: 1, requestDate: -1 },
+      selectFields: "requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails",
+    });
+  }
+
+  static async getAllByQuotationApproved(filters = {}) {
+    return PurchaseRequestService._paginatedByStatus({
+      statusFilter: { $in: ["Vendor Approved", "Purchase Order Issued", "Completed"] },
+      filters,
+      sort: { status: 1, requestDate: -1 },
+      selectFields: "requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails",
+    });
   }
 
   static async getAllByProjectIdSelectedVendor(projectId) {

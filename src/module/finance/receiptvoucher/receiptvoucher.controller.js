@@ -10,14 +10,22 @@ export const getNextRvNo = async (_req, res) => {
   }
 };
 
-// GET /receiptvoucher/list?supplier_type=&supplier_id=&tender_id=&status=&receipt_mode=&rv_no=&from_date=&to_date=&page=&limit=
+// GET /receiptvoucher/list?supplier_type=&supplier_id=&tender_id=&status=&receipt_mode=&rv_no=&fromdate=&todate=&search=&page=&limit=
 export const getList = async (req, res) => {
   try {
-    const { supplier_type, supplier_id, tender_id, status, receipt_mode, rv_no, from_date, to_date, page, limit } = req.query;
+    const { supplier_type, supplier_id, tender_id, status, receipt_mode, rv_no, page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
     const result = await ReceiptVoucherService.getList({
-      supplier_type, supplier_id, tender_id, status, receipt_mode, rv_no, from_date, to_date, page, limit,
+      supplier_type, supplier_id, tender_id, status, receipt_mode, rv_no, from_date, to_date, page, limit, search,
     });
-    res.status(200).json({ status: true, ...result });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -27,12 +35,20 @@ export const getList = async (req, res) => {
 // Receipt vouchers where receipt_mode = "Cash". Supports same filters except receipt_mode.
 export const getListCash = async (req, res) => {
   try {
-    const { supplier_type, supplier_id, tender_id, status, rv_no, from_date, to_date, page, limit } = req.query;
+    const { supplier_type, supplier_id, tender_id, status, rv_no, page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
     const result = await ReceiptVoucherService.getList({
-      supplier_type, supplier_id, tender_id, status, rv_no, from_date, to_date, page, limit,
+      supplier_type, supplier_id, tender_id, status, rv_no, from_date, to_date, page, limit, search,
       receipt_mode: "Cash",
     });
-    res.status(200).json({ status: true, ...result });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -42,12 +58,20 @@ export const getListCash = async (req, res) => {
 // Receipt vouchers where receipt_mode is Cheque / NEFT / RTGS / UPI / DD. Supports same filters.
 export const getListBank = async (req, res) => {
   try {
-    const { supplier_type, supplier_id, tender_id, status, rv_no, from_date, to_date, page, limit } = req.query;
+    const { supplier_type, supplier_id, tender_id, status, rv_no, page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
     const result = await ReceiptVoucherService.getList({
-      supplier_type, supplier_id, tender_id, status, rv_no, from_date, to_date, page, limit,
+      supplier_type, supplier_id, tender_id, status, rv_no, from_date, to_date, page, limit, search,
       receipt_mode: "bank",
     });
-    res.status(200).json({ status: true, ...result });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

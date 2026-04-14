@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { performPunch, uploadDocument, applyRegularization, actionRegularization, getMyAttendanceStats, getDailyReport, getMonthlyReport, getAttendanceByDateAndEmployeeId } from "./userAttendance.controller.js";
+import { performPunch, uploadDocument, applyRegularization, actionRegularization, getMyAttendanceStats, getDailyReport, getMonthlyReport, getAttendanceByDateAndEmployeeId, getRegularizationList } from "./userAttendance.controller.js";
 import multer from "multer";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 
@@ -20,5 +20,6 @@ AttendanceRoute.get("/get-attendance-by-date-and-employee-id", verifyJWT, getAtt
 AttendanceRoute.post("/action-regularization",  verifyJWT, verifyPermission("hr", "attendance", "edit"), actionRegularization);
 AttendanceRoute.get("/get-daily-report",         verifyJWT, verifyPermission("hr", "attendance", "read"), getDailyReport);
 AttendanceRoute.get("/get-monthly-report",       verifyJWT, verifyPermission("hr", "attendance", "read"), getMonthlyReport);
+AttendanceRoute.get("/regularization-list",      verifyJWT, verifyPermission("hr", "attendance", "read"), getRegularizationList);
 
 export default AttendanceRoute;

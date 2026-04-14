@@ -1,12 +1,12 @@
 import { Router } from 'express';
 import multer from 'multer';
+import { verifyJWT } from '../../../common/Auth.middlware.js';
 import {
   addWorkItem,
   getAllWorkItems,
   getWorkItemById,
   updateWorkItem,
   deleteWorkItem,
-  uploadWorkItemsCSV1,
   getWorkItemsByTenderId,
   uploadWorkItemsCSVAndSyncBoq,
   updateRateAnalysis,
@@ -17,16 +17,15 @@ import {
 const rateanalysisrouter = Router();
 const upload = multer({ dest: "uploads/" });
 
-rateanalysisrouter.post('/add', addWorkItem);
-rateanalysisrouter.get('/all', getAllWorkItems);
-rateanalysisrouter.get('/getbytenderId', getWorkItemsByTenderId);
-rateanalysisrouter.get('getbyid/:id', getWorkItemById);
-rateanalysisrouter.put('/update/:id', updateWorkItem);
-rateanalysisrouter.delete('/delete/:id', deleteWorkItem);
-rateanalysisrouter.post('/uploadcsv1', upload.single('file'), uploadWorkItemsCSV1); //not in use 
-rateanalysisrouter.post('/uploadcsv', upload.single('file'), uploadWorkItemsCSVAndSyncBoq);
-rateanalysisrouter.put('/updaterateanalysis/:tender_id', updateRateAnalysis);
-rateanalysisrouter.put('/freeze/:tender_id', freezeRateAnalysis);
-rateanalysisrouter.get('/getsummary/:tender_id', getSummary);
+rateanalysisrouter.post('/add', verifyJWT, addWorkItem);
+rateanalysisrouter.get('/all', verifyJWT, getAllWorkItems);
+rateanalysisrouter.get('/getbytenderId', verifyJWT, getWorkItemsByTenderId);
+rateanalysisrouter.get('/getbyid/:id', verifyJWT, getWorkItemById);
+rateanalysisrouter.put('/update/:id', verifyJWT, updateWorkItem);
+rateanalysisrouter.delete('/delete/:id', verifyJWT, deleteWorkItem);
+rateanalysisrouter.post('/uploadcsv', verifyJWT, upload.single('file'), uploadWorkItemsCSVAndSyncBoq);
+rateanalysisrouter.put('/updaterateanalysis/:tender_id', verifyJWT, updateRateAnalysis);
+rateanalysisrouter.put('/freeze/:tender_id', verifyJWT, freezeRateAnalysis);
+rateanalysisrouter.get('/getsummary/:tender_id', verifyJWT, getSummary);
 
 export default rateanalysisrouter;

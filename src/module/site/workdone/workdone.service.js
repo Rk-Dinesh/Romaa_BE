@@ -39,16 +39,28 @@ class WorkDoneService {
     return await report.save();
   }
 
-  static async getReportsByTender(tender_id, { from, to } = {}) {
+  static async getReportsByTender(tender_id, { fromdate, todate, page, limit, search } = {}) {
     const filter = { tender_id };
-    if (from || to) {
+    if (fromdate || todate) {
       filter.report_date = {};
-      if (from) filter.report_date.$gte = new Date(from);
-      if (to) filter.report_date.$lte = new Date(to);
+      if (fromdate) filter.report_date.$gte = new Date(fromdate);
+      if (todate)   filter.report_date.$lte = new Date(todate);
     }
-    return await WorkDoneModel.find(filter)
-      .select("-dailyWorkDone")
-      .sort({ report_date: -1 });
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.$or = [
+        { contractor_name: { $regex: s, $options: "i" } },
+        { workId:          { $regex: s, $options: "i" } },
+      ];
+    }
+    const pg   = Math.max(1, parseInt(page)  || 1);
+    const lim  = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const skip = (pg - 1) * lim;
+    const [data, total] = await Promise.all([
+      WorkDoneModel.find(filter).select("-dailyWorkDone").sort({ report_date: -1 }).skip(skip).limit(lim).lean(),
+      WorkDoneModel.countDocuments(filter),
+    ]);
+    return { data, total, page: pg, limit: lim };
   }
 
   static async getReportById(id) {

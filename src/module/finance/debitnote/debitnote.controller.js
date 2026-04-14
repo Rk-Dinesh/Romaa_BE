@@ -10,42 +10,66 @@ export const getNextDnNo = async (_req, res) => {
   }
 };
 
-// GET /debitnote/list?supplier_type=&supplier_id=&tender_id=&status=&adj_type=&tax_type=&dn_no=&from_date=&to_date=&page=&limit=
+// GET /debitnote/list?supplier_type=&supplier_id=&tender_id=&status=&adj_type=&tax_type=&dn_no=&fromdate=&todate=&search=&page=&limit=
 export const getList = async (req, res) => {
   try {
-    const { supplier_type, supplier_id, tender_id, status, adj_type, tax_type, dn_no, from_date, to_date, page, limit } = req.query;
+    const { supplier_type, supplier_id, tender_id, status, adj_type, tax_type, dn_no, page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
     const result = await DebitNoteService.getList({
-      supplier_type, supplier_id, tender_id, status, adj_type, tax_type, dn_no, from_date, to_date, page, limit,
+      supplier_type, supplier_id, tender_id, status, adj_type, tax_type, dn_no, from_date, to_date, page, limit, search,
     });
-    res.status(200).json({ status: true, ...result });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// GET /debitnote/by-supplier/:supplierId?supplier_type=&status=&from_date=&to_date=
+// GET /debitnote/by-supplier/:supplierId?supplier_type=&status=&fromdate=&todate=&search=&page=&limit=
 export const getBySupplier = async (req, res) => {
   try {
     const { supplierId } = req.params;
-    const { supplier_type, status, from_date, to_date } = req.query;
-    const data = await DebitNoteService.getBySupplier(supplierId, {
-      supplier_type, status, from_date, to_date,
+    const { supplier_type, status, page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
+    const result = await DebitNoteService.getBySupplier(supplierId, {
+      supplier_type, status, from_date, to_date, page, limit, search,
     });
-    res.status(200).json({ status: true, data });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// GET /debitnote/by-tender/:tenderId?supplier_id=&supplier_type=&status=
+// GET /debitnote/by-tender/:tenderId?supplier_id=&supplier_type=&status=&fromdate=&todate=&search=&page=&limit=
 export const getByTender = async (req, res) => {
   try {
     const { tenderId } = req.params;
-    const { supplier_id, supplier_type, status } = req.query;
-    const data = await DebitNoteService.getByTender(tenderId, {
-      supplier_id, supplier_type, status,
+    const { supplier_id, supplier_type, status, page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
+    const result = await DebitNoteService.getByTender(tenderId, {
+      supplier_id, supplier_type, status, from_date, to_date, page, limit, search,
     });
-    res.status(200).json({ status: true, data });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

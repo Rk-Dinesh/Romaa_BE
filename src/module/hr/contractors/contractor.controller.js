@@ -140,7 +140,7 @@ export const getContractorsPaginated = async (req, res) => {
       status: true,
       currentPage: page,
       totalPages: Math.ceil(data.total / limit),
-      totalRecords: data.total,
+      totalCount: data.total,
       data: data.contractors,
     });
   } catch (error) {

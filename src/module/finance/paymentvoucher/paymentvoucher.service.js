@@ -230,6 +230,16 @@ class PaymentVoucherService {
     }
     if (filters.pv_no)         query.pv_no         = filters.pv_no;
 
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { pv_no:         { $regex: s, $options: "i" } },
+        { supplier_name: { $regex: s, $options: "i" } },
+        { tender_id:     { $regex: s, $options: "i" } },
+        { narration:     { $regex: s, $options: "i" } },
+      ];
+    }
+
     if (filters.from_date || filters.to_date) {
       query.pv_date = {};
       if (filters.from_date) query.pv_date.$gte = new Date(filters.from_date);

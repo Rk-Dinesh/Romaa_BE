@@ -123,17 +123,59 @@ class PayrollService {
   }
 
   // --- 3. GET PAYROLL (employee view — all months for a year) ---
-  static async getEmployeePayroll(employeeId, year) {
+  static async getEmployeePayroll(employeeId, year, { page, limit, fromdate, todate } = {}) {
     const query = { employeeId };
     if (year) query.year = parseInt(year);
-    return await PayrollModel.find(query).sort({ year: -1, month: -1 });
+    if (fromdate || todate) {
+      query.createdAt = {};
+      if (fromdate) query.createdAt.$gte = new Date(fromdate);
+      if (todate)   query.createdAt.$lte = new Date(todate);
+    }
+    const pg   = Math.max(1, parseInt(page)  || 1);
+    const lim  = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const skip = (pg - 1) * lim;
+    const [data, total] = await Promise.all([
+      PayrollModel.find(query).sort({ year: -1, month: -1 }).skip(skip).limit(lim).lean(),
+      PayrollModel.countDocuments(query),
+    ]);
+    return { data, total, page: pg, limit: lim };
   }
 
   // --- 4. GET MONTHLY RUN (HR admin view — all employees for a month) ---
-  static async getMonthlyPayrollRun(month, year) {
-    return await PayrollModel.find({ month: parseInt(month), year: parseInt(year) })
-      .populate("employeeId", "name employeeId designation department payroll")
-      .sort({ netPay: -1 });
+  static async getMonthlyPayrollRun(month, year, { page, limit, search, fromdate, todate } = {}) {
+    const query = { month: parseInt(month), year: parseInt(year) };
+    if (fromdate || todate) {
+      query.createdAt = {};
+      if (fromdate) query.createdAt.$gte = new Date(fromdate);
+      if (todate)   query.createdAt.$lte = new Date(todate);
+    }
+    const pg   = Math.max(1, parseInt(page)  || 1);
+    const lim  = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const skip = (pg - 1) * lim;
+
+    // search by employee name/id needs two-step query
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const EmployeeModel = (await import("../employee/employee.model.js")).default;
+      const matchingEmps = await EmployeeModel.find({
+        $or: [
+          { name:       { $regex: s, $options: "i" } },
+          { employeeId: { $regex: s, $options: "i" } },
+        ],
+      }).select("_id").lean();
+      query.employeeId = { $in: matchingEmps.map((e) => e._id) };
+    }
+
+    const [data, total] = await Promise.all([
+      PayrollModel.find(query)
+        .populate("employeeId", "name employeeId designation department payroll")
+        .sort({ netPay: -1 })
+        .skip(skip)
+        .limit(lim)
+        .lean(),
+      PayrollModel.countDocuments(query),
+    ]);
+    return { data, total, page: pg, limit: lim };
   }
 
   // --- 5. UPDATE STATUS (Pending → Processed → Paid) ---

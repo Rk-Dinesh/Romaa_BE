@@ -1,0 +1,135 @@
+==========================================================
+ROMAA FE — PAGINATION AUDIT (deepSearch)
+Generated: 2026-04-14
+Standard params: page, limit, search, fromdate, todate
+Standard response: { data, totalPages, currentPage, totalCount }
+==========================================================
+
+
+SECTION 1 — ALREADY PAGINATED (frontend wired; backend status noted)
+--------------------------------------------------------------------
+[OK = FE+BE done | FE = FE sends params, BE still returns full list]
+
+#   ENDPOINT                                         MODULE              FE/BE
+1   GET /notification/my                             Notifications       OK
+2   GET /tender/gettenders                           Tender              FE
+3   GET /tender/gettendersemdsd                      Tender / EMD        FE
+4   GET /tender/gettendersworkorder                  Projects            FE
+5   GET /client/getclients                           Tender / Clients    FE
+6   GET /boq/items/:tenderId                         Tender / BOQ        FE
+7   GET /employee/list                               HR / Employee       FE
+8   GET /contractor/contractorlist                   HR / Contractor     FE
+9   GET /contractworker/getcontractworker            HR / NMR Worker     FE
+10  GET /nmrattendance/api/list/:projectId           HR / NMR Attend.    FE (rename from/to -> fromdate/todate)
+11  GET /attendance/get-monthly-report               HR / Attendance     FE (replace month/year)
+12  GET /attendance/get-daily-report                 HR / Attendance     FE (replace date)
+13  GET /attendance/regularization-list              HR / Attendance     FE
+14  GET /leave/all-pending                           HR / Leave          FE
+15  GET /payroll/monthly-run                         HR / Payroll        FE (keep month/year)
+16  GET /payroll/employee/:employeeId                HR / Payroll        FE (keep year)
+17  GET /geofence/list                               HR / Geofence       FE
+18  GET /workdone/api/list/:tenderId                 Site / WorkDone     FE
+19  GET /workorderdone/api/list/:tenderId            Site / WO Done      FE
+20  GET /dlp/api/list/:projectId                     Site / DLP          FE
+21  GET /weeklybilling/api/list/:tenderId            Site / Billing      FE
+22  GET /purchasebill/summary-all                    Purchase / Bill     FE
+23  GET /purchasebill/by-tender/:tenderId            Purchase / Bill     FE
+24  GET /journalentry/list                           Finance / JE        FE
+25  GET /creditnote/list                             Finance / CN        FE
+26  GET /creditnote/by-supplier/:id                  Finance / CN        FE
+27  GET /creditnote/by-tender/:id                    Finance / CN        FE
+28  GET /debitnote/list                              Finance / DN        FE
+29  GET /debitnote/by-supplier/:id                   Finance / DN        FE
+30  GET /debitnote/by-tender/:id                     Finance / DN        FE
+31  GET /paymentvoucher/list/cash                    Finance / Cash PV   FE
+32  GET /receiptvoucher/list/cash                    Finance / Cash RV   FE
+33  GET /paymentvoucher/list/bank                    Finance / Bank PV   FE
+34  GET /receiptvoucher/list/bank                    Finance / Bank RV   FE
+35  GET /banktransfer/list                           Finance / Transfer  FE
+36  GET /accounttree/list                            Finance / COA       FE
+
+
+SECTION 2 — ENDPOINTS STILL NEEDING PAGINATION (FE + BE)
+--------------------------------------------------------
+(Tables render all records today; add page/limit/search/fromdate/todate)
+
+#   ENDPOINT                                                 PAGE                                           SEARCH FIELDS                                       DATE FIELD
+A1  GET /purchaseorderrequest/api/getbyIdNewRequest          purchase/purchase request/PurchaseRequest      request_no, tender_name, material_name              requestDate
+A2  GET /purchaseorderrequest/api/getbyIdQuotationRequested  purchase/purchase enquiry/PurchaseEnquiry      request_no, vendor_name                              requestDate
+A3  GET /purchaseorderrequest/api/getbyIdQuotationApproved   purchase/purchase order/PurchaseOrder          po_no, vendor_name, tender_name                     requestDate
+A4  GET /purchaseorderrequest/api/getbyIdMaterialReceived    purchase/goods receipt/GoodsReceipt            grn_no, vendor_name, tender_name                    receivedDate
+A5  GET /dlp/api/summary/:projectId                          site/DailyLabourReport (summary view)          contractor_name                                     report_date
+A6  GET /machineryasset/getall/assets                        settings/assets/machinery/Machinery            asset_name, asset_code, category                    createdAt
+A7  GET /hsn/getall                                          settings/hsnmaster/HsnMaster                   hsn_code, description                               —
+A8  GET /role/list                                           settings/roles                                 role_name                                           createdAt
+A9  GET /employee/with-roles                                 settings/user (Users list)                     name, employeeId, role_name                         createdAt
+A10 GET /employee/unassigned                                 settings/user (Unassigned employees)           name, employeeId                                    —
+
+
+SECTION 3 — NOT TABLES / NO PAGINATION NEEDED
+---------------------------------------------
+- Dropdown/lookup endpoints: /tender/gettendersid, /role/listForDropdown,
+  /employee/getbyId/:id, /machineryasset/getbyid/:id, /creditnote/getbyid/:id, etc.
+- Dashboard summary cards (aggregate numbers, not lists)
+- Reports pages: most render charts or filtered snapshots from existing
+  paginated endpoints — re-evaluate per report if a raw list table is added.
+- Static / child-accordion data loaded once per parent row
+  (e.g. BOQ nested items within a tender row, voucher line-items).
+
+
+SECTION 4 — ACTION CHECKLIST (copy to tracker)
+----------------------------------------------
+Backend pagination still required (36 endpoints from Section 1 + 10 from Section 2):
+
+[ ] /tender/gettenders
+[ ] /tender/gettendersemdsd
+[ ] /tender/gettendersworkorder
+[ ] /client/getclients
+[ ] /boq/items/:tenderId
+[ ] /employee/list
+[ ] /contractor/contractorlist
+[ ] /contractworker/getcontractworker
+[ ] /nmrattendance/api/list/:projectId         (rename from/to -> fromdate/todate)
+[ ] /attendance/get-monthly-report             (replace month+year)
+[ ] /attendance/get-daily-report               (replace single date)
+[ ] /attendance/regularization-list
+[ ] /leave/all-pending
+[ ] /payroll/monthly-run
+[ ] /payroll/employee/:employeeId
+[ ] /geofence/list
+[ ] /workdone/api/list/:tenderId
+[ ] /workorderdone/api/list/:tenderId
+[ ] /dlp/api/list/:projectId
+[ ] /weeklybilling/api/list/:tenderId
+[ ] /purchasebill/summary-all
+[ ] /purchasebill/by-tender/:tenderId
+[ ] /journalentry/list
+[ ] /creditnote/list
+[ ] /creditnote/by-supplier/:id
+[ ] /creditnote/by-tender/:id
+[ ] /debitnote/list
+[ ] /debitnote/by-supplier/:id
+[ ] /debitnote/by-tender/:id
+[ ] /paymentvoucher/list/cash
+[ ] /receiptvoucher/list/cash
+[ ] /paymentvoucher/list/bank
+[ ] /receiptvoucher/list/bank
+[ ] /banktransfer/list
+[ ] /accounttree/list
+
+Frontend + Backend both pending (new from this audit):
+
+[ ] /purchaseorderrequest/api/getbyIdNewRequest
+[ ] /purchaseorderrequest/api/getbyIdQuotationRequested
+[ ] /purchaseorderrequest/api/getbyIdQuotationApproved
+[ ] /purchaseorderrequest/api/getbyIdMaterialReceived
+[ ] /dlp/api/summary/:projectId
+[ ] /machineryasset/getall/assets
+[ ] /hsn/getall
+[ ] /role/list
+[ ] /employee/with-roles
+[ ] /employee/unassigned
+
+==========================================================
+END
+==========================================================

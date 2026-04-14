@@ -181,6 +181,16 @@ class PurchaseBillService {
     if (filters.invoice_no) query.invoice_no = { $regex: filters.invoice_no, $options: "i" };
     if (filters.status)    query.status    = filters.status;
 
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { doc_id:      { $regex: s, $options: "i" } },
+        { vendor_name: { $regex: s, $options: "i" } },
+        { tender_name: { $regex: s, $options: "i" } },
+        { invoice_no:  { $regex: s, $options: "i" } },
+      ];
+    }
+
     if (filters.from_date || filters.to_date) {
       query.doc_date = {};
       if (filters.from_date) query.doc_date.$gte = new Date(filters.from_date);

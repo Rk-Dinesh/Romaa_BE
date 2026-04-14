@@ -30,17 +30,22 @@ export const bulkCreateWorkDone = async (req, res) => {
 export const getAllWorkDoneByTender = async (req, res) => {
   try {
     const { tender_id } = req.params;
-    
+
     if (!tender_id) {
-        return res.status(400).json({ status: false, message: "Tender ID is required to retrieve work order done records" });
+      return res.status(400).json({ status: false, message: "Tender ID is required to retrieve work order done records" });
     }
 
-    const reports = await WorkOrderDoneService.getAllWorkDoneByTender(tender_id);
-    
-    res.status(200).json({ 
-      status: true, 
-      count: reports.length, 
-      data: reports 
+    const { page, limit, search } = req.query;
+    const fromdate = req.query.fromdate || null;
+    const todate   = req.query.todate   || null;
+    const result = await WorkOrderDoneService.getAllWorkDoneByTender(tender_id, { fromdate, todate, page, limit, search });
+
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });

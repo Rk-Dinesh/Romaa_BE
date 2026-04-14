@@ -11,9 +11,21 @@ export const createGeofence = async (req, res) => {
 
 export const getAllGeofences = async (req, res) => {
   try {
-    const { isActive, tenderId } = req.query;
-    const data = await GeofenceService.getAll({ isActive, tenderId });
-    res.status(200).json({ status: true, data });
+    const { isActive, tenderId, page, limit, search } = req.query;
+    const fromdate = req.query.fromdate || null;
+    const todate   = req.query.todate   || null;
+    const result = await GeofenceService.getAll({ isActive, tenderId, page, limit, search, fromdate, todate });
+    if (page || limit) {
+      res.status(200).json({
+        status: true,
+        currentPage: result.page,
+        totalPages: Math.ceil(result.total / result.limit),
+        totalCount: result.total,
+        data: result.data,
+      });
+    } else {
+      res.status(200).json({ status: true, data: result });
+    }
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
   }

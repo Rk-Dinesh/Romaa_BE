@@ -10,11 +10,23 @@ export const getNextTransferNo = async (_req, res) => {
   }
 };
 
-// GET /banktransfer/list
+// GET /banktransfer/list?status=&tender_id=&transfer_no=&fromdate=&todate=&search=&page=&limit=
 export const getList = async (req, res) => {
   try {
-    const data = await BankTransferService.getList(req.query);
-    res.status(200).json({ status: true, ...data });
+    const { status, tender_id, from_account_code, to_account_code, transfer_no, page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
+    const result = await BankTransferService.getList({
+      status, tender_id, from_account_code, to_account_code, transfer_no,
+      from_date, to_date, page, limit, search,
+    });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
   }

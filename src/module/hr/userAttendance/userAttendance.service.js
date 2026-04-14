@@ -739,110 +739,188 @@ static async getEmployeeMonthlyStats(employeeId, month, year) {
     return { calendarData, summary };
   }
 
-  // GET ALL EMPLOYEES (Daily Report)
-  static async getDailyReport(date) {
-    const targetDate = new Date(date);
-    targetDate.setUTCHours(0, 0, 0, 0);
+  // GET ALL EMPLOYEES (Daily Report) — supports fromdate/todate range, pagination, search
+  static async getDailyReport({ fromdate, todate, date, page, limit, search } = {}) {
+    const dateFilter = {};
+    if (date) {
+      const d = new Date(date);
+      d.setUTCHours(0, 0, 0, 0);
+      dateFilter.date = d;
+    } else if (fromdate || todate) {
+      dateFilter.date = {};
+      if (fromdate) dateFilter.date.$gte = new Date(fromdate);
+      if (todate) {
+        const td = new Date(todate);
+        td.setUTCHours(23, 59, 59, 999);
+        dateFilter.date.$lte = td;
+      }
+    }
 
-    const records = await UserAttendanceModel.find({ date: targetDate })
-      .populate("employeeId", "name employeeID department designation") // Fetch Employee Details
-      .sort({ "flags.isLateEntry": -1 }); // Late comers first
+    const pg   = Math.max(1, parseInt(page)  || 1);
+    const lim  = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const skip = (pg - 1) * lim;
 
-    return records.map((r) => ({
-      id: r.employeeId?.employeeID || "N/A",
+    let employeeFilter = null;
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matchingEmps = await EmployeeModel.find({
+        $or: [
+          { name:       { $regex: s, $options: "i" } },
+          { employeeId: { $regex: s, $options: "i" } },
+        ],
+      }).select("_id").lean();
+      employeeFilter = { $in: matchingEmps.map((e) => e._id) };
+    }
+
+    const query = { ...dateFilter };
+    if (employeeFilter) query.employeeId = employeeFilter;
+
+    const [records, total] = await Promise.all([
+      UserAttendanceModel.find(query)
+        .populate("employeeId", "name employeeId department designation")
+        .sort({ "flags.isLateEntry": -1 })
+        .skip(skip)
+        .limit(lim)
+        .lean(),
+      UserAttendanceModel.countDocuments(query),
+    ]);
+
+    const data = records.map((r) => ({
+      id: r.employeeId?.employeeId || "N/A",
       name: r.employeeId?.name || "Unknown",
       dept: r.employeeId?.department || "-",
       inTime: r.firstIn ? new Date(r.firstIn).toLocaleTimeString("en-IN") : "-",
-      outTime: r.lastOut
-        ? new Date(r.lastOut).toLocaleTimeString("en-IN")
-        : "-",
+      outTime: r.lastOut ? new Date(r.lastOut).toLocaleTimeString("en-IN") : "-",
       status: r.status,
-      late: r.flags.isLateEntry ? "Yes" : "No",
-      permission:
-        r.permissionDurationMins > 0 ? `${r.permissionDurationMins}m` : "-",
-      location: r.timeline[0]?.location?.address || "Unknown",
+      late: r.flags?.isLateEntry ? "Yes" : "No",
+      permission: r.permissionDurationMins > 0 ? `${r.permissionDurationMins}m` : "-",
+      location: r.timeline?.[0]?.location?.address || "Unknown",
+      date: r.date,
     }));
+
+    return { data, total, page: pg, limit: lim };
   }
 
-  static async getMonthlyAttendanceReport(month, year) {
-    const startDate = new Date(Date.UTC(year, month - 1, 1));
-    const endDate = new Date(Date.UTC(year, month, 0));
+  // GET REGULARIZATION LIST — paginated list of all regularization requests
+  static async getRegularizationList({ page, limit, search, fromdate, todate } = {}) {
+    const query = { "regularization.isApplied": true };
+    if (fromdate || todate) {
+      query.date = {};
+      if (fromdate) query.date.$gte = new Date(fromdate);
+      if (todate)   query.date.$lte = new Date(todate);
+    }
 
-    // MongoDB Aggregation Pipeline
-    const report = await UserAttendanceModel.aggregate([
-      // 1. Filter by Date Range
-      { $match: { date: { $gte: startDate, $lte: endDate } } },
+    const pg   = Math.max(1, parseInt(page)  || 1);
+    const lim  = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const skip = (pg - 1) * lim;
 
-      // 2. Join with Employee Data
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matchingEmps = await EmployeeModel.find({
+        $or: [
+          { name:       { $regex: s, $options: "i" } },
+          { employeeId: { $regex: s, $options: "i" } },
+        ],
+      }).select("_id").lean();
+      query.employeeId = { $in: matchingEmps.map((e) => e._id) };
+    }
+
+    const [data, total] = await Promise.all([
+      UserAttendanceModel.find(query)
+        .populate("employeeId", "name employeeId department designation")
+        .sort({ date: -1 })
+        .skip(skip)
+        .limit(lim)
+        .lean(),
+      UserAttendanceModel.countDocuments(query),
+    ]);
+    return { data, total, page: pg, limit: lim };
+  }
+
+  static async getMonthlyAttendanceReport({ fromdate, todate, month, year, page, limit, search } = {}) {
+    // Support both new fromdate/todate and legacy month/year
+    let startDate, endDate;
+    if (fromdate || todate) {
+      startDate = fromdate ? new Date(fromdate) : new Date("2000-01-01");
+      endDate   = todate   ? new Date(todate)   : new Date();
+      if (todate) endDate.setUTCHours(23, 59, 59, 999);
+    } else if (month && year) {
+      startDate = new Date(Date.UTC(parseInt(year), parseInt(month) - 1, 1));
+      endDate   = new Date(Date.UTC(parseInt(year), parseInt(month), 0, 23, 59, 59));
+    } else {
+      const now = new Date();
+      startDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      endDate   = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0, 23, 59, 59));
+    }
+
+    const pg  = Math.max(1, parseInt(page)  || 1);
+    const lim = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const skip = (pg - 1) * lim;
+
+    // Optional employee search — two-step
+    let employeeIdFilter = null;
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matchingEmps = await EmployeeModel.find({
+        $or: [
+          { name:       { $regex: s, $options: "i" } },
+          { employeeId: { $regex: s, $options: "i" } },
+          { department: { $regex: s, $options: "i" } },
+        ],
+      }).select("_id").lean();
+      employeeIdFilter = matchingEmps.map((e) => e._id);
+    }
+
+    const matchStage = { date: { $gte: startDate, $lte: endDate } };
+    if (employeeIdFilter) matchStage.employeeId = { $in: employeeIdFilter };
+
+    const pipeline = [
+      { $match: matchStage },
       {
         $lookup: {
-          from: "employees", // Ensure this matches your collection name
+          from: "employees",
           localField: "employeeId",
           foreignField: "_id",
           as: "employee",
         },
       },
       { $unwind: "$employee" },
-
-      // 3. Group by Employee
       {
         $group: {
           _id: "$employeeId",
-          employeeName: { $first: "$employee.name" },
-          employeeCode: { $first: "$employee.employeeId" },
-          department: { $first: "$employee.department" },
-
-          // Calculate Counts
-          totalPresent: {
-            $sum: { $cond: [{ $eq: ["$status", "Present"] }, 1, 0] },
-          },
-          totalAbsent: {
-            $sum: { $cond: [{ $eq: ["$status", "Absent"] }, 1, 0] },
-          },
-          totalHalfDay: {
-            $sum: { $cond: [{ $eq: ["$status", "Half-Day"] }, 1, 0] },
-          },
-          totalLate: {
-            $sum: { $cond: [{ $eq: ["$flags.isLateEntry", true] }, 1, 0] },
-          },
-          totalLeaves: {
-            $sum: { $cond: [{ $eq: ["$status", "On Leave"] }, 1, 0] },
-          },
-          totalPermissions: {
-            $sum: { $cond: [{ $gt: ["$permissionDurationMins", 0] }, 1, 0] },
-          },
-
-          // Create Daily Calendar Array
+          employeeName:      { $first: "$employee.name" },
+          employeeCode:      { $first: "$employee.employeeId" },
+          department:        { $first: "$employee.department" },
+          totalPresent:      { $sum: { $cond: [{ $eq: ["$status", "Present"] },  1, 0] } },
+          totalAbsent:       { $sum: { $cond: [{ $eq: ["$status", "Absent"] },   1, 0] } },
+          totalHalfDay:      { $sum: { $cond: [{ $eq: ["$status", "Half-Day"] }, 1, 0] } },
+          totalLate:         { $sum: { $cond: [{ $eq: ["$flags.isLateEntry", true] }, 1, 0] } },
+          totalLeaves:       { $sum: { $cond: [{ $eq: ["$status", "On Leave"] }, 1, 0] } },
+          totalPermissions:  { $sum: { $cond: [{ $gt: ["$permissionDurationMins", 0] }, 1, 0] } },
           attendanceLog: {
             $push: {
-              date: { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
-              status: "$status",
-              inTime: {
-                $dateToString: {
-                  format: "%H:%M",
-                  date: "$firstIn",
-                  timezone: "Asia/Kolkata",
-                },
-              },
-              outTime: {
-                $dateToString: {
-                  format: "%H:%M",
-                  date: "$lastOut",
-                  timezone: "Asia/Kolkata",
-                },
-              },
-              isLate: "$flags.isLateEntry",
+              date:          { $dateToString: { format: "%Y-%m-%d", date: "$date" } },
+              status:        "$status",
+              inTime:        { $dateToString: { format: "%H:%M", date: "$firstIn",  timezone: "Asia/Kolkata" } },
+              outTime:       { $dateToString: { format: "%H:%M", date: "$lastOut", timezone: "Asia/Kolkata" } },
+              isLate:        "$flags.isLateEntry",
               isRegularized: { $eq: ["$regularization.status", "Approved"] },
             },
           },
         },
       },
-
-      // 4. Sort by Name
       { $sort: { employeeName: 1 } },
-    ]);
+      {
+        $facet: {
+          data:  [{ $skip: skip }, { $limit: lim }],
+          total: [{ $count: "count" }],
+        },
+      },
+    ];
 
-    return report;
+    const [result] = await UserAttendanceModel.aggregate(pipeline);
+    const total = result.total[0]?.count || 0;
+    return { data: result.data, total, page: pg, limit: lim };
   }
 
   static async getAttendanceReport(data) {

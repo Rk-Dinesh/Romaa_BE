@@ -52,6 +52,21 @@ class WeeklyBillingService {
 
     const query = { tender_id: tenderId };
 
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { bill_no:         { $regex: s, $options: "i" } },
+        { status:          { $regex: s, $options: "i" } },
+        { contractor_name: { $regex: s, $options: "i" } },
+      ];
+    }
+
+    if (filters.fromdate || filters.todate) {
+      query.from_date = {};
+      if (filters.fromdate) query.from_date.$gte = new Date(filters.fromdate);
+      if (filters.todate)   query.from_date.$lte = new Date(filters.todate);
+    }
+
     const [data, total] = await Promise.all([
       WeeklyBillingModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
       WeeklyBillingModel.countDocuments(query),

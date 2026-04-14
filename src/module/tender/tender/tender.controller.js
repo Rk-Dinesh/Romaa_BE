@@ -153,7 +153,7 @@ export const getTendersPaginated = async (req, res) => {
       status: true,
       currentPage: page,
       totalPages: Math.ceil(data.total / limit),
-      totalRecords: data.total,
+      totalCount: data.total,
       data: data.tenders
     });
   } catch (error) {
@@ -311,7 +311,7 @@ export const getTendersPaginatedWorkerOrder = async (req, res) => {
       status: true,
       currentPage: page,
       totalPages: Math.ceil(data.total / limit),
-      totalRecords: data.total,
+      totalCount: data.total,
       data: data.tenders
     });
   } catch (error) {
@@ -339,7 +339,7 @@ export const getTendersPaginatedEMDSD = async (req, res) => {
       status: true,
       currentPage: page,
       totalPages: Math.ceil(data.total / limit),
-      totalRecords: data.total,
+      totalCount: data.total,
       data: data.tenders
     });
   } catch (error) {

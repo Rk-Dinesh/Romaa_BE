@@ -277,6 +277,16 @@ class DebitNoteService {
     if (filters.tax_type)      query.tax_type      = filters.tax_type;
     if (filters.dn_no)         query.dn_no         = filters.dn_no;
 
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { dn_no:         { $regex: s, $options: "i" } },
+        { supplier_name: { $regex: s, $options: "i" } },
+        { tender_name:   { $regex: s, $options: "i" } },
+        { narration:     { $regex: s, $options: "i" } },
+      ];
+    }
+
     if (filters.from_date || filters.to_date) {
       query.dn_date = {};
       if (filters.from_date) query.dn_date.$gte = new Date(filters.from_date);
@@ -313,7 +323,18 @@ class DebitNoteService {
         query.dn_date.$lte = to;
       }
     }
-    return await DebitNoteModel.find(query).sort({ dn_date: -1 }).lean();
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [{ dn_no: { $regex: s, $options: "i" } }];
+    }
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+      DebitNoteModel.find(query).sort({ dn_date: -1 }).skip(skip).limit(limit).lean(),
+      DebitNoteModel.countDocuments(query),
+    ]);
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /debitnote/by-tender/:tenderId
@@ -322,7 +343,30 @@ class DebitNoteService {
     if (filters.supplier_id)   query.supplier_id   = filters.supplier_id;
     if (filters.supplier_type) query.supplier_type = filters.supplier_type;
     if (filters.status)        query.status        = filters.status;
-    return await DebitNoteModel.find(query).sort({ dn_date: -1 }).lean();
+    if (filters.from_date || filters.to_date) {
+      query.dn_date = {};
+      if (filters.from_date) query.dn_date.$gte = new Date(filters.from_date);
+      if (filters.to_date) {
+        const to = new Date(filters.to_date);
+        to.setHours(23, 59, 59, 999);
+        query.dn_date.$lte = to;
+      }
+    }
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { dn_no:         { $regex: s, $options: "i" } },
+        { supplier_name: { $regex: s, $options: "i" } },
+      ];
+    }
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+    const [data, total] = await Promise.all([
+      DebitNoteModel.find(query).sort({ dn_date: -1 }).skip(skip).limit(limit).lean(),
+      DebitNoteModel.countDocuments(query),
+    ]);
+    return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
   }
 
   // GET /debitnote/:id

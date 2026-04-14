@@ -12,16 +12,29 @@ export const getById = async (req, res) => {
 };
 
 // GET /accounttree/list
-// ?account_type=&account_subtype=&parent_code=&is_group=&is_posting_account=&is_bank_cash=&is_personal=&is_active=&tax_type=
+// ?account_type=&account_subtype=&parent_code=&is_group=&is_posting_account=&is_bank_cash=&is_personal=&is_active=&tax_type=&search=&fromdate=&todate=&page=&limit=
 export const getAll = async (req, res) => {
   try {
     const { account_type, account_subtype, parent_code, tax_type,
-            is_group, is_posting_account, is_bank_cash, is_personal, is_active } = req.query;
-    const data = await AccountTreeService.getAll({
+            is_group, is_posting_account, is_bank_cash, is_personal, is_active,
+            search, fromdate, todate, page, limit } = req.query;
+    const result = await AccountTreeService.getAll({
       account_type, account_subtype, parent_code, tax_type,
       is_group, is_posting_account, is_bank_cash, is_personal, is_active,
+      search, fromdate, todate, page, limit,
     });
-    res.status(200).json({ status: true, data });
+    // If paginated (page/limit provided), return paginated shape; otherwise return plain array
+    if (page || limit) {
+      res.status(200).json({
+        status: true,
+        currentPage: result.pagination.page,
+        totalPages: result.pagination.pages,
+        totalCount: result.pagination.total,
+        data: result.data,
+      });
+    } else {
+      res.status(200).json({ status: true, data: result });
+    }
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

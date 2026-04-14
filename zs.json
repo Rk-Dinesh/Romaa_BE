@@ -1,0 +1,579 @@
+{
+  "_id": {
+    "$oid": "69dc922916c9bf6e7aec15c0"
+  },
+  "tender_id": "TND028",
+  "summary": {
+    "zero_cost_total_amount": 63702500.4,
+    "siteoverhead_total_amount": 0,
+    "total_cost": 63702500.4,
+    "boq_total_amount": 176151723,
+    "margin": -112449222.6,
+    "escalation_benefits_percentage": 0,
+    "total_margin": -112449222.6,
+    "risk_contingency": 0,
+    "grossmargin_percentage": -63.83657263460318,
+    "ho_overheads": 0,
+    "PBT": -63.83657263460318
+  },
+  "freeze": false,
+  "work_items": [
+    {
+      "itemNo": "ABS001",
+      "workItem": "Earth  work  in  all  soil  except  hard  rock  requiring  blasting  and  conveying  with lead of 7 KMCT deploying earth moving machinery and tippers including",
+      "unit": "Sqm",
+      "working_quantity": 504000,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 0,
+      "MT_BL_rate": 0,
+      "MY_M_rate": 27.81,
+      "MY_F_rate": 22.95,
+      "MP_C_rate": 0,
+      "MP_NMR_rate": 1.82,
+      "final_rate": 52.58,
+      "lines": [
+        {
+          "category": "MY-M",
+          "description": "Hire Excavator - 140",
+          "unit": "Nos",
+          "quantity": 11,
+          "rate": 150000,
+          "amount": 1650000,
+          "total_rate": 3.2738,
+          "resourceGroup": "Excavator"
+        },
+        {
+          "category": "MY-M",
+          "description": "Hire Excavator - 200",
+          "unit": "Nos",
+          "quantity": 24,
+          "rate": 150000,
+          "amount": 3600000,
+          "total_rate": 7.1429,
+          "resourceGroup": "Excavator"
+        },
+        {
+          "category": "MY-M",
+          "description": "Tipper",
+          "unit": "Nos",
+          "quantity": 72,
+          "rate": 120000,
+          "amount": 8640000,
+          "total_rate": 17.1429,
+          "resourceGroup": "Tipper"
+        },
+        {
+          "category": "MY-M",
+          "description": "Hire Excavator",
+          "unit": "Hour",
+          "quantity": 63,
+          "rate": 2000,
+          "amount": 126000,
+          "total_rate": 0.25,
+          "resourceGroup": "Excavator"
+        },
+        {
+          "category": "MY-F",
+          "description": "Diesel",
+          "unit": "Lit",
+          "quantity": 120480,
+          "rate": 96,
+          "amount": 11566080,
+          "total_rate": 22.9486,
+          "resourceGroup": "Fuel & Oils"
+        },
+        {
+          "category": "MP-NMR",
+          "description": "Helpers",
+          "unit": "Nos",
+          "quantity": 1080,
+          "rate": 850,
+          "amount": 918000,
+          "total_rate": 1.8214,
+          "resourceGroup": "Man"
+        }
+      ]
+    },
+    {
+      "itemNo": "ABS002",
+      "workItem": "Earthwork  for  foundation  in  hard  stiff  clay  excavating  and  deposition  on  bank with initial lead of 10m & initial lift of 2m in Hard stiff clay, stiff black cotton,",
+      "unit": "Cum",
+      "working_quantity": 70.8,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 0,
+      "MT_BL_rate": 0,
+      "MY_M_rate": 81.5,
+      "MY_F_rate": 97.63,
+      "MP_C_rate": 0,
+      "MP_NMR_rate": 12.01,
+      "final_rate": 191.14,
+      "lines": [
+        {
+          "category": "MY-M",
+          "description": "Hire Excavator - 200",
+          "unit": "Day",
+          "quantity": 1,
+          "rate": 5770,
+          "amount": 5770,
+          "total_rate": 81.4972,
+          "resourceGroup": "Excavator"
+        },
+        {
+          "category": "MY-F",
+          "description": "Diesel",
+          "unit": "Lit",
+          "quantity": 72,
+          "rate": 96,
+          "amount": 6912,
+          "total_rate": 97.6271,
+          "resourceGroup": "Fuel & Oils"
+        },
+        {
+          "category": "MP-NMR",
+          "description": "Helpers",
+          "unit": "Nos",
+          "quantity": 1,
+          "rate": 850,
+          "amount": 850,
+          "total_rate": 12.0056,
+          "resourceGroup": "Man"
+        }
+      ]
+    },
+    {
+      "itemNo": "ABS003",
+      "workItem": "Providing  and  placing  in  position  Plain Cement  concrete  of  M-10   using  broken hard granite coarse aggregate (well graded) of nominal maximum size of 40mm",
+      "unit": "Cum",
+      "working_quantity": 12.642857142857142,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 40,
+      "MT_BL_rate": 3310,
+      "MY_M_rate": 578.03,
+      "MY_F_rate": 212.61,
+      "MP_C_rate": 550,
+      "MP_NMR_rate": 0,
+      "final_rate": 4690.64,
+      "lines": [
+        {
+          "category": "MT-BL",
+          "description": "Cement PPC",
+          "unit": "Bags",
+          "quantity": 31.607142857142854,
+          "rate": 280,
+          "amount": 8850,
+          "total_rate": 700,
+          "resourceGroup": "Cement"
+        },
+        {
+          "category": "MT-BL",
+          "description": "Msand",
+          "unit": "Unit",
+          "quantity": 2.5285714285714285,
+          "rate": 6000,
+          "amount": 15171.42857142857,
+          "total_rate": 1200,
+          "resourceGroup": "Bluemetal"
+        },
+        {
+          "category": "MT-BL",
+          "description": "40mm",
+          "unit": "Unit",
+          "quantity": 3.7928571428571427,
+          "rate": 4700,
+          "amount": 17826.428571428572,
+          "total_rate": 1410,
+          "resourceGroup": "Bluemetal"
+        },
+        {
+          "category": "MT-CM",
+          "description": "Construction Water",
+          "unit": "Lit",
+          "quantity": 2528.5714285714284,
+          "rate": 0.2,
+          "amount": 505.7142857142857,
+          "total_rate": 40,
+          "resourceGroup": "Water"
+        },
+        {
+          "category": "MP-C",
+          "description": "S/C - Laying",
+          "unit": "Cum",
+          "quantity": 12.642857142857142,
+          "rate": 350,
+          "amount": 4425,
+          "total_rate": 350,
+          "resourceGroup": "Contract"
+        },
+        {
+          "category": "MP-C",
+          "description": "S/C - Sectioning",
+          "unit": "Cum",
+          "quantity": 12.642857142857142,
+          "rate": 200,
+          "amount": 2528.5714285714284,
+          "total_rate": 200,
+          "resourceGroup": "Contract"
+        },
+        {
+          "category": "MY-M",
+          "description": "Hire SLM - 4m3",
+          "unit": "Day",
+          "quantity": 1,
+          "rate": 7308,
+          "amount": 7308,
+          "total_rate": 578.0339,
+          "resourceGroup": "SLM"
+        },
+        {
+          "category": "MY-F",
+          "description": "Diesel",
+          "unit": "Lit",
+          "quantity": 28,
+          "rate": 96,
+          "amount": 2688,
+          "total_rate": 212.6102,
+          "resourceGroup": "Fuel & Oils"
+        }
+      ]
+    },
+    {
+      "itemNo": "ABS004a",
+      "workItem": "Without Strutting",
+      "unit": "Sqm",
+      "working_quantity": 1,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 0,
+      "MT_BL_rate": 0,
+      "MY_M_rate": 0,
+      "MY_F_rate": 0,
+      "MP_C_rate": 505.72,
+      "MP_NMR_rate": 0,
+      "final_rate": 505.72,
+      "lines": [
+        {
+          "category": "MP-C",
+          "description": "S/C - Shuttering",
+          "unit": "Sqm",
+          "quantity": 1,
+          "rate": 505.71999999999997,
+          "amount": 505.71999999999997,
+          "total_rate": 505.72,
+          "resourceGroup": "Contract"
+        }
+      ]
+    },
+    {
+      "itemNo": "ABS004b",
+      "workItem": "With Strutting",
+      "unit": "Sqm",
+      "working_quantity": 1,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 0,
+      "MT_BL_rate": 0,
+      "MY_M_rate": 0,
+      "MY_F_rate": 0,
+      "MP_C_rate": 581.04,
+      "MP_NMR_rate": 0,
+      "final_rate": 581.04,
+      "lines": [
+        {
+          "category": "MP-C",
+          "description": "S/C - Shuttering",
+          "unit": "Sqm",
+          "quantity": 1,
+          "rate": 505.71999999999997,
+          "amount": 505.71999999999997,
+          "total_rate": 505.72,
+          "resourceGroup": "Contract"
+        },
+        {
+          "category": "MP-C",
+          "description": "S/C - Staging",
+          "unit": "Sqm",
+          "quantity": 1,
+          "rate": 75.32,
+          "amount": 75.32,
+          "total_rate": 75.32,
+          "resourceGroup": "Contract"
+        }
+      ]
+    },
+    {
+      "itemNo": "ABS005a",
+      "workItem": "Above 1m height and upto 1.50m depth below ground level.",
+      "unit": "Cum",
+      "working_quantity": 18.375,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 40,
+      "MT_BL_rate": 3730,
+      "MY_M_rate": 397.71,
+      "MY_F_rate": 292.57,
+      "MP_C_rate": 550,
+      "MP_NMR_rate": 0,
+      "final_rate": 5010.28,
+      "lines": [
+        {
+          "category": "MT-BL",
+          "description": "Cement PPC",
+          "unit": "Bags",
+          "quantity": 73.5,
+          "rate": 280,
+          "amount": 20580,
+          "total_rate": 1120,
+          "resourceGroup": "Cement"
+        },
+        {
+          "category": "MT-BL",
+          "description": "Msand",
+          "unit": "Unit",
+          "quantity": 3.6750000000000003,
+          "rate": 6000,
+          "amount": 22050,
+          "total_rate": 1200,
+          "resourceGroup": "Bluemetal"
+        },
+        {
+          "category": "MT-BL",
+          "description": "40mm",
+          "unit": "Unit",
+          "quantity": 5.5125,
+          "rate": 4700,
+          "amount": 25908.75,
+          "total_rate": 1410,
+          "resourceGroup": "Bluemetal"
+        },
+        {
+          "category": "MT-CM",
+          "description": "Construction Water",
+          "unit": "Lit",
+          "quantity": 3675,
+          "rate": 0.2,
+          "amount": 735,
+          "total_rate": 40,
+          "resourceGroup": "Water"
+        },
+        {
+          "category": "MP-C",
+          "description": "S/C - Laying",
+          "unit": "Cum",
+          "quantity": 18.375,
+          "rate": 350,
+          "amount": 6431.25,
+          "total_rate": 350,
+          "resourceGroup": "Contract"
+        },
+        {
+          "category": "MP-C",
+          "description": "S/C - Lifting, Conveyance",
+          "unit": "Cum",
+          "quantity": 18.375,
+          "rate": 200,
+          "amount": 3675,
+          "total_rate": 200,
+          "resourceGroup": "Contract"
+        },
+        {
+          "category": "MY-M",
+          "description": "Hire SLM - 4m3",
+          "unit": "Day",
+          "quantity": 1,
+          "rate": 7308,
+          "amount": 7308,
+          "total_rate": 397.7143,
+          "resourceGroup": "SLM"
+        },
+        {
+          "category": "MY-F",
+          "description": "Diesel",
+          "unit": "Lit",
+          "quantity": 56,
+          "rate": 96,
+          "amount": 5376,
+          "total_rate": 292.5714,
+          "resourceGroup": "Fuel & Oils"
+        }
+      ]
+    },
+    {
+      "itemNo": "ABS005b",
+      "workItem": "Concrete 1.00m depth above BL and upto 4.50m above BL",
+      "unit": "Cum",
+      "working_quantity": 18.375,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 40,
+      "MT_BL_rate": 3730,
+      "MY_M_rate": 397.71,
+      "MY_F_rate": 292.57,
+      "MP_C_rate": 550,
+      "MP_NMR_rate": 0,
+      "final_rate": 5010.28,
+      "lines": [
+        {
+          "category": "MT-BL",
+          "description": "Cement PPC",
+          "unit": "Bags",
+          "quantity": 73.5,
+          "rate": 280,
+          "amount": 20580,
+          "total_rate": 1120,
+          "resourceGroup": "Cement"
+        },
+        {
+          "category": "MT-BL",
+          "description": "Msand",
+          "unit": "Unit",
+          "quantity": 3.6750000000000003,
+          "rate": 6000,
+          "amount": 22050,
+          "total_rate": 1200,
+          "resourceGroup": "Bluemetal"
+        },
+        {
+          "category": "MT-BL",
+          "description": "40mm",
+          "unit": "Unit",
+          "quantity": 5.5125,
+          "rate": 4700,
+          "amount": 25908.75,
+          "total_rate": 1410,
+          "resourceGroup": "Bluemetal"
+        },
+        {
+          "category": "MT-CM",
+          "description": "Construction Water",
+          "unit": "Lit",
+          "quantity": 3675,
+          "rate": 0.2,
+          "amount": 735,
+          "total_rate": 40,
+          "resourceGroup": "Water"
+        },
+        {
+          "category": "MP-C",
+          "description": "S/C - Laying",
+          "unit": "Cum",
+          "quantity": 18.375,
+          "rate": 350,
+          "amount": 6431.25,
+          "total_rate": 350,
+          "resourceGroup": "Contract"
+        },
+        {
+          "category": "MP-C",
+          "description": "S/C - Lifting, Conveyance",
+          "unit": "Cum",
+          "quantity": 18.375,
+          "rate": 200,
+          "amount": 3675,
+          "total_rate": 200,
+          "resourceGroup": "Contract"
+        },
+        {
+          "category": "MY-M",
+          "description": "Hire SLM - 4m3",
+          "unit": "Day",
+          "quantity": 1,
+          "rate": 7308,
+          "amount": 7308,
+          "total_rate": 397.7143,
+          "resourceGroup": "SLM"
+        },
+        {
+          "category": "MY-F",
+          "description": "Diesel",
+          "unit": "Lit",
+          "quantity": 56,
+          "rate": 96,
+          "amount": 5376,
+          "total_rate": 292.5714,
+          "resourceGroup": "Fuel & Oils"
+        }
+      ]
+    },
+    {
+      "itemNo": "ABS006",
+      "workItem": "Providing a shed to accommodate labour during rain and shine in spillway deck\nbridge as per the following specification. The platform is of total length more",
+      "unit": "Sqm",
+      "working_quantity": 1,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 0,
+      "MT_BL_rate": 0,
+      "MY_M_rate": 0,
+      "MY_F_rate": 0,
+      "MP_C_rate": 1883,
+      "MP_NMR_rate": 0,
+      "final_rate": 1883,
+      "lines": [
+        {
+          "category": "MP-C",
+          "description": "S/C - Platform Shed",
+          "unit": "Sqm",
+          "quantity": 1,
+          "rate": 1883,
+          "amount": 1883,
+          "total_rate": 1883,
+          "resourceGroup": "Contract"
+        }
+      ]
+    },
+    {
+      "itemNo": "ABS007",
+      "workItem": "Supplying  and  fixing  of  Bottom   Flat  Rubber  seal  with  Mild  Steel  Flat  plate\nthroughout the length of Rubber seal and fitted with the existing structure by",
+      "unit": "Rmt",
+      "working_quantity": 1,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 0,
+      "MT_BL_rate": 0,
+      "MY_M_rate": 0,
+      "MY_F_rate": 0,
+      "MP_C_rate": 5500,
+      "MP_NMR_rate": 0,
+      "final_rate": 5500,
+      "lines": [
+        {
+          "category": "MP-C",
+          "description": "S/C - Bottom Flat Rubber",
+          "unit": "Rmt",
+          "quantity": 1,
+          "rate": 5500,
+          "amount": 5500,
+          "total_rate": 5500,
+          "resourceGroup": "Contract"
+        }
+      ]
+    },
+    {
+      "itemNo": "ABS008",
+      "workItem": "Overhauling   of   existing   hoisting arrangements   for   the   shutter   as   per   the following specification. The existing hoist covers shall be opened up and stored",
+      "unit": "Job",
+      "working_quantity": 1,
+      "category": "MAIN_ITEM",
+      "MT_CM_rate": 0,
+      "MT_BL_rate": 0,
+      "MY_M_rate": 0,
+      "MY_F_rate": 0,
+      "MP_C_rate": 100000,
+      "MP_NMR_rate": 0,
+      "final_rate": 100000,
+      "lines": [
+        {
+          "category": "MP-C",
+          "description": "S/C - Overhauling of existing hoisting arrangement",
+          "unit": "Job",
+          "quantity": 1,
+          "rate": 100000,
+          "amount": 100000,
+          "total_rate": 100000,
+          "resourceGroup": "Contract"
+        }
+      ]
+    }
+  ],
+  "createdAt": {
+    "$date": "2026-04-13T06:50:17.419Z"
+  },
+  "updatedAt": {
+    "$date": "2026-04-13T06:50:17.419Z"
+  },
+  "__v": 0
+}

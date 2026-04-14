@@ -19,9 +19,34 @@ class AccountTreeService {
     if (filters.is_personal  !== undefined) query.is_personal  = filters.is_personal  === "true" || filters.is_personal  === true;
     if (filters.is_active    !== undefined) query.is_active    = filters.is_active    === "true" || filters.is_active    === true;
 
-    return await AccountTreeModel.find(query)
-      .sort({ account_code: 1 })
-      .lean();
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { account_name: { $regex: s, $options: "i" } },
+        { account_code: { $regex: s, $options: "i" } },
+      ];
+    }
+
+    if (filters.fromdate || filters.todate) {
+      query.createdAt = {};
+      if (filters.fromdate) query.createdAt.$gte = new Date(filters.fromdate);
+      if (filters.todate)   query.createdAt.$lte = new Date(filters.todate);
+    }
+
+    // If page/limit are provided, return paginated response; otherwise return all (for tree/dropdown use cases)
+    if (filters.page || filters.limit) {
+      const page  = Math.max(1, parseInt(filters.page)  || 1);
+      const limit = Math.max(1, Math.min(200, parseInt(filters.limit) || 20));
+      const skip  = (page - 1) * limit;
+      const [data, total] = await Promise.all([
+        AccountTreeModel.find(query).sort({ account_code: 1 }).skip(skip).limit(limit).lean(),
+        AccountTreeModel.countDocuments(query),
+      ]);
+      return { data, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
+    }
+
+    const data = await AccountTreeModel.find(query).sort({ account_code: 1 }).lean();
+    return data;
   }
 
   // ── Apply Dr/Cr movements to available_balance for a set of lines ───────

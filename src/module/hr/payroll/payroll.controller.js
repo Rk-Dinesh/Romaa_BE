@@ -34,9 +34,17 @@ export const getMyPayroll = async (req, res) => {
 
 export const getEmployeePayroll = async (req, res) => {
   try {
-    const { year } = req.query;
-    const data = await PayrollService.getEmployeePayroll(req.params.employeeId, year);
-    res.status(200).json({ status: true, data });
+    const { year, page, limit } = req.query;
+    const fromdate = req.query.fromdate || null;
+    const todate   = req.query.todate   || null;
+    const result = await PayrollService.getEmployeePayroll(req.params.employeeId, year, { page, limit, fromdate, todate });
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
+    });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
   }
@@ -44,10 +52,18 @@ export const getEmployeePayroll = async (req, res) => {
 
 export const getMonthlyPayrollRun = async (req, res) => {
   try {
-    const { month, year } = req.query;
+    const { month, year, page, limit, search } = req.query;
     if (!month || !year) return res.status(400).json({ status: false, message: "month and year are required" });
-    const data = await PayrollService.getMonthlyPayrollRun(month, year);
-    res.status(200).json({ status: true, data });
+    const fromdate = req.query.fromdate || null;
+    const todate   = req.query.todate   || null;
+    const result = await PayrollService.getMonthlyPayrollRun(month, year, { page, limit, search, fromdate, todate });
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
+    });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
   }

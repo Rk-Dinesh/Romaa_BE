@@ -64,17 +64,26 @@ class NMRAttendanceService {
   }
 
   // Get all records for a project — list view (no attendance_list)
-  static async getByProject(project_id, { from, to, contractor_id } = {}) {
+  static async getByProject(project_id, { fromdate, todate, contractor_id, page, limit, search } = {}) {
     const filter = { project_id };
     if (contractor_id) filter.contractor_id = contractor_id;
-    if (from || to) {
+    if (fromdate || todate) {
       filter.attendance_date = {};
-      if (from) filter.attendance_date.$gte = new Date(from);
-      if (to) filter.attendance_date.$lte = new Date(to);
+      if (fromdate) filter.attendance_date.$gte = new Date(fromdate);
+      if (todate)   filter.attendance_date.$lte = new Date(todate);
     }
-    return await NMRAttendanceModel.find(filter)
-      .select("-attendance_list")
-      .sort({ attendance_date: -1 });
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.contractor_id = { $regex: s, $options: "i" };
+    }
+    const pg    = Math.max(1, parseInt(page)  || 1);
+    const lim   = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const skip  = (pg - 1) * lim;
+    const [data, total] = await Promise.all([
+      NMRAttendanceModel.find(filter).select("-attendance_list").sort({ attendance_date: -1 }).skip(skip).limit(lim).lean(),
+      NMRAttendanceModel.countDocuments(filter),
+    ]);
+    return { data, total, page: pg, limit: lim };
   }
 
   // Get a single record with full attendance_list

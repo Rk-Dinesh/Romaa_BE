@@ -77,32 +77,49 @@ export const getMyAttendanceStats = async (req, res) => {
 //  Get Daily Report (All Employees)
 export const getDailyReport = async (req, res) => {
   try {
-    const { date } = req.query; // Format: "2023-10-25"
-    const result = await UserAttendanceService.getDailyReport(date);
-    res.status(200).json(result);
+    const { date, fromdate, todate, page, limit, search } = req.query;
+    const result = await UserAttendanceService.getDailyReport({ date, fromdate, todate, page, limit, search });
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
+    });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ status: false, message: err.message });
   }
 };
 
 export const getMonthlyReport = async (req, res) => {
   try {
-    const { month, year } = req.query; // e.g., month=10, year=2023
-    
-    if(!month || !year) throw new AppError("Month and year are required to generate the attendance report", 400);
-
-    const result = await UserAttendanceService.getMonthlyAttendanceReport(month, year);
+    const { month, year, fromdate, todate, page, limit, search } = req.query;
+    const result = await UserAttendanceService.getMonthlyAttendanceReport({ fromdate, todate, month, year, page, limit, search });
     res.status(200).json({
-      success: true,
-      data: result,
-      meta: {
-        month,
-        year,
-        generatedAt: new Date()
-      }
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
     });
   } catch (err) {
-    res.status(err.statusCode || 500).json({ message: err.message });
+    res.status(err.statusCode || 500).json({ status: false, message: err.message });
+  }
+};
+
+export const getRegularizationList = async (req, res) => {
+  try {
+    const { page, limit, search, fromdate, todate } = req.query;
+    const result = await UserAttendanceService.getRegularizationList({ page, limit, search, fromdate, todate });
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
+    });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
   }
 };
 

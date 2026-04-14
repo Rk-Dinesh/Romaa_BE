@@ -1,39 +1,66 @@
 import PurchaseBillService from "./purchasebill.service.js";
 
-// GET /purchasebill/list?from_date=&to_date=&doc_id=&tender_id=&vendor_id=&tax_mode=&invoice_no=&status=&page=&limit=
+// GET /purchasebill/list?fromdate=&todate=&doc_id=&tender_id=&vendor_id=&tax_mode=&invoice_no=&status=&search=&page=&limit=
 export const getBills = async (req, res) => {
   try {
-    const { from_date, to_date, doc_id, tender_id, vendor_id, tax_mode, invoice_no, status, page, limit } = req.query;
+    const { doc_id, tender_id, vendor_id, tax_mode, invoice_no, status, page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
     const result = await PurchaseBillService.getBills({
-      from_date, to_date, doc_id, tender_id, vendor_id, tax_mode, invoice_no, status, page, limit,
+      from_date, to_date, doc_id, tender_id, vendor_id, tax_mode, invoice_no, status, page, limit, search,
     });
-    res.status(200).json({ status: true, ...result });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// GET /purchasebill/by-tender/:tenderId?status=&vendor_id=&from_date=&to_date=&invoice_no=&tax_mode=&page=&limit=
+// GET /purchasebill/by-tender/:tenderId?status=&vendor_id=&fromdate=&todate=&invoice_no=&tax_mode=&search=&page=&limit=
 export const getBillsByTender = async (req, res) => {
   try {
     const { tenderId } = req.params;
     if (!tenderId) return res.status(400).json({ status: false, message: "tenderId is required" });
 
-    const { status, vendor_id, from_date, to_date, invoice_no, tax_mode, page, limit } = req.query;
+    const { status, vendor_id, invoice_no, tax_mode, page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
     const result = await PurchaseBillService.getBillsByTender(tenderId, {
-      status, vendor_id, from_date, to_date, invoice_no, tax_mode, page, limit,
+      status, vendor_id, from_date, to_date, invoice_no, tax_mode, page, limit, search,
     });
-    res.status(200).json({ status: true, ...result });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
-// GET /purchasebill/summary-all
-export const getAllTendersSummary = async (_req, res) => {
+// GET /purchasebill/summary-all?search=&fromdate=&todate=&page=&limit=
+export const getAllTendersSummary = async (req, res) => {
   try {
-    const data = await PurchaseBillService.getAllTendersSummary();
-    res.status(200).json({ status: true, data });
+    const { page, limit, search } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
+    const result = await PurchaseBillService.getBills({
+      from_date, to_date, page, limit, search,
+    });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

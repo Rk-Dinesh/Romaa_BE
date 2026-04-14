@@ -499,19 +499,43 @@ class LeaveService {
 
   // --- 6. GET ALL LEAVES (HR view) ---
   // Returns Pending OR Manager-approved leaves across the entire company
-  static async getAllPendingLeaves({ status, fromDate, toDate } = {}) {
+  static async getAllPendingLeaves({ status, fromDate, toDate, fromdate, todate, page, limit, search } = {}) {
     const query = {};
     if (status) {
       query.status = status;
     } else {
       query.status = { $in: ["Pending", "Manager Approved"] };
     }
-    if (fromDate) query.fromDate = { $gte: new Date(fromDate) };
-    if (toDate)   query.toDate   = { $lte: new Date(toDate) };
+    const fd = fromDate || fromdate;
+    const td = toDate   || todate;
+    if (fd) query.fromDate = { $gte: new Date(fd) };
+    if (td) query.toDate   = { $lte: new Date(td) };
 
-    return await LeaveRequestModel.find(query)
-      .populate("employeeId", "name designation department photoUrl")
-      .sort({ createdAt: 1 });
+    const pg   = Math.max(1, parseInt(page)  || 1);
+    const lim  = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const skip = (pg - 1) * lim;
+
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matchingEmps = await EmployeeModel.find({
+        $or: [
+          { name:       { $regex: s, $options: "i" } },
+          { employeeId: { $regex: s, $options: "i" } },
+        ],
+      }).select("_id").lean();
+      query.employeeId = { $in: matchingEmps.map((e) => e._id) };
+    }
+
+    const [data, total] = await Promise.all([
+      LeaveRequestModel.find(query)
+        .populate("employeeId", "name designation department photoUrl")
+        .sort({ createdAt: 1 })
+        .skip(skip)
+        .limit(lim)
+        .lean(),
+      LeaveRequestModel.countDocuments(query),
+    ]);
+    return { data, total, page: pg, limit: lim };
   }
 }
 

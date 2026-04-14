@@ -81,8 +81,17 @@ export const getYearlySummary = async (req, res) => {
 // HR: get all pending/manager-approved leaves across the company
 export const getAllPendingLeaves = async (req, res) => {
   try {
-    const data = await LeaveService.getAllPendingLeaves(req.query);
-    res.status(200).json({ status: true, data });
+    const { status, page, limit, search } = req.query;
+    const fromdate = req.query.fromdate || req.query.fromDate;
+    const todate   = req.query.todate   || req.query.toDate;
+    const result = await LeaveService.getAllPendingLeaves({ status, fromdate, todate, page, limit, search });
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
+    });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
   }

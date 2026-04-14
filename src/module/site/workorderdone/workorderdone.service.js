@@ -175,12 +175,25 @@ class WorkOrderDoneService {
         return inserted;
     }
 
-    static async getAllWorkDoneByTender(tender_id) {
-        const reports = await WorkOrderDoneModel.find({ tender_id })
-            .select("-dailyWorkDone")
-            .sort({ workDoneId: -1 });
-
-        return reports;
+    static async getAllWorkDoneByTender(tender_id, { fromdate, todate, page, limit, search } = {}) {
+        const filter = { tender_id };
+        if (fromdate || todate) {
+          filter.report_date = {};
+          if (fromdate) filter.report_date.$gte = new Date(fromdate);
+          if (todate)   filter.report_date.$lte = new Date(todate);
+        }
+        if (search) {
+          const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          filter.$or = [{ workDoneId: { $regex: s, $options: "i" } }];
+        }
+        const pg   = Math.max(1, parseInt(page)  || 1);
+        const lim  = Math.max(1, Math.min(100, parseInt(limit) || 20));
+        const skip = (pg - 1) * lim;
+        const [data, total] = await Promise.all([
+          WorkOrderDoneModel.find(filter).select("-dailyWorkDone").sort({ workDoneId: -1 }).skip(skip).limit(lim).lean(),
+          WorkOrderDoneModel.countDocuments(filter),
+        ]);
+        return { data, total, page: pg, limit: lim };
     }
 
     static async getWorkDoneSpecific(tender_id, workDoneId) {

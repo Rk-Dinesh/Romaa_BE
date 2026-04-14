@@ -192,6 +192,16 @@ class JournalEntryService {
     if (filters.is_reversal !== undefined) query.is_reversal = filters.is_reversal === "true";
     if (filters.je_no)         query.je_no         = filters.je_no;
 
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { je_no:      { $regex: s, $options: "i" } },
+        { narration:  { $regex: s, $options: "i" } },
+        { tender_id:  { $regex: s, $options: "i" } },
+        { tender_name:{ $regex: s, $options: "i" } },
+      ];
+    }
+
     if (filters.from_date || filters.to_date) {
       query.je_date = {};
       if (filters.from_date) query.je_date.$gte = new Date(filters.from_date);

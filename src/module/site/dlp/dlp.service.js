@@ -102,16 +102,25 @@ class DLPService {
   }
 
   // Get all reports for a project (list view, no sub-arrays)
-  static async getReportsByProject(project_id, { from, to } = {}) {
+  static async getReportsByProject(project_id, { fromdate, todate, page, limit, search } = {}) {
     const filter = { project_id };
-    if (from || to) {
+    if (fromdate || todate) {
       filter.report_date = {};
-      if (from) filter.report_date.$gte = new Date(from);
-      if (to) filter.report_date.$lte = new Date(to);
+      if (fromdate) filter.report_date.$gte = new Date(fromdate);
+      if (todate)   filter.report_date.$lte = new Date(todate);
     }
-    return await DLRModel.find(filter)
-      .select("-work_entries -attendance_entries")
-      .sort({ report_date: -1 });
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      filter.$or = [{ contractor_id: { $regex: s, $options: "i" } }];
+    }
+    const pg   = Math.max(1, parseInt(page)  || 1);
+    const lim  = Math.max(1, Math.min(100, parseInt(limit) || 20));
+    const skip = (pg - 1) * lim;
+    const [data, total] = await Promise.all([
+      DLRModel.find(filter).select("-work_entries -attendance_entries").sort({ report_date: -1 }).skip(skip).limit(lim).lean(),
+      DLRModel.countDocuments(filter),
+    ]);
+    return { data, total, page: pg, limit: lim };
   }
 
   // Get all reports for a project + contractor

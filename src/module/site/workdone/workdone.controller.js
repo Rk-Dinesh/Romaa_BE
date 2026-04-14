@@ -12,9 +12,17 @@ export const createReport = async (req, res) => {
 export const getReportsByTender = async (req, res) => {
   try {
     const { tender_id } = req.params;
-    const { from, to } = req.query;
-    const reports = await WorkDoneService.getReportsByTender(tender_id, { from, to });
-    res.status(200).json({ status: true, count: reports.length, data: reports });
+    const { page, limit, search } = req.query;
+    const fromdate = req.query.fromdate || req.query.from;
+    const todate   = req.query.todate   || req.query.to;
+    const result = await WorkDoneService.getReportsByTender(tender_id, { fromdate, todate, page, limit, search });
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

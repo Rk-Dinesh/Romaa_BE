@@ -254,6 +254,16 @@ class ReceiptVoucherService {
     }
     if (filters.rv_no)         query.rv_no         = filters.rv_no;
 
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { rv_no:         { $regex: s, $options: "i" } },
+        { supplier_name: { $regex: s, $options: "i" } },
+        { tender_id:     { $regex: s, $options: "i" } },
+        { narration:     { $regex: s, $options: "i" } },
+      ];
+    }
+
     if (filters.from_date || filters.to_date) {
       query.rv_date = {};
       if (filters.from_date) query.rv_date.$gte = new Date(filters.from_date);

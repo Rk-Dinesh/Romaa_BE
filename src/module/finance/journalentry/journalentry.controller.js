@@ -11,18 +11,26 @@ export const getNextJeNo = async (_req, res) => {
 };
 
 // GET /journalentry/list
-// ?je_type=&status=&tender_id=&financial_year=&is_reversal=&je_no=&account_code=&from_date=&to_date=&page=&limit=
+// ?je_type=&status=&tender_id=&financial_year=&is_reversal=&je_no=&account_code=&fromdate=&todate=&search=&page=&limit=
 export const getList = async (req, res) => {
   try {
     const {
       je_type, status, tender_id, financial_year,
-      is_reversal, je_no, account_code, from_date, to_date, page, limit,
+      is_reversal, je_no, account_code, page, limit, search,
     } = req.query;
+    const from_date = req.query.fromdate || req.query.from_date;
+    const to_date   = req.query.todate   || req.query.to_date;
     const result = await JournalEntryService.getList({
       je_type, status, tender_id, financial_year,
-      is_reversal, je_no, account_code, from_date, to_date, page, limit,
+      is_reversal, je_no, account_code, from_date, to_date, page, limit, search,
     });
-    res.status(200).json({ status: true, ...result });
+    res.status(200).json({
+      status: true,
+      currentPage: result.pagination.page,
+      totalPages: result.pagination.pages,
+      totalCount: result.pagination.total,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

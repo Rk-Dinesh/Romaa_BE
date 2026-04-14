@@ -39,8 +39,9 @@ export const parseFileToJson = (filePath, originalName) => {
                   // Join all text fragments into one single string
                   value = value.richText.map((rt) => rt.text).join("");
                 } else if (value.result !== undefined) {
-                  // Handle Formula results
-                  value = value.result;
+                  // Use the cell's display text (respects Excel number format, e.g. "12.64")
+                  // rather than the raw float result (e.g. 12.642857142857142)
+                  value = cell.text !== "" ? cell.text : value.result;
                 }
               }
 

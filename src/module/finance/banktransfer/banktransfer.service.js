@@ -53,6 +53,16 @@ class BankTransferService {
     if (filters.tender_id)         query.tender_id         = filters.tender_id;
     if (filters.transfer_no)       query.transfer_no       = filters.transfer_no;
 
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { transfer_no:        { $regex: s, $options: "i" } },
+        { from_account_name:  { $regex: s, $options: "i" } },
+        { to_account_name:    { $regex: s, $options: "i" } },
+        { tender_id:          { $regex: s, $options: "i" } },
+      ];
+    }
+
     if (filters.from_date || filters.to_date) {
       query.transfer_date = {};
       if (filters.from_date) query.transfer_date.$gte = new Date(filters.from_date);

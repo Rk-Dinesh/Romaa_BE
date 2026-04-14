@@ -463,8 +463,34 @@ class MaterialService {
    * API: Get all projects that have GRN entries
    * Returns tender_id, project_name, total_grn_entries per tender
    */
-  static async getAllProjectsWithGRNSummary() {
-    const summary = await MaterialTransactionModel.aggregate([
+  static async getAllProjectsWithGRNSummary(filters = {}) {
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const postMatch = {};
+
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      postMatch.$or = [
+        { tender_id:    { $regex: s, $options: "i" } },
+        { project_name: { $regex: s, $options: "i" } },
+        { tender_name:  { $regex: s, $options: "i" } },
+        { vendors:      { $regex: s, $options: "i" } },
+      ];
+    }
+
+    if (filters.fromdate || filters.todate) {
+      postMatch.last_grn_date = {};
+      if (filters.fromdate) postMatch.last_grn_date.$gte = new Date(filters.fromdate);
+      if (filters.todate) {
+        const to = new Date(filters.todate);
+        to.setHours(23, 59, 59, 999);
+        postMatch.last_grn_date.$lte = to;
+      }
+    }
+
+    const pipeline = [
       { $match: { type: "IN" } },
       {
         $group: {
@@ -493,10 +519,27 @@ class MaterialService {
           vendors:           1,
         },
       },
-      { $sort: { last_grn_date: -1 } },
-    ]);
+    ];
 
-    return summary;
+    if (Object.keys(postMatch).length) pipeline.push({ $match: postMatch });
+
+    pipeline.push({
+      $facet: {
+        data:  [{ $sort: { last_grn_date: -1 } }, { $skip: skip }, { $limit: limit }],
+        total: [{ $count: "count" }],
+      },
+    });
+
+    const [result] = await MaterialTransactionModel.aggregate(pipeline);
+    const data  = result?.data || [];
+    const total = result?.total?.[0]?.count || 0;
+
+    return {
+      data,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit) || 1,
+      totalCount: total,
+    };
   }
 
   /**

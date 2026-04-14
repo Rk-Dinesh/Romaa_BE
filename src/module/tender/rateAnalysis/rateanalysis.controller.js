@@ -1,5 +1,4 @@
 import WorkItemService from './rateanalysis.service.js';
-import csvParser from 'csv-parser';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
@@ -68,35 +67,6 @@ export const deleteWorkItem = async (req, res) => {
     res.status(500).json({ status: false, message: error.message });
   }
 };
-export const uploadWorkItemsCSV1 = async (req, res, next) => {
-  try {
-    const { tender_id } = req.body;
-    if (!tender_id) return res.status(400).json({ status: false, message: "Tender ID is required." });
-
-    if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded. Please attach a valid CSV file." });
-
-    const csvRows = [];
-    const filePath = path.join(process.cwd(), "uploads", req.file.filename);
-
-    fs.createReadStream(filePath)
-      .pipe(csvParser())
-      .on("data", (row) => {
-        csvRows.push(row);
-      })
-      .on("end", async () => {
-        try {
-          const result = await WorkItemService.bulkInsert1(csvRows, tender_id);
-          res.status(200).json(result);
-        } catch (e) {
-          next(e);
-        } finally {
-          fs.unlinkSync(filePath);
-        }
-      });
-  } catch (error) {
-    next(error);
-  }
-};
 
 
 
@@ -119,10 +89,11 @@ export const uploadWorkItemsCSVAndSyncBoq = async (req, res) => {
       return res.status(400).json({ status: false, message: "The uploaded file is empty. Please provide a file with valid Rate Analysis data." });
     }
 
-    const workItemsDoc = await WorkItemService.bulkInsertWorkItemsFromCsv(dataRows, tender_id);
+    const created_by_user = req.user?.name || req.user?._id?.toString() || "SYSTEM";
+    const workItemsDoc = await WorkItemService.bulkInsertWorkItemsFromCsv(dataRows, tender_id, created_by_user);
     res.status(200).json({ status: true, message: "Rate Analysis data uploaded and synced successfully.", data: workItemsDoc });
   } catch (error) {
-    res.status(400).json({ status: false, message: error.message });
+    res.status(error.statusCode || 500).json({ status: false, message: error.message });
   } finally {
     if (filePath && fs.existsSync(filePath)) {
       try {
@@ -140,11 +111,11 @@ export const updateRateAnalysis = async (req, res) => {
 
   try {
     if (!tender_id) return res.status(400).json({ status: false, message: "Tender ID is required to update rate analysis data." });
-    const updatedDoc = await WorkItemService.updateRateAnalysis(work_items, tender_id);
+    const created_by_user = req.user?.name || req.user?._id?.toString() || "SYSTEM";
+    const updatedDoc = await WorkItemService.updateRateAnalysis(work_items, tender_id, created_by_user);
     res.status(200).json({ status: true, message: "Rate analysis updated successfully.", data: updatedDoc });
   } catch (err) {
-    const statusCode = err.message.includes("not found") ? 404 : 500;
-    res.status(statusCode).json({ status: false, message: err.message });
+    res.status(err.statusCode || 500).json({ status: false, message: err.message });
   }
 };
 

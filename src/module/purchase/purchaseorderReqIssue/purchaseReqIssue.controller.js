@@ -41,17 +41,37 @@ export const getAllPurchaseByProjectId = async (req, res) => {
 export const getAllByMaterialReceived = async (req, res) => {
   try {
     const { projectId } = req.params;
-    const purchase = await PurchaseRequestService.getAllByProjectIdForMaterialReceived(projectId);
-    res.status(200).json({ status: true, data: purchase });
+    const { page, limit, search, fromdate, todate } = req.query;
+    const result = await PurchaseRequestService.getAllByProjectIdForMaterialReceived(
+      projectId,
+      { page, limit, search, fromdate, todate }
+    );
+    res.status(200).json({
+      status: true,
+      currentPage: result.currentPage,
+      totalPages: result.totalPages,
+      totalCount: result.totalCount,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
 };
 
+const _respondPaginated = (res, result) =>
+  res.status(200).json({
+    status: true,
+    currentPage: result.currentPage,
+    totalPages: result.totalPages,
+    totalCount: result.totalCount,
+    data: result.data,
+  });
+
 export const getAllByNewRequest = async (req, res) => {
   try {
-    const purchase = await PurchaseRequestService.getAllByNewRequest();
-    res.status(200).json({ status: true, data: purchase });
+    const { page, limit, search, fromdate, todate } = req.query;
+    const result = await PurchaseRequestService.getAllByNewRequest({ page, limit, search, fromdate, todate });
+    _respondPaginated(res, result);
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -59,8 +79,9 @@ export const getAllByNewRequest = async (req, res) => {
 
 export const getAllByQuotationRequested = async (req, res) => {
   try {
-    const purchase = await PurchaseRequestService.getAllByQuotationRequested();
-    res.status(200).json({ status: true, data: purchase });
+    const { page, limit, search, fromdate, todate } = req.query;
+    const result = await PurchaseRequestService.getAllByQuotationRequested({ page, limit, search, fromdate, todate });
+    _respondPaginated(res, result);
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -68,8 +89,9 @@ export const getAllByQuotationRequested = async (req, res) => {
 
 export const getAllByQuotationApproved = async (req, res) => {
   try {
-    const purchase = await PurchaseRequestService.getAllByQuotationApproved();
-    res.status(200).json({ status: true, data: purchase });
+    const { page, limit, search, fromdate, todate } = req.query;
+    const result = await PurchaseRequestService.getAllByQuotationApproved({ page, limit, search, fromdate, todate });
+    _respondPaginated(res, result);
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

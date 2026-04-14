@@ -1,23 +1,10 @@
 import WorkItemModel from "./rateanalysis.model.js";
-import csvParser from "csv-parser";
-import fs from "fs";
 import BoqModel from "../boq/boq.model.js";
 import RAQuantityModel from "../rateanalyisquantites/rateanalysisquantities.model.js";
 import BidModel from "../bid/bid.model.js";
 import SiteOverheads from "../siteoverheads/siteoverhead.model.js";
 import TenderModel from "../tender/tender.model.js";
 import MaterialModel from "../materials/material.model.js";
-
-function groupLinesByCategory(lines) {
-  // Group lines by 'category'
-  const groups = {};
-  for (const line of lines) {
-    const { category, ...rest } = line;
-    if (!groups[category]) groups[category] = [];
-    groups[category].push(rest);
-  }
-  return Object.entries(groups).map(([category, sub]) => ({ category, sub }));
-}
 
 class WorkItemService {
   static async addWorkItem(data) {
@@ -45,265 +32,35 @@ class WorkItemService {
     return await WorkItemModel.findByIdAndDelete(id);
   }
 
-  static async bulkInsert1(csvRows, tender_id) {
-    // Group rows by itemNo and workItem
-    const groupedByItem = {};
-    csvRows.forEach((row) => {
-      const itemKey = row.itemNo;
-      if (!groupedByItem[itemKey]) {
-        groupedByItem[itemKey] = {
-          itemNo: Number(row.itemNo),
-          workItem: row.workItem,
-          unit: null,
-          output: null,
-          finalRate: null,
-          linesByCategory: {},
-        };
-      }
+  static async bulkInsertWorkItemsFromCsv(csvRows, tender_id, created_by_user = "SYSTEM") {
+    // Round 1: all independent reads in parallel (6 DB calls → 1 round trip)
+    const [existingDoc, bid, boq, siteOverheads, raDocExisting, matDocExisting] = await Promise.all([
+      WorkItemModel.findOne({ tender_id }),
+      BidModel.findOne({ tender_id }),
+      BoqModel.findOne({ tender_id }),
+      SiteOverheads.findOne({ tenderId: tender_id }),
+      RAQuantityModel.findOne({ tender_id }),
+      MaterialModel.findOne({ tender_id }),
+    ]);
 
-      const item = groupedByItem[itemKey];
-
-      // Normalize category name, just in case, to uppercase and underscores for consistency
-      let category = row.category
-        ? row.category.toUpperCase().replace(/\s+/g, "_")
-        : "";
-
-      if (category === "MAIN_ITEM" || category === "MAINITEM") {
-        // Main item line gives unit, output, finalRate for work item
-        item.unit = row.unit || null;
-        item.output =
-          row.output !== undefined && row.output !== ""
-            ? Number(row.output)
-            : null;
-        item.finalRate =
-          row.finalRate !== undefined && row.finalRate !== ""
-            ? Number(row.finalRate)
-            : null;
-      } else if (category) {
-        // Other categories grouped by category
-        if (!item.linesByCategory[category]) {
-          item.linesByCategory[category] = [];
-        }
-        // Push line with full field set
-        item.linesByCategory[category].push({
-          description: row.description || "",
-          unit: row.unit || "",
-          quantity:
-            row.quantity !== undefined && row.quantity !== ""
-              ? Number(row.quantity)
-              : null,
-          output:
-            row.output !== undefined && row.output !== ""
-              ? Number(row.output)
-              : null,
-          rate:
-            row.rate !== undefined && row.rate !== "" ? Number(row.rate) : null,
-          amount:
-            row.amount !== undefined && row.amount !== ""
-              ? Number(row.amount)
-              : null,
-          finalRate:
-            row.finalRate !== undefined && row.finalRate !== ""
-              ? Number(row.finalRate)
-              : null,
-          
-        });
-      }
-    });
-
-    const workItems = Object.values(groupedByItem).map((item) => {
-      const lines =
-        item.linesByCategory && typeof item.linesByCategory === "object"
-          ? Object.entries(item.linesByCategory).map(([category, subs]) => ({
-            category,
-            sub: Array.isArray(subs) ? subs : [],
-          }))
-          : [];
-
-      return {
-        itemNo: item.itemNo,
-        workItem: item.workItem,
-        unit: item.unit,
-        output: item.output,
-        finalRate: item.finalRate,
-        lines,
-      };
-    });
-
-    // Upsert the document for tender_id
-    const updatedDoc = await WorkItemModel.findOneAndUpdate(
-      { tender_id },
-      { tender_id, work_items: workItems },
-      { upsert: true, new: true }
-    );
-
-    // Return work_items in expected nested format
-    return updatedDoc.work_items;
-  } // not in use
-
-  static parseWorkItemsFromCSV(csvRows) {
-    const groupedByItem = {};
-    csvRows.forEach((row) => {
-      const itemKey = row.itemNo;
-      if (!groupedByItem[itemKey]) {
-        groupedByItem[itemKey] = {
-          itemNo: Number(row.itemNo),
-          workItem: row.workItem,
-          unit: null,
-          output: null,
-          finalRate: null,
-          linesByCategory: {},
-        };
-      }
-      const item = groupedByItem[itemKey];
-      let category = row.category
-        ? row.category.toUpperCase().replace(/\s+/g, "_")
-        : "";
-
-      if (category === "MAIN_ITEM" || category === "MAINITEM") {
-        item.unit = row.unit || null;
-        item.output =
-          row.output !== undefined && row.output !== ""
-            ? Number(row.output)
-            : null;
-        item.finalRate =
-          row.finalRate !== undefined && row.finalRate !== ""
-            ? Number(row.finalRate)
-            : null;
-      } else if (category) {
-        if (!item.linesByCategory[category])
-          item.linesByCategory[category] = [];
-        item.linesByCategory[category].push({
-          description: row.description || "",
-          unit: row.unit || "",
-          quantity:
-            row.quantity !== undefined && row.quantity !== ""
-              ? Number(row.quantity)
-              : null,
-          output:
-            row.output !== undefined && row.output !== ""
-              ? Number(row.output)
-              : null,
-          rate:
-            row.rate !== undefined && row.rate !== "" ? Number(row.rate) : null,
-          amount:
-            row.amount !== undefined && row.amount !== ""
-              ? Number(row.amount)
-              : null,
-          finalRate:
-            row.finalRate !== undefined && row.finalRate !== ""
-              ? Number(row.finalRate)
-              : null,
-        });
-      }
-    });
-
-    return Object.values(groupedByItem).map((item) => {
-      const lines =
-        item.linesByCategory && typeof item.linesByCategory === "object"
-          ? Object.entries(item.linesByCategory).map(([category, subs]) => ({
-            category,
-            sub: Array.isArray(subs) ? subs : [],
-          }))
-          : [];
-      return {
-        itemNo: item.itemNo,
-        workItem: item.workItem,
-        unit: item.unit,
-        output: item.output,
-        finalRate: item.finalRate,
-        lines,
-      };
-    });
-  }
-
-  static async bulkInsert2(csvRows, tender_id) {
-    const workItems = WorkItemService.parseWorkItemsFromCSV(csvRows);
-
-    // Upsert work items
-    await WorkItemModel.findOneAndUpdate(
-      { tender_id },
-      { tender_id, work_items: workItems },
-      { upsert: true, new: true }
-    );
-
-    return workItems;
-  } // not in use 
-
-  static async syncBoqWithWorkItems(tender_id, workItems) {
-    const boqDoc = await BoqModel.findOne({ tender_id });
-    if (!boqDoc) throw new Error("No Bill of Quantities record found for this tender. Rate Analysis sync could not be completed.");
-
-    boqDoc.items.forEach((boqItem) => {
-      const workItem = workItems.find(
-        (wi) =>
-          wi.workItem &&
-          boqItem.item_name &&
-          wi.workItem.trim().toLowerCase() ===
-          boqItem.item_name.trim().toLowerCase()
-      );
-      if (!workItem) return;
-
-      const getCatSub = (cat) => {
-        const l = workItem.lines.find((l) => l.category === cat);
-        return l && l.sub && l.sub.length > 0 ? l.sub[0] : null;
-      };
-
-      // Map categories to BOQ fields
-      const catFields = [
-        { cat: "MATERIALS", f: "material", af: "material_amount" },
-        { cat: "FUEL", f: "fuel", af: "fuel_amount" },
-        { cat: "MACHINERIES", f: "machinery", af: "machinery_amount" },
-        { cat: "MANPOWER", f: "labor", af: "labor_amount" },
-        {
-          cat: "SUBCONTRACTOR",
-          f: "subcontractor",
-          af: "subcontractor_amount",
-        },
-      ];
-
-      catFields.forEach(({ cat, f, af }) => {
-        const val = getCatSub(cat);
-        if (val) {
-          boqItem[f] =
-            val.finalRate !== undefined && val.finalRate !== null
-              ? String(val.finalRate)
-              : "";
-          boqItem[af] =
-            boqItem.quantity &&
-              val.finalRate !== undefined &&
-              val.finalRate !== null
-              ? String(Number(boqItem.quantity) * Number(val.finalRate))
-              : "";
-        }
-      });
-
-      boqItem.zero_cost_unit_rate =
-        workItem.finalRate !== undefined && workItem.finalRate !== null
-          ? String(workItem.finalRate)
-          : "";
-      boqItem.zero_cost_final_amount =
-        boqItem.quantity && boqItem.zero_cost_unit_rate
-          ? String(
-            Number(boqItem.quantity) * Number(boqItem.zero_cost_unit_rate)
-          )
-          : "";
-    });
-
-    await boqDoc.save();
-    return boqDoc;
-  } 
-
-
-
-  static async bulkInsertWorkItemsFromCsv(csvRows, tender_id) {
-    const bid = await BidModel.findOne({ tender_id });
-    if (!bid) throw new Error("No Bid record found for this tender. Please submit a Bid before uploading Rate Analysis data.");
-    if (bid.freezed === false) {
-      throw new Error("The Bid must be frozen before uploading Rate Analysis data. Please freeze the Bid and retry.");
+    // Validations (use already-fetched docs)
+    if (existingDoc?.freeze) {
+      const err = new Error("Rate Analysis is frozen and cannot be modified. Unfreeze it before re-uploading.");
+      err.statusCode = 422;
+      throw err;
     }
-    // 1. Load BOQ once
-    const boq = await BoqModel.findOne({ tender_id });
+    if (!bid) {
+      const err = new Error("No Bid record found for this tender. Please submit a Bid before uploading Rate Analysis data.");
+      err.statusCode = 400;
+      throw err;
+    }
+    if (bid.freezed === false) {
+      const err = new Error("The Bid must be frozen before uploading Rate Analysis data. Please freeze the Bid and retry.");
+      err.statusCode = 422;
+      throw err;
+    }
+
+    // 1. BOQ already loaded above
     const boqItems = boq?.items || [];
 
     // Map item_id -> boq item (reference)
@@ -312,35 +69,7 @@ class WorkItemService {
       if (!item?.item_id) continue;
       boqById.set(String(item.item_id).trim(), item);
     }
-    // 2. Group CSV rows by itemNo
-    // const grouped = new Map(); // itemNo -> { mainRow, detailRows: [] }
-
-    // for (const rawRow of csvRows) {
-    //   if (!rawRow) continue;
-
-    //   const itemNo = rawRow.ITEM_ID != null ? String(rawRow.ITEM_ID).trim() : "";
-    //   if (!itemNo) continue;
-
-    //   if (!boqById.has(itemNo)) {
-    //     throw new Error(`ItemNo "${itemNo}" not found in BOQ. Please check your CSV upload.`);
-    //   }
-
-    //   const category = rawRow.CATEGORY != null ? String(rawRow.CATEGORY).trim() : "";
-
-    //   let entry = grouped.get(itemNo);
-    //   if (!entry) {
-    //     entry = { mainRow: null, detailRows: [] };
-    //     grouped.set(itemNo, entry);
-    //   }
-
-    //   if (category === "MAIN_ITEM") {
-    //     entry.mainRow = rawRow;
-    //   } else {
-    //     entry.detailRows.push(rawRow);
-    //   }
-    // }
-
-    // 2. Group CSV rows by itemNo (Stateful grouping)
+    // 2. Group CSV rows by itemNo (stateful: detail rows inherit the current MAIN_ITEM parent)
     const grouped = new Map(); // itemNo -> { mainRow, detailRows: [] }
     let currentMainItemNo = null; // 👈 Tracks the active parent (e.g., ABS001)
 
@@ -359,7 +88,9 @@ class WorkItemService {
 
         // Validation: Parent must exist in BOQ
         if (!boqById.has(currentMainItemNo)) {
-          throw new Error(`Work item "${currentMainItemNo}" was not found in the Bill of Quantities. Please verify the Item ID in your CSV and try again.`);
+          const err = new Error(`Work item "${currentMainItemNo}" was not found in the Bill of Quantities. Please verify the Item ID in your CSV and try again.`);
+          err.statusCode = 400;
+          throw err;
         }
 
         // Initialize group
@@ -428,7 +159,7 @@ class WorkItemService {
     for (const [itemNo, { mainRow, detailRows }] of grouped.entries()) {
       if (!mainRow) continue;
 
-      const working_quantity = Number(mainRow.WORKING_QUANTITY || 0);
+      const working_quantity = Number(Number(mainRow.WORKING_QUANTITY || 0).toFixed(4));
       const unit = mainRow.UNIT || null;
 
       // workItem text from BOQ; fallback to MAIN_ITEM description or generic label
@@ -453,12 +184,12 @@ class WorkItemService {
           rawRow.CATEGORY != null ? String(rawRow.CATEGORY).trim() : "";
 
         const lineQuantity = Number(
-          rawRow.WORKING_QUANTITY != null
+          Number(rawRow.WORKING_QUANTITY != null
             ? rawRow.WORKING_QUANTITY
-            : rawRow.QUANTITY || 0
+            : rawRow.QUANTITY || 0).toFixed(4)
         );
-        const rate = Number(rawRow.RATE || 0);
-        const amount = lineQuantity * rate;
+        const rate = Number(Number(rawRow.RATE || 0).toFixed(2));
+        const amount = Number((lineQuantity * rate).toFixed(2));
         const total_rate =
           working_quantity > 0
             ? Number((amount / working_quantity).toFixed(4))
@@ -481,14 +212,11 @@ class WorkItemService {
           categoryTotals[category] += total_rate;
         }
 
-        // --- RAQuantity accumulation per line ---
+        // --- RAQuantity + Material accumulation per line ---
         const bucketName = categoryToBucket(category);
-        const boqQty = Number(boqItem.quantity || 0);
-        // RA quantity for this item & line
-        const raQtyRaw = (lineQuantity / working_quantity) * boqQty;
-        const raQty = Number(raQtyRaw.toFixed(4));
         if (bucketName && boqItem && working_quantity > 0) {
-
+          const boqQty = Number(boqItem.quantity || 0);
+          const raQty = Number(((lineQuantity / working_quantity) * boqQty).toFixed(4));
 
           // composite key per description + unit + category
           const key = `${category}||${line.description}||${line.unit}`;
@@ -502,7 +230,7 @@ class WorkItemService {
               unit: line.unit,
               quantity: [],
               total_item_quantity: 0,
-              unit_rate: rate, // assume same for all occurrences
+              unit_rate: rate,
               tax_percent: 0,
               escalation_percent: 0,
               tax_amount: 0,
@@ -516,45 +244,35 @@ class WorkItemService {
 
           itemAgg.quantity.push(raQty);
           itemAgg.total_item_quantity += raQty;
-        }
 
-        if (category === "MT-CM" || category === "MT-BL") {
-            const matKey = `${category}||${line.description}||${line.unit}`;
-
-            
+          if (category === "MT-CM" || category === "MT-BL") {
+            const matKey = key;
             let matAgg = materialBucket.get(matKey);
             if (!matAgg) {
               matAgg = {
                 item_description: line.description,
-                category: category, // Will be MT-CM or MT-BL
+                category,
                 unit: line.unit,
-                quantity: [], // Array of numbers
+                quantity: [],
                 total_item_quantity: 0,
                 unit_rate: rate,
                 resourceGroup: line.resourceGroup || "",
                 total_amount: 0,
-                
-                // Initialize default fields required by schema
                 opening_stock: 0,
-                inward_history: [],
-                outward_history: [],
                 total_received_qty: 0,
                 total_issued_qty: 0,
                 current_stock_on_hand: 0,
-                pending_procurement_qty: 0
+                pending_procurement_qty: 0,
               };
               materialBucket.set(matKey, matAgg);
             }
-            
+
             matAgg.quantity.push(raQty);
             matAgg.total_item_quantity += raQty;
-            // Recalculate total amount based on accumulated quantity
             matAgg.total_amount = Number((matAgg.total_item_quantity * matAgg.unit_rate).toFixed(2));
-            
-            // Initial Pending Procurement = Total Budgeted (since nothing received yet)
             matAgg.pending_procurement_qty = matAgg.total_item_quantity;
           }
-        
+        }
       }
 
       // Round category rates to 2 decimals
@@ -671,227 +389,131 @@ class WorkItemService {
       }
     }
 
-    // 5. Upsert WorkItems document for this tender
-    let doc = await WorkItemModel.findOne({ tender_id });
+    // 5. Build WorkItems doc (reuse existingDoc fetched in round 1 — no duplicate findOne)
+    let doc = existingDoc || new WorkItemModel({ tender_id });
+    doc.work_items = work_items;
 
-    if (doc) {
-      doc.work_items = work_items;
-    } else {
-      doc = new WorkItemModel({
-        tender_id,
-        work_items
-      });
-    }
-
-    await doc.save();
-
-    // 6. If BOQ exists, update BOQ totals once
+    // 6. Prepare BOQ totals
     if (boq) {
       const total_material_amount = consumable_material_total + bulk_material_total;
       const total_machine_amount = machinery_total + fuel_total;
       const total_labor_amount = contractor_total + nmr_total;
 
       boq.boq_total_amount = Number(boq_total_amount.toFixed(2));
-      boq.zero_cost_total_amount = Number(
-        zero_cost_total_amount.toFixed(2)
-      );
+      boq.zero_cost_total_amount = Number(zero_cost_total_amount.toFixed(2));
       boq.variance_amount = Number(variance_amount_total.toFixed(2));
-      boq.variance_percentage = Number(
-        ((variance_amount_total / (boq_total_amount || 1)) * 100).toFixed(2)
-      );
-      boq.consumable_material = Number(
-        consumable_material_total.toFixed(2)
-      );
+      boq.variance_percentage = Number(((variance_amount_total / (boq_total_amount || 1)) * 100).toFixed(2));
+      boq.consumable_material = Number(consumable_material_total.toFixed(2));
       boq.bulk_material = Number(bulk_material_total.toFixed(2));
-      boq.total_material_amount = Number(
-        total_material_amount.toFixed(2)
-      );
+      boq.total_material_amount = Number(total_material_amount.toFixed(2));
       boq.machinery = Number(machinery_total.toFixed(2));
       boq.fuel = Number(fuel_total.toFixed(2));
-      boq.total_machine_amount = Number(
-        total_machine_amount.toFixed(2)
-      );
+      boq.total_machine_amount = Number(total_machine_amount.toFixed(2));
       boq.contractor = Number(contractor_total.toFixed(2));
       boq.nmr = Number(nmr_total.toFixed(2));
-      boq.total_labor_amount = Number(
-        total_labor_amount.toFixed(2)
-      );
-
-      await boq.save();
+      boq.total_labor_amount = Number(total_labor_amount.toFixed(2));
     }
 
-    // 7. Upsert RAQuantity document
-    const raDocData = {
-      tender_id,
-      quantites: {
-        consumable_material: Array.from(raBuckets.consumable_material.values()).map(
-          (it) => ({
-            ...it,
-            quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-            total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-            total_amount: Number(
-              (it.total_item_quantity * it.unit_rate).toFixed(2)
-            ),
-            tax_amount: 0,
-            final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
-          })
-        ),
-        bulk_material: Array.from(raBuckets.bulk_material.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: 0,
-          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
-        })),
-        machinery: Array.from(raBuckets.machinery.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: 0,
-          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
-        })),
-        fuel: Array.from(raBuckets.fuel.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: 0,
-          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
-        })),
-        contractor: Array.from(raBuckets.contractor.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: 0,
-          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
-          ex_quantity: Number(it.total_item_quantity.toFixed(2)),
-        })),
-        nmr: Array.from(raBuckets.nmr.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: 0,
-          final_amount: Number(it.total_item_quantity * it.unit_rate).toFixed(2),
-        }))
-      },
-      created_by_user: "ADMIN"
+    // 7. Build RA quantity data
+    const mapRaBucket = (it, extra = {}) => ({
+      ...it,
+      quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+      total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+      total_amount: Number((it.total_item_quantity * it.unit_rate).toFixed(2)),
+      tax_amount: 0,
+      final_amount: Number((it.total_item_quantity * it.unit_rate).toFixed(2)),
+      ...extra,
+    });
+
+    const raQuantites = {
+      consumable_material: Array.from(raBuckets.consumable_material.values()).map((it) => mapRaBucket(it)),
+      bulk_material: Array.from(raBuckets.bulk_material.values()).map((it) => mapRaBucket(it)),
+      machinery: Array.from(raBuckets.machinery.values()).map((it) => mapRaBucket(it)),
+      fuel: Array.from(raBuckets.fuel.values()).map((it) => mapRaBucket(it)),
+      contractor: Array.from(raBuckets.contractor.values()).map((it) => mapRaBucket(it, { ex_quantity: Number(it.total_item_quantity.toFixed(2)) })),
+      nmr: Array.from(raBuckets.nmr.values()).map((it) => mapRaBucket(it)),
     };
 
-    let raDoc = await RAQuantityModel.findOne({ tender_id });
-    if (raDoc) {
-      raDoc.quantites = raDocData.quantites;
-    } else {
-      raDoc = new RAQuantityModel(raDocData);
+    if (raDocExisting) {
+      raDocExisting.quantites = raQuantites;
+      raDocExisting.created_by_user = created_by_user;
     }
-    await raDoc.save();
+    const raDoc = raDocExisting || new RAQuantityModel({ tender_id, quantites: raQuantites, created_by_user });
 
-    // 8. --- NEW: Save Materials ---
-    // Convert map values to array for MaterialModel
-    const materialItems = Array.from(materialBucket.values()).map(it => ({
-        ...it,
-        quantity: it.quantity.map(q => Number(q.toFixed(4))),
-        total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-        total_amount: Number(it.total_amount.toFixed(2)),
-        pending_procurement_qty: Number(it.total_item_quantity.toFixed(2))
+    // 8. Build material data
+    const materialItems = Array.from(materialBucket.values()).map((it) => ({
+      ...it,
+      quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+      total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+      total_amount: Number(it.total_amount.toFixed(2)),
+      pending_procurement_qty: Number(it.total_item_quantity.toFixed(2)),
     }));
 
+    let matDoc = null;
     if (materialItems.length > 0) {
-        let matDoc = await MaterialModel.findOne({ tender_id });
-        if (matDoc) {
-            // Overwrite items or merge? Typically bulk import overwrites list for fresh calculation
-            matDoc.items = materialItems;
-        } else {
-            matDoc = new MaterialModel({
-                tender_id,
-                items: materialItems,
-                created_by_user: "ADMIN"
-            });
-        }
-        await matDoc.save();
+      if (matDocExisting) {
+        matDocExisting.items = materialItems;
+        matDocExisting.created_by_user = created_by_user;
+        matDoc = matDocExisting;
+      } else {
+        matDoc = new MaterialModel({ tender_id, items: materialItems, created_by_user });
+      }
     }
 
-    // 9. Calculate summary values and update WorkItems summary
+    // 9. Calculate summary (siteOverheads already fetched in round 1)
     if (boq) {
-      // 1) zero_cost_total_amount & boq_total_amount from BOQ
-      const zero_cost_total_amount = Number(boq.zero_cost_total_amount || 0);
-      const boq_total_amount = Number(boq.boq_total_amount || 0);
+      const s_zero_cost = Number(boq.zero_cost_total_amount || 0);
+      const s_boq_total = Number(boq.boq_total_amount || 0);
+      const siteoverhead_total_amount = Number(siteOverheads?.grand_total_overheads_rs || 0);
+      const escalation_benefits_percentage = Number(siteOverheads?.escalation_benefits_percentage || 0);
+      const risk_contingency = Number(siteOverheads?.risk_contingency || 0);
+      const ho_overheads = Number(siteOverheads?.ho_overheads || 0);
 
-      // 2) siteoverhead_total_amount from SiteOverheads
-      const siteOverheads = await SiteOverheads.findOne({ tenderId: tender_id });
-      const siteoverhead_total_amount = Number(
-        siteOverheads?.grand_total_overheads_rs || 0
-      );
-
-      // 3) total_cost
-      const total_cost = zero_cost_total_amount + siteoverhead_total_amount;
-
-      // 4) margin
-      const margin = total_cost - boq_total_amount;
-
-      // 5) escalation_benefits_percentage
-      // You can pass this as an argument, read from Bid, or keep a default
-      const escalation_benefits_percentage = 0;
-
-      // 6) total_margin
-      const total_margin =
-        margin + (margin * escalation_benefits_percentage) / 100;
-
-      // 7) grossmargin_percentage
-      const grossmargin_percentage =
-        boq_total_amount > 0 ? (total_margin * 100) / boq_total_amount : 0;
-
-      // 8) risk_contingency & ho_overheads
-      // Either keep as constants, args, or pick from another model (e.g., Bid)
-      const risk_contingency = 0;
-
-      const ho_overheads = 0;
-
-      // 9) PBT
+      const total_cost = s_zero_cost + siteoverhead_total_amount;
+      const margin = total_cost - s_boq_total;
+      const total_margin = margin + (margin * escalation_benefits_percentage) / 100;
+      const grossmargin_percentage = s_boq_total > 0 ? (total_margin * 100) / s_boq_total : 0;
       const PBT = grossmargin_percentage - risk_contingency - ho_overheads;
 
-      // 10) Persist into WorkItems document summary
       doc.summary = {
-        zero_cost_total_amount,
+        zero_cost_total_amount: s_zero_cost,
         siteoverhead_total_amount,
         total_cost,
-        boq_total_amount,
+        boq_total_amount: s_boq_total,
         margin,
         escalation_benefits_percentage,
         total_margin,
         grossmargin_percentage,
         risk_contingency,
         ho_overheads,
-        PBT
+        PBT,
       };
-
-      await doc.save();
     }
 
+    // Round 2: all independent writes in parallel (4 DB saves → 1 round trip)
+    await Promise.all([
+      doc.save(),
+      boq ? boq.save() : Promise.resolve(),
+      raDoc.save(),
+      matDoc ? matDoc.save() : Promise.resolve(),
+    ]);
 
     return doc;
-  } // in use 
+  }
 
 
-static async updateRateAnalysis(payload, tender_id) {
+static async updateRateAnalysis(payload, tender_id, created_by_user = "SYSTEM") {
 
     if (!tender_id) throw new Error("Tender ID is required.");
 
-    // 1. Load BOQ once
-    const boq = await BoqModel.findOne({ tender_id: tender_id });
+    // Round 1: all independent reads in parallel (5 DB calls → 1 round trip)
+    const [boq, existingDoc, siteOverheads, raDocExisting, matDocExisting] = await Promise.all([
+      BoqModel.findOne({ tender_id }),
+      WorkItemModel.findOne({ tender_id }),
+      SiteOverheads.findOne({ tenderId: tender_id }),
+      RAQuantityModel.findOne({ tender_id }),
+      MaterialModel.findOne({ tender_id }),
+    ]);
 
     const boqItems = boq?.items || [];
 
@@ -963,7 +585,7 @@ static async updateRateAnalysis(payload, tender_id) {
         continue;
       }
 
-      const working_quantity = Number(mainRow.working_quantity || 0);
+      const working_quantity = Number(Number(mainRow.working_quantity || 0).toFixed(4));
       const unit = mainRow.unit || null;
       const boqItem = boqById.get(itemNo);
 
@@ -981,12 +603,12 @@ static async updateRateAnalysis(payload, tender_id) {
         const category =
           rawRow.category != null ? String(rawRow.category).trim() : "";
         const lineQuantity = Number(
-          rawRow.working_quantity != null
+          Number(rawRow.working_quantity != null
             ? rawRow.working_quantity
-            : rawRow.quantity || 0
+            : rawRow.quantity || 0).toFixed(4)
         );
-        const rate = Number(rawRow.rate || 0);
-        const amount = lineQuantity * rate;
+        const rate = Number(Number(rawRow.rate || 0).toFixed(2));
+        const amount = Number((lineQuantity * rate).toFixed(2));
         const total_rate =
           working_quantity > 0
             ? Number((amount / working_quantity).toFixed(4))
@@ -1045,40 +667,32 @@ static async updateRateAnalysis(payload, tender_id) {
                 itemAgg.total_item_quantity += totalReqQty;
             }
 
-            // 2. --- NEW: Material Model Logic (Only MT-CM & MT-BL) ---
+            // 2. Material Model Logic (Only MT-CM & MT-BL)
             if (category === "MT-CM" || category === "MT-BL") {
                 const matKey = `${category}||${line.description}||${line.unit}`;
-                
                 let matAgg = materialBucket.get(matKey);
                 if (!matAgg) {
                   matAgg = {
                     item_description: line.description,
-                    category: category,
+                    category,
                     unit: line.unit,
-                    quantity: [], 
+                    quantity: [],
                     total_item_quantity: 0,
                     unit_rate: rate,
                     resourceGroup: line.resourceGroup || "",
                     total_amount: 0,
-                    
-                    // Initialize default fields required by schema
                     opening_stock: 0,
-                    inward_history: [],
-                    outward_history: [],
                     total_received_qty: 0,
                     total_issued_qty: 0,
                     current_stock_on_hand: 0,
-                    pending_procurement_qty: 0
+                    pending_procurement_qty: 0,
                   };
                   materialBucket.set(matKey, matAgg);
                 }
-                
+
                 matAgg.quantity.push(totalReqQty);
                 matAgg.total_item_quantity += totalReqQty;
-                // Recalculate total amount based on accumulated quantity
                 matAgg.total_amount = Number((matAgg.total_item_quantity * matAgg.unit_rate).toFixed(2));
-                
-                // Initial Pending Procurement = Total Budgeted
                 matAgg.pending_procurement_qty = matAgg.total_item_quantity;
             }
         }
@@ -1191,24 +805,11 @@ static async updateRateAnalysis(payload, tender_id) {
       }
     }
 
-    // 5. Upsert WorkItems document for this tender
-    let doc = await WorkItemModel.findOne({ tender_id: tender_id });
+    // 5. Build WorkItems doc (reuse existingDoc fetched in round 1 — no duplicate findOne)
+    let doc = existingDoc || new WorkItemModel({ tender_id });
+    doc.work_items = work_items;
 
-    if (doc) {
-      doc.work_items = work_items;
-    } else {
-      doc = new WorkItemModel({
-        tender_id: tender_id,
-        work_items
-      });
-    }
-    try {
-      await doc.save();
-    } catch (err) {
-      console.error("Error saving WorkItem:", err);
-    }
-
-    // 6. If BOQ exists, update BOQ totals once
+    // 6. Prepare BOQ totals
     if (boq) {
       const total_material_amount = consumable_material_total + bulk_material_total;
       const total_machine_amount = machinery_total + fuel_total;
@@ -1217,9 +818,7 @@ static async updateRateAnalysis(payload, tender_id) {
       boq.boq_total_amount = Number(boq_total_amount.toFixed(2));
       boq.zero_cost_total_amount = Number(zero_cost_total_amount.toFixed(2));
       boq.variance_amount = Number(variance_amount_total.toFixed(2));
-      boq.variance_percentage = Number(
-        ((variance_amount_total / (boq_total_amount || 1)) * 100).toFixed(2)
-      );
+      boq.variance_percentage = Number(((variance_amount_total / (boq_total_amount || 1)) * 100).toFixed(2));
       boq.consumable_material = Number(consumable_material_total.toFixed(2));
       boq.bulk_material = Number(bulk_material_total.toFixed(2));
       boq.total_material_amount = Number(total_material_amount.toFixed(2));
@@ -1229,178 +828,91 @@ static async updateRateAnalysis(payload, tender_id) {
       boq.contractor = Number(contractor_total.toFixed(2));
       boq.nmr = Number(nmr_total.toFixed(2));
       boq.total_labor_amount = Number(total_labor_amount.toFixed(2));
+    }
 
-      try {
-        await boq.save();
-      } catch (err) {
-        console.error("Error saving BOQ:", err);
+    // 7. Build RA quantity data
+    const mapRaBucketU = (it, extra = {}) => ({
+      ...it,
+      quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+      total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+      total_amount: Number((it.total_item_quantity * it.unit_rate).toFixed(2)),
+      tax_amount: Number((it.total_item_quantity * it.unit_rate * (it.tax_percent / 100)).toFixed(2)),
+      final_amount: Number((it.total_item_quantity * it.unit_rate).toFixed(2)),
+      ...extra,
+    });
+
+    const raQuantites = {
+      consumable_material: Array.from(raBuckets.consumable_material.values()).map((it) => mapRaBucketU(it)),
+      bulk_material: Array.from(raBuckets.bulk_material.values()).map((it) => mapRaBucketU(it)),
+      machinery: Array.from(raBuckets.machinery.values()).map((it) => mapRaBucketU(it)),
+      fuel: Array.from(raBuckets.fuel.values()).map((it) => mapRaBucketU(it)),
+      contractor: Array.from(raBuckets.contractor.values()).map((it) => mapRaBucketU(it, { ex_quantity: Number(it.total_item_quantity.toFixed(2)) })),
+      nmr: Array.from(raBuckets.nmr.values()).map((it) => mapRaBucketU(it)),
+    };
+
+    if (raDocExisting) {
+      raDocExisting.quantites = raQuantites;
+      raDocExisting.created_by_user = created_by_user;
+    }
+    const raDoc = raDocExisting || new RAQuantityModel({ tender_id, quantites: raQuantites, created_by_user });
+
+    // 8. Build material data
+    const materialItems = Array.from(materialBucket.values()).map((it) => ({
+      ...it,
+      quantity: it.quantity.map((q) => Number(q.toFixed(4))),
+      total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
+      total_amount: Number(it.total_amount.toFixed(2)),
+      pending_procurement_qty: Number(it.total_item_quantity.toFixed(2)),
+    }));
+
+    let matDoc = null;
+    if (materialItems.length > 0) {
+      if (matDocExisting) {
+        matDocExisting.items = materialItems;
+        matDocExisting.created_by_user = created_by_user;
+        matDoc = matDocExisting;
+      } else {
+        matDoc = new MaterialModel({ tender_id, items: materialItems, created_by_user });
       }
     }
 
-    // 7. Upsert RAQuantity document
-    const raDocData = {
-      tender_id,
-      quantites: {
-        consumable_material: Array.from(raBuckets.consumable_material.values()).map(
-          (it) => ({
-            ...it,
-            quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-            total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-            total_amount: Number(
-              (it.total_item_quantity * it.unit_rate).toFixed(2)
-            ),
-            tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-            final_amount: Number(it.total_amount).toFixed(2),
-          })
-        ),
-        bulk_material: Array.from(raBuckets.bulk_material.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount).toFixed(2),
-        })),
-        machinery: Array.from(raBuckets.machinery.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount).toFixed(2),
-        })),
-        fuel: Array.from(raBuckets.fuel.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount).toFixed(2),
-        })),
-        contractor: Array.from(raBuckets.contractor.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount).toFixed(2),
-          ex_quantity: Number(it.total_item_quantity.toFixed(2)),
-        })),
-        nmr: Array.from(raBuckets.nmr.values()).map((it) => ({
-          ...it,
-          quantity: it.quantity.map((q) => Number(q.toFixed(4))),
-          total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-          total_amount: Number(
-            (it.total_item_quantity * it.unit_rate).toFixed(2)
-          ),
-          tax_amount: Number(it.total_amount * (it.tax_percent / 100)).toFixed(2),
-          final_amount: Number(it.total_amount ).toFixed(2),
-        }))
-      },
-      created_by_user: "ADMIN"
-    };
-
-    let raDoc = await RAQuantityModel.findOne({ tender_id: tender_id });
-    if (raDoc) {
-      raDoc.quantites = raDocData.quantites;
-    } else {
-      raDoc = new RAQuantityModel(raDocData);
-    }
-    try {
-      await raDoc.save();
-    } catch (err) {
-      console.error("Error saving RAQuantity:", err);
-    }
-
-    // --- 7.5 NEW: Save MaterialModel ---
-    // Convert map values to array for MaterialModel
-    const materialItems = Array.from(materialBucket.values()).map(it => ({
-        ...it,
-        quantity: it.quantity.map(q => Number(q.toFixed(4))),
-        total_item_quantity: Number(it.total_item_quantity.toFixed(2)),
-        total_amount: Number(it.total_amount.toFixed(2)),
-        pending_procurement_qty: Number(it.total_item_quantity.toFixed(2)) // Default pending = total
-    }));
-
-    if (materialItems.length > 0) {
-        let matDoc = await MaterialModel.findOne({ tender_id: tender_id });
-        if (matDoc) {
-            matDoc.items = materialItems;
-        } else {
-            matDoc = new MaterialModel({
-                tender_id: tender_id,
-                items: materialItems,
-                created_by_user: "ADMIN"
-            });
-        }
-        try {
-            await matDoc.save();
-        } catch (err) {
-            console.error("Error saving MaterialModel:", err);
-        }
-    }
-
-
-    // 8. Calculate summary values and update WorkItems summary
+    // 9. Calculate summary (siteOverheads already fetched in round 1)
     if (boq) {
-      // 1) zero_cost_total_amount & boq_total_amount from BOQ
-      const zero_cost_total_amount = Number(boq.zero_cost_total_amount || 0);
-      const boq_total_amount = Number(boq.boq_total_amount || 0);
+      const s_zero_cost = Number(boq.zero_cost_total_amount || 0);
+      const s_boq_total = Number(boq.boq_total_amount || 0);
+      const siteoverhead_total_amount = Number(siteOverheads?.grand_total_overheads_rs || 0);
+      const escalation_benefits_percentage = Number(siteOverheads?.escalation_benefits_percentage || 0);
+      const risk_contingency = Number(siteOverheads?.risk_contingency || 0);
+      const ho_overheads = Number(siteOverheads?.ho_overheads || 0);
 
-      // 2) siteoverhead_total_amount from SiteOverheads
-      const siteOverheads = await SiteOverheads.findOne({ tenderId: tender_id });
-      const siteoverhead_total_amount = Number(
-        siteOverheads?.grand_total_overheads_rs || 0
-      );
-
-      // 3) total_cost
-      const total_cost = zero_cost_total_amount + siteoverhead_total_amount;
-      const margin = total_cost - boq_total_amount;
-
-      // 5) escalation_benefits_percentage
-      // You can pass this as an argument, read from Bid, or keep a default
-      const escalation_benefits_percentage = 0;
-      // 6) total_margin
-      const total_margin =
-        margin + (margin * escalation_benefits_percentage) / 100;
-
-      // 7) grossmargin_percentage
-      const grossmargin_percentage =
-        boq_total_amount > 0 ? (total_margin * 100) / boq_total_amount : 0;
-
-      // 8) risk_contingency & ho_overheads
-      // Either keep as constants, args, or pick from another model (e.g., Bid)
-      const risk_contingency = 0;
-      const ho_overheads = 0;
-
-      // 9) PBT
+      const total_cost = s_zero_cost + siteoverhead_total_amount;
+      const margin = total_cost - s_boq_total;
+      const total_margin = margin + (margin * escalation_benefits_percentage) / 100;
+      const grossmargin_percentage = s_boq_total > 0 ? (total_margin * 100) / s_boq_total : 0;
       const PBT = grossmargin_percentage - risk_contingency - ho_overheads;
 
-      // 10) Persist into WorkItems document summary
       doc.summary = {
-        zero_cost_total_amount,
+        zero_cost_total_amount: s_zero_cost,
         siteoverhead_total_amount,
         total_cost,
-        boq_total_amount,
+        boq_total_amount: s_boq_total,
         margin,
         escalation_benefits_percentage,
         total_margin,
         grossmargin_percentage,
         risk_contingency,
         ho_overheads,
-        PBT
+        PBT,
       };
-
-      await doc.save();
     }
+
+    // Round 2: all independent writes in parallel (4 DB saves → 1 round trip)
+    await Promise.all([
+      doc.save(),
+      boq ? boq.save() : Promise.resolve(),
+      raDoc.save(),
+      matDoc ? matDoc.save() : Promise.resolve(),
+    ]);
 
     return doc;
   }
@@ -1415,9 +927,11 @@ static async updateRateAnalysis(payload, tender_id) {
   }
 
   static async updateSummaryAfterSiteOverhead(tender_id) {
-    // Fetch latest BOQ and SiteOverheads
-    const boq = await BoqModel.findOne({ tender_id });
-    const siteOverheads = await SiteOverheads.findOne({ tenderId: tender_id });
+    const [boq, siteOverheads, doc] = await Promise.all([
+      BoqModel.findOne({ tender_id }),
+      SiteOverheads.findOne({ tenderId: tender_id }),
+      WorkItemModel.findOne({ tender_id }),
+    ]);
 
     if (!boq) throw new Error("Bill of Quantities record not found for this tender. Summary recalculation could not be completed.");
     if (!siteOverheads) throw new Error("Site Overheads record not found for this tender. Summary recalculation could not be completed.");
@@ -1437,8 +951,6 @@ static async updateRateAnalysis(payload, tender_id) {
     const ho_overheads = Number(siteOverheads.ho_overheads || 0);
     const PBT = grossmargin_percentage - risk_contingency - ho_overheads;
 
-    // Update WorkItems summary
-    const doc = await WorkItemModel.findOne({ tender_id });
     if (!doc) {
       throw new Error("Rate Analysis record not found for this tender. Please upload Rate Analysis data before updating the summary.");
     }
@@ -1462,8 +974,10 @@ static async updateRateAnalysis(payload, tender_id) {
   }
 
   static async getSummary(tender_id) {
-    const doc = await WorkItemModel.findOne({ tender_id });
-    const tender = await TenderModel.findOne({ tender_id });
+    const [doc, tender] = await Promise.all([
+      WorkItemModel.findOne({ tender_id }),
+      TenderModel.findOne({ tender_id }),
+    ]);
 
     if (!doc) {
       throw new Error("Rate Analysis record not found for this tender.");
