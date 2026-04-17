@@ -26,6 +26,7 @@ import mongoose from "mongoose";
 //   CCN  — ClientCreditNote
 //   CB   — ClientBilling
 //   BT   — BankTransfer
+//   EV   — ExpenseVoucher
 
 const FinanceCounterSchema = new mongoose.Schema(
   {

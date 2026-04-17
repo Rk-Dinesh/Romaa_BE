@@ -45,6 +45,7 @@ const JE_TYPES = [
   "Debit Note",            // Auto-created on DebitNote approval
   "Client Bill",           // Auto-created on ClientBilling approval
   "Client Credit Note",    // Auto-created on ClientCN approval
+  "Expense Voucher",       // Auto-created on ExpenseVoucher approval
 ];
 
 // ── Entry line schema ─────────────────────────────────────────────────────────

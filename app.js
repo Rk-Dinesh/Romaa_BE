@@ -68,6 +68,7 @@ import journalEntryRouter from "./src/module/finance/journalentry/journalentry.r
 import JournalEntryService from "./src/module/finance/journalentry/journalentry.service.js";
 import financeDropdownRouter from "./src/module/finance/dropdown/dropdown.route.js";
 import bankTransferRouter from "./src/module/finance/banktransfer/banktransfer.route.js";
+import expenseVoucherRouter from "./src/module/finance/expensevoucher/expensevoucher.route.js";
 import aiRouter from "./src/module/ai/ai.route.js";
 
 dotenv.config();
@@ -214,6 +215,7 @@ app.use("/journalentry", journalEntryRouter);
 app.use("/finance-dropdown", financeDropdownRouter);
 app.use("/finance", financeDropdownRouter); // alias: /finance/payable-bills, /finance/parties/:tenderId, etc.
 app.use("/banktransfer", bankTransferRouter);
+app.use("/expensevoucher", expenseVoucherRouter);
 app.use("/ai", aiRouter);
 
 app.get("/", (_req, res) => {
