@@ -70,6 +70,7 @@ import financeDropdownRouter from "./src/module/finance/dropdown/dropdown.route.
 import bankTransferRouter from "./src/module/finance/banktransfer/banktransfer.route.js";
 import expenseVoucherRouter from "./src/module/finance/expensevoucher/expensevoucher.route.js";
 import aiRouter from "./src/module/ai/ai.route.js";
+import SiteDrawingRouter from "./src/module/documents/sitedrawingdocuments/SiteDrawing.route.js";
 
 dotenv.config();
 const PORT = process.env.PORT;
@@ -171,6 +172,7 @@ app.use("/emd", emdrouter);
 app.use("/contractor", contractorRoute);
 app.use("/contractworker", contractworkerrouter);
 app.use("/document", tenderDocRouter);
+app.use("/sitedrawingdocs", SiteDrawingRouter);
 app.use("/workorderdocument", workOrderDocRouter);
 app.use("/penalty", penaltyRouter);
 app.use("/rateanalysis", rateanalysisrouter);

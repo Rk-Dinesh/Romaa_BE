@@ -34,6 +34,7 @@ const RoleSchema = new mongoose.Schema(
         boq_cost: Actions,
         detailed_estimate: Actions,
         drawing_boq: Actions,
+        site_drawing: Actions,
         wbs: Actions,
         schedule: Actions,
         wo_issuance: Actions,
