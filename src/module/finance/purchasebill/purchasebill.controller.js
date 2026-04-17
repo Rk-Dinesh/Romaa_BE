@@ -45,22 +45,11 @@ export const getBillsByTender = async (req, res) => {
   }
 };
 
-// GET /purchasebill/summary-all?search=&fromdate=&todate=&page=&limit=
-export const getAllTendersSummary = async (req, res) => {
+// GET /purchasebill/summary-all
+export const getAllTendersSummary = async (_req, res) => {
   try {
-    const { page, limit, search } = req.query;
-    const from_date = req.query.fromdate || req.query.from_date;
-    const to_date   = req.query.todate   || req.query.to_date;
-    const result = await PurchaseBillService.getBills({
-      from_date, to_date, page, limit, search,
-    });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
-    });
+    const data = await PurchaseBillService.getAllTendersSummary();
+    res.status(200).json({ status: true, data });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

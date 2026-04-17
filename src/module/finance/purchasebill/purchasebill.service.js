@@ -235,6 +235,15 @@ class PurchaseBillService {
     if (filters.tax_mode)   query.tax_mode   = filters.tax_mode;
     if (filters.invoice_no) query.invoice_no = { $regex: filters.invoice_no, $options: "i" };
 
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { doc_id:      { $regex: s, $options: "i" } },
+        { vendor_name: { $regex: s, $options: "i" } },
+        { invoice_no:  { $regex: s, $options: "i" } },
+      ];
+    }
+
     if (filters.from_date || filters.to_date) {
       query.doc_date = {};
       if (filters.from_date) query.doc_date.$gte = new Date(filters.from_date);
@@ -309,6 +318,7 @@ class PurchaseBillService {
   static async getAllTendersSummary() {
     return await PurchaseBillModel.aggregate([
       // Only non-draft bills contribute to financials
+      { $match: { status: { $ne: "draft" } } },
       {
         $group: {
           _id:               "$tender_id",
@@ -322,9 +332,6 @@ class PurchaseBillService {
           },
           approved_amount: {
             $sum: { $cond: [{ $eq: ["$status", "approved"] }, "$net_amount", 0] },
-          },
-          paid_amount: {
-            $sum: { $cond: [{ $eq: ["$status", "paid"] }, "$net_amount", 0] },
           },
           latest_bill_date:  { $max: "$doc_date" },
         },
@@ -340,7 +347,6 @@ class PurchaseBillService {
           total_net:        1,
           pending_amount:   1,
           approved_amount:  1,
-          paid_amount:      1,
           latest_bill_date: 1,
         },
       },
@@ -387,8 +393,8 @@ class PurchaseBillService {
     if (!payload.vendor_id) throw new Error("vendor_id is required");
 
     if (payload.invoice_no) {
-      const duplicate = await PurchaseBillModel.exists({ invoice_no: payload.invoice_no });
-      if (duplicate) throw new Error(`Invoice number '${payload.invoice_no}' already exists`);
+      const duplicate = await PurchaseBillModel.exists({ vendor_id: payload.vendor_id, invoice_no: payload.invoice_no });
+      if (duplicate) throw new Error(`Invoice number '${payload.invoice_no}' already exists for this vendor`);
     }
 
     // Auto-fill vendor fields from VendorModel

@@ -62,7 +62,7 @@ GET /purchasebill/list
 | `vendor_id` | `string` | Exact match — e.g. `VND-002` |
 | `tax_mode` | `"instate" \| "otherstate"` | Exact match |
 | `invoice_no` | `string` | Case-insensitive partial match |
-| `status` | `"draft" \| "pending" \| "approved" \| "paid"` | Exact match |
+| `status` | `"draft" \| "pending" \| "approved"` | Exact match |
 | `page` | `number` | Page number (1-based). Default: `1` |
 | `limit` | `number` | Records per page. Default: `20` |
 
@@ -226,7 +226,7 @@ GET /purchasebill/by-tender/TND-001?vendor_id=VND-002&status=approved
 
 ## 4. All Tenders Summary Table
 
-Returns one summary row per tender — designed for the finance overview table showing billing status across all tenders at a glance.
+Returns one summary row per tender — designed for the finance overview table showing billing status across all tenders at a glance. Draft bills are excluded from all totals.
 
 ```
 GET /purchasebill/summary-all
@@ -256,7 +256,6 @@ GET /purchasebill/summary-all
       "total_net": 283990,
       "pending_amount": 70290,
       "approved_amount": 118500,
-      "paid_amount": 95200,
       "latest_bill_date": "2026-03-19T00:00:00.000Z"
     },
     {
@@ -268,7 +267,6 @@ GET /purchasebill/summary-all
       "total_net": 100300,
       "pending_amount": 100300,
       "approved_amount": 0,
-      "paid_amount": 0,
       "latest_bill_date": "2026-03-10T00:00:00.000Z"
     }
   ]
@@ -287,7 +285,6 @@ GET /purchasebill/summary-all
 | `total_net` | Σ `net_amount` — total payable |
 | `pending_amount` | `net_amount` sum of bills in `pending` status |
 | `approved_amount` | `net_amount` sum of bills in `approved` status |
-| `paid_amount` | `net_amount` sum of bills in `paid` status |
 | `latest_bill_date` | Date of the most recent bill |
 
 > Results are sorted by `latest_bill_date` descending (most recently billed tender first).
@@ -445,7 +442,7 @@ Content-Type: application/json
 | `place_of_supply` | — | — | **Auto-filled** from vendor master — do not send |
 | `credit_days` | `number` | No | Defaults to vendor master `credit_day` if not provided |
 | `tax_mode` | `"instate" \| "otherstate"` | No | Tax mode |
-| `status` | `"draft" \| "pending" \| "approved" \| "paid"` | No | Defaults to `"pending"` |
+| `status` | `"draft" \| "pending" \| "approved"` | No | Defaults to `"pending"` |
 
 #### `line_items[]` — minimum 1 item required
 
@@ -578,7 +575,7 @@ purchase_bill_id:  "<doc_id>"
 | `400` | `doc_id` missing | `"doc_id is required"` |
 | `400` | `vendor_id` missing | `"vendor_id is required"` |
 | `400` | `vendor_id` not found in vendor master | `"Vendor 'VND-XXX' not found"` |
-| `400` | `invoice_no` already exists | `"Invoice number '...' already exists"` |
+| `400` | `invoice_no` already exists for this vendor | `"Invoice number '...' already exists for this vendor"` |
 | `400` | `line_items` is empty | `"A purchase bill must have at least one line item"` |
 | `500` | DB error / duplicate `doc_id` | `error.message` |
 

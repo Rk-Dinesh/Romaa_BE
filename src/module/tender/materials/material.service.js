@@ -12,7 +12,7 @@ class MaterialService {
    * Session ensures the counter updates + transaction inserts are all-or-nothing.
    */
   static async addMaterialReceived(payload) {
-    const { tender_id, requestId, received_items, received_by, invoice_no, site_name } = payload;
+    const { tender_id, requestId, received_items, received_by, invoice_challan_no,dc_no, site_name } = payload;
 
     const session = await mongoose.startSession();
     session.startTransaction();
@@ -161,7 +161,8 @@ class MaterialService {
           quoted_rate:          quotedRate,
           grn_bill_no:          grnBillNo,
           party_bill_no:        partyBillNo,
-          invoice_challan_no:   invoice_no || "",
+          invoice_challan_no:   invoice_challan_no || "",
+          dc_no:                dc_no || "",
           received_by:          received_by || "Admin",
           remarks:              `Received against ${requestId}`,
         });

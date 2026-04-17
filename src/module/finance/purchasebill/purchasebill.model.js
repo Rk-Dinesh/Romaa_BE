@@ -76,7 +76,7 @@ const AdditionalChargeSchema = new mongoose.Schema(
 const PurchaseBillSchema = new mongoose.Schema(
   {
     // Auto-generated system ID: PB/<FY>/<tender_id>/<seq>  e.g. PB/25-26/T001/0001
-    doc_id: { type: String, unique: true },
+    doc_id: { type: String, unique: true, required: true },
     doc_date:    { type: Date,   default: null },
     invoice_no:   { type: String, default: "" }, // vendor's invoice number
     invoice_date: { type: Date,   default: null },
