@@ -346,6 +346,8 @@ class ExpenseVoucherService {
     const lines = [];
 
     // Dr each expense line (pre-tax amount only)
+    // tender_id propagated per-line so P&L by tender stays accurate when an EV
+    // splits its cost across multiple projects (header tender_id remains empty).
     for (const l of ev.lines) {
       if (l.amount > 0) {
         lines.push({
@@ -354,6 +356,7 @@ class ExpenseVoucherService {
           debit_amt:    r2(l.amount),
           credit_amt:   0,
           narration:    l.description || "",
+          tender_id:    l.tender_id || ev.tender_id || "",
         });
       }
     }

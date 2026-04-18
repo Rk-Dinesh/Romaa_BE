@@ -1,0 +1,428 @@
+================================================================================
+ ROMAA BACKEND — FINANCE TIER 1 REPORTS: FRONTEND INTEGRATION GUIDE
+================================================================================
+
+All endpoints sit under  /reports  and require  verifyJWT  (Authorization: Bearer
+<token>  or HTTP-only accessToken cookie).
+
+Response envelope (every endpoint):
+    {
+      "status":  true | false,
+      "data":    { ... }          // on success
+      "message": "error reason"   // on failure
+    }
+
+Every date in the response is a Mongo ISO string — FE should localize.
+All amounts are rounded to 2 decimal places (INR paise). Dr/Cr convention is
+captured in a  *_balance_type  field  ("Dr" | "Cr" | "").
+
+Screens marked  [PRIORITY]  should be built first — the others are secondary.
+
+--------------------------------------------------------------------------------
+1. TRIAL BALANCE                          [PRIORITY]
+--------------------------------------------------------------------------------
+GET /reports/trial-balance?as_of_date=YYYY-MM-DD&include_zero=false
+
+Use case: accountant's month-end check — are debits = credits ?
+
+Query params:
+    as_of_date     optional   defaults to today
+    include_zero   optional   "true" to keep accounts with no activity + no
+                              opening balance (default: false)
+
+Response shape:
+{
+  "as_of_date": ISO,
+  "rows": [
+    {
+      "account_code", "account_name", "account_type", "account_subtype",
+      "normal_balance",                       // "Dr" | "Cr"
+      "opening_balance", "opening_balance_type",
+      "period_debit",  "period_credit",       // movement up to as_of_date
+      "closing_balance", "closing_balance_type"
+    }
+  ],
+  "total_debit":  number,
+  "total_credit": number,
+  "is_balanced":  boolean,                     // must be true
+  "difference":   number                       // 0 when balanced
+}
+
+UI suggestions:
+  • Sticky header: as_of_date picker + include_zero toggle
+  • Table columns: Code, Name, Opening (Dr/Cr), Period Dr, Period Cr,
+    Closing (Dr/Cr)
+  • Grand-total footer shows Total Dr / Total Cr with a green or red banner
+    based on is_balanced
+  • Group rows by account_type (Asset/Liability/Income/Expense/Equity)
+    with collapsible sections
+  • Clickable account row → General Ledger drawer (report #4)
+
+--------------------------------------------------------------------------------
+2. PROFIT & LOSS                          [PRIORITY]
+--------------------------------------------------------------------------------
+GET /reports/profit-loss?from_date=&to_date=&tender_id=
+
+Use case: income vs expense for a period, optionally scoped to one tender.
+
+Query params:
+    from_date   optional   defaults to FY start
+    to_date     optional   defaults to today
+    tender_id   optional   e.g. "TND-001" — per-project P&L
+
+Response shape:
+{
+  "from_date", "to_date", "tender_id",
+  "income":  { "total": n, "groups": [{ "subtype", "subtotal", "lines": [ ... ] }] },
+  "expense": { "total": n, "groups": [{ "subtype", "subtotal", "lines": [ ... ] }] },
+  "net_profit":      number,
+  "net_profit_type": "Profit" | "Loss"
+}
+
+Each  lines[]  row:
+  { "account_code", "account_name", "account_subtype", "amount" }
+
+UI suggestions:
+  • Two columns: Income on left, Expense on right
+  • Expandable subtype groups (Operating Income / Other Income;
+    Direct Cost / Site Overhead / Admin Expense / Financial Expense)
+  • Bottom strip: Net Profit / Loss in bold coloured tile
+  • Tender dropdown in header (optional) — populated from  /tender/list
+  • Date range picker with FY-to-date default
+
+--------------------------------------------------------------------------------
+3. BALANCE SHEET                          [PRIORITY]
+--------------------------------------------------------------------------------
+GET /reports/balance-sheet?as_of_date=YYYY-MM-DD
+
+Use case: snapshot of what the company owns vs owes on a specific date.
+
+Response shape:
+{
+  "as_of_date", "financial_year",
+  "assets":      { "subtotal": n, "lines": [ {account_code, account_name, amount} ] },
+  "liabilities": { "subtotal": n, "lines": [ ... ] },
+  "equity":      { "subtotal": n, "lines": [ ... ] },
+  "retained_earnings": n,
+  "total_assets":      n,
+  "total_liab_equity": n,
+  "is_balanced":       boolean,
+  "difference":        n
+}
+
+UI suggestions:
+  • Two-pane layout: Assets (left) vs Liabilities + Equity (right)
+  • Retained Earnings appears in the equity column with a small info tooltip:
+    "Income − Expense from FY start to as_of_date"
+  • Check badge at top: green if is_balanced, red if difference ≠ 0
+  • Print / PDF button
+
+--------------------------------------------------------------------------------
+4. GENERAL LEDGER
+--------------------------------------------------------------------------------
+GET /reports/general-ledger?account_code=&from_date=&to_date=&page=&limit=
+
+Use case: drill-down for a single account — every posting with running balance.
+
+Query params (required):
+    account_code     e.g. "1010" for Petty Cash, "2010-VND-001" for vendor
+Query params (optional):
+    from_date, to_date
+    page     default 1
+    limit    default 100, max 500
+
+Response shape:
+{
+  "account": { "account_code", "account_name", "account_type",
+               "account_subtype", "normal_balance" },
+  "from_date", "to_date",
+  "opening": { "balance", "balance_type" },
+  "entries": [
+    {
+      "je_id", "je_no", "je_date", "je_type",
+      "narration", "source_no", "source_type",
+      "tender_id",
+      "debit", "credit",
+      "balance", "balance_type"
+    }
+  ],
+  "pagination": { "page", "limit", "total", "pages" }
+}
+
+UI suggestions:
+  • Account picker with type-ahead search (autocomplete from AccountTree)
+  • Date range + pagination
+  • Running balance column right-aligned, Dr highlighted green / Cr red
+  • Click  je_no  → opens the full journal entry drawer
+  • Click  source_no  → navigates to the originating voucher
+
+--------------------------------------------------------------------------------
+5. CASH FLOW STATEMENT
+--------------------------------------------------------------------------------
+GET /reports/cash-flow?from_date=&to_date=
+
+Use case: where did the cash come from / go to during the period.
+
+Response shape:
+{
+  "from_date", "to_date",
+  "opening_cash":  { "accounts": [{ account_code, account_name, balance }],
+                     "total": n },
+  "operating":   { "inflow", "outflow", "net",
+                   "lines": [{ account_code, account_name, kind, amount }] },
+  "investing":   { "inflow", "outflow", "net",  "lines": [ ... ] },
+  "financing":   { "inflow", "outflow", "net",  "lines": [ ... ] },
+  "working_capital_change": n,
+  "cash_flow_summary": {
+      "operating_net", "investing_net", "financing_net",
+      "working_capital_change", "net_change_in_cash"
+  },
+  "closing_cash": { "accounts": [ ... ], "total": n },
+  "reconciliation": {
+      "opening_plus_net", "closing",
+      "is_balanced":  boolean,
+      "difference":   n
+  }
+}
+
+"kind" values (badges in UI):
+    Operating →  "Income" (inflow) | "Expense" (outflow)
+    Investing →  "Capex"  (outflow) | "Asset Sale" (inflow)
+    Financing →  "Equity Infusion" | "Borrowing" (inflow)
+                 "Drawings"        | "Repayment" (outflow)
+
+UI suggestions:
+  • Four stat tiles at top:
+      Operating | Investing | Financing | Net Change in Cash
+  • Three expandable sections, each a mini-table with flavour badges
+  • Footer: Opening + Net = Closing  (show difference in red if non-zero)
+  • Note: a non-zero  working_capital_change  is expected — explain in a tooltip
+    ("Reflects AR / AP / inventory shifts that don't flow through cash yet")
+
+--------------------------------------------------------------------------------
+6. GSTR-1 (OUTWARD SUPPLIES)              [PRIORITY FOR GST FILING]
+--------------------------------------------------------------------------------
+GET /reports/gstr-1?from_date=&to_date=
+
+Use case: monthly / quarterly GST outward return preparation.
+
+Response shape:
+{
+  "from_date", "to_date",
+  "b2b":   { "rows": [ ... ], "count" },    // registered buyers
+  "b2cl":  { "rows": [ ... ], "count" },    // unregistered + interstate + > ₹2.5L
+  "b2cs":  { "rows": [ ... ], "count" },    // all other unregistered (summary)
+  "cdnr":  { "rows": [ ... ], "count" },    // credit notes — registered
+  "cdnur": { "rows": [ ... ], "count" },    // credit notes — unregistered
+  "summary": {
+    "total_invoices", "total_credit_notes",
+    "total_taxable", "total_cgst", "total_sgst", "total_igst",
+    "total_output_tax"
+  },
+  "notes": [ "client_gstin not yet captured..." ]
+}
+
+b2b / b2cl row shape:
+  { bill_id, bill_date, client_id, client_name, client_gstin,
+    place_of_supply, tax_mode,
+    taxable, cgst_pct, cgst_amt, sgst_pct, sgst_amt, igst_pct, igst_amt,
+    invoice_value }
+
+b2cs row shape (grouped, not per-invoice):
+  { tax_mode, rate_pct, taxable, cgst, sgst, igst, invoice_count }
+
+UI suggestions:
+  • Top tabs: B2B | B2CL | B2CS | CDNR | CDNUR   (count in each tab)
+  • Summary strip above the tabs: 4 tiles — Taxable / CGST / SGST / IGST
+  • Render  notes[]  as an info banner so user knows B2C data is placeholder
+    until  client_gstin  is added on ClientBilling
+  • Export to Excel / JSON (format matches GSTN schema field names)
+
+--------------------------------------------------------------------------------
+7. GSTR-2B (INWARD ITC)                   [PRIORITY FOR GST FILING]
+--------------------------------------------------------------------------------
+GET /reports/gstr-2b?from_date=&to_date=
+
+Use case: review eligible input tax credit from vendor invoices.
+
+Response shape:
+{
+  "from_date", "to_date",
+  "sources": {
+      "purchase_bills":            n,
+      "debit_notes":               n,
+      "expense_vouchers_with_gst": n
+  },
+  "vendors":    { "rows": [ ... ], "count" },
+  "rate_slabs": { "rows": [ ... ], "count" },
+  "summary": {
+      "total_taxable", "total_cgst", "total_sgst", "total_igst",
+      "total_input_itc"
+  }
+}
+
+Vendor row shape:
+  { vendor_gstin, vendor_name, invoice_count,
+    taxable, cgst, sgst, igst, total_value }
+
+Rate slab row shape:
+  { rate_pct, taxable, cgst, sgst, igst }
+
+UI suggestions:
+  • Top section: 3 source tiles (bills / debit notes / expense vouchers)
+  • Middle: vendor table, sortable by taxable desc
+  • Bottom: rate-slab bar chart + compact table
+  • Click a vendor → show underlying invoices (future enhancement — hit /purchasebill)
+
+--------------------------------------------------------------------------------
+8. GSTR-3B (NET GST PAYABLE)
+--------------------------------------------------------------------------------
+GET /reports/gstr-3b?from_date=&to_date=
+
+Use case: final GST payable / receivable number for filing.
+
+Response shape:
+{
+  "from_date", "to_date",
+  "output_supplies": {
+      "from_documents": { taxable, cgst, sgst, igst },
+      "from_ledger":    { cgst, sgst, igst }
+  },
+  "input_itc": {
+      "from_documents": { taxable, cgst, sgst, igst },
+      "from_ledger":    { cgst, sgst, igst }
+  },
+  "itc_reversed":       { cgst, sgst, igst, total },
+  "net_itc_available":  { cgst, sgst, igst, total },
+  "net_gst_payable":    { cgst, sgst, igst, total },
+  "reconciliation":     { output_match: boolean, input_match: boolean }
+}
+
+UI suggestions:
+  • "Document vs Ledger" comparison — show two columns side by side
+    so accountant can spot mismatches at a glance
+  • If  output_match  or  input_match  is false → yellow banner with a
+    "Investigate" button linking to the General Ledger for  2110  /  1080-CGST
+  • Bottom tile: Net GST Payable (bold, red if > 0, green if ≤ 0)
+
+--------------------------------------------------------------------------------
+9. ITC REVERSAL REGISTER
+--------------------------------------------------------------------------------
+GET /reports/itc-reversal?from_date=&to_date=
+
+Use case: every JE of type "ITC Reversal" in the period.
+
+Response shape:
+{
+  "from_date", "to_date",
+  "rows": [
+    { je_no, je_date, narration, tender_id, cgst, sgst, igst, total }
+  ],
+  "count": n,
+  "totals": { cgst, sgst, igst, total }
+}
+
+UI suggestions:
+  • Simple table. Columns: Date, JE No, Narration, CGST, SGST, IGST, Total
+  • Click  je_no  → JE drawer
+  • Button "Record new ITC reversal" → pre-fills a Journal Entry form with
+    je_type = "ITC Reversal"
+
+--------------------------------------------------------------------------------
+10. TDS REGISTER / 26Q DATA               [PRIORITY FOR COMPLIANCE]
+--------------------------------------------------------------------------------
+GET /reports/tds-register?from_date=&to_date=&section=
+
+Use case: quarterly TDS return (26Q / 27Q) preparation.
+
+Query params:
+    from_date, to_date
+    section     optional   "194C" | "194J" | "194I" | ... to filter
+
+Response shape:
+{
+  "from_date", "to_date",
+  "filter": { "section": "194C" | null },
+  "rows": [
+    {
+      "source": "PaymentVoucher" | "ExpenseVoucher",
+      "voucher_no", "payment_date",
+      "deductee_type", "deductee_id", "deductee_name",
+      "deductee_pan", "deductee_gstin",
+      "tds_section", "tds_pct",
+      "gross_amount", "tds_amount", "net_paid",
+      "tender_id"
+    }
+  ],
+  "summary": {
+      "total_entries", "total_gross", "total_tds",
+      "ledger_credit",       // what JE said was credited to 2140 (TDS Payable)
+      "is_reconciled", "ledger_diff"
+  },
+  "by_section":  [{ section, count, gross, tds }],
+  "by_deductee": [{ section, deductee_type, deductee_id, deductee_name,
+                    deductee_pan, count, gross, tds }],
+  "by_month":    [{ month, count, gross, tds }]    // month = "YYYY-MM"
+}
+
+UI suggestions:
+  • Filter strip: date range + section dropdown (194C / 194J / 194I / 194Q)
+  • Three view tabs: Entries | By Section | By Deductee | By Month
+  • Summary bar: Total Gross / Total TDS / Ledger Credit / Reconciled ✓ or ✗
+  • If not reconciled, amber banner with  ledger_diff  amount
+  • Export-to-TXT button that outputs 26Q field-wise layout (future scope)
+  • Warning banner if  deductee_pan  is empty — PAN is mandatory for 26Q
+
+--------------------------------------------------------------------------------
+CROSS-CUTTING UX NOTES
+--------------------------------------------------------------------------------
+
+Date handling
+  • All dates accepted as YYYY-MM-DD strings (plain or ISO OK). The backend
+    also tolerates legacy  fromdate / todate / asOfDate  query aliases.
+  • Default period:  FY start (1 April) → today  when from_date / to_date
+    are omitted.
+  • Indian FY format: "25-26" internally (short YY-YY).
+
+Permissions
+  • All routes currently pass verifyJWT only. The  verifyPermission("finance",
+    "reports", "read")  check is commented out and will be re-enabled once
+    role permissions are seeded — FE should already request the "reports"
+    read permission on user roles to be future-proof.
+
+Empty state
+  • Every report handles an empty period gracefully (totals all zero, rows [])
+    so no 500 errors — just show an "No data for this period" panel.
+
+Rounding
+  • All amounts already arrive rounded to 2 decimals. FE should NOT re-round
+    during arithmetic — paise precision matters for is_balanced /
+    is_reconciled flags.
+
+Drill-down philosophy
+  • Every report that shows an account_code or je_no is an entry point into
+    General Ledger (#4) or JournalEntry detail. A global drawer / side-panel
+    component will pay for itself across all 10 screens.
+
+Print / Export
+  • For statutory reports (#6, #7, #8, #10), a "Download JSON" button is a
+    quick win — users can drop it into their tax software.
+  • PDF / Excel export is nice-to-have; server-side templating not required
+    on day 1.
+
+--------------------------------------------------------------------------------
+OUTSTANDING (BACKEND GAPS TO RAISE WITH BE TEAM)
+--------------------------------------------------------------------------------
+
+• client_gstin    → add to ClientBilling + ClientCreditNote.
+                    Once added, GSTR-1 B2B / CDNR sections will auto-populate.
+
+• deductee_pan    → add to Vendor + Contractor masters.
+                    Needed for 26Q; currently returned as "" in TDS register.
+
+• place_of_supply → add to ClientBilling (currently present on PurchaseBill).
+                    GSTR-1 B2B / B2CL classification depends on this.
+
+================================================================================
+ END — File: src/module/finance/reports/TIER1_FRONTEND_GUIDE.txt
+================================================================================

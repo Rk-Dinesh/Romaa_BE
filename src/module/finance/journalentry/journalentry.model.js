@@ -73,6 +73,14 @@ const JELineSchema = new mongoose.Schema(
     supplier_id:   { type: String, default: null },   // "VND-001", "CTR-012"
     supplier_type: { type: String, default: null },   // "Vendor" | "Contractor"
     supplier_ref:  { type: mongoose.Schema.Types.ObjectId, default: null },
+
+    // ── Per-line tender tag ───────────────────────────────────────────
+    // The voucher carries a tender_id at header level, but ExpenseVoucher
+    // (and any future split voucher) can split a single transaction across
+    // multiple projects. When that happens, each JE line carries its own
+    // tender_id so P&L by tender remains accurate at line granularity.
+    // Empty string means "use the header tender_id from the JE".
+    tender_id: { type: String, default: "" },
   },
   { _id: false }
 );

@@ -106,6 +106,16 @@ const RoleSchema = new mongoose.Schema(
         supplier_outstanding: Actions,
         overall_expenses: Actions,
         company_bank_details: Actions,
+        trial_balance: Actions,
+        profit_loss: Actions,
+        general_ledger: Actions,
+        balance_sheet: Actions,
+        cash_flow: Actions,
+        gstr_1: Actions,
+        gstr_2b: Actions,
+        gstr_3b: Actions,
+        itc_reversal: Actions,
+        tds_register: Actions,
         
       },
 

@@ -69,6 +69,7 @@ import JournalEntryService from "./src/module/finance/journalentry/journalentry.
 import financeDropdownRouter from "./src/module/finance/dropdown/dropdown.route.js";
 import bankTransferRouter from "./src/module/finance/banktransfer/banktransfer.route.js";
 import expenseVoucherRouter from "./src/module/finance/expensevoucher/expensevoucher.route.js";
+import reportsRouter from "./src/module/finance/reports/reports.route.js";
 import aiRouter from "./src/module/ai/ai.route.js";
 import SiteDrawingRouter from "./src/module/documents/sitedrawingdocuments/SiteDrawing.route.js";
 
@@ -218,6 +219,7 @@ app.use("/finance-dropdown", financeDropdownRouter);
 app.use("/finance", financeDropdownRouter); // alias: /finance/payable-bills, /finance/parties/:tenderId, etc.
 app.use("/banktransfer", bankTransferRouter);
 app.use("/expensevoucher", expenseVoucherRouter);
+app.use("/reports", reportsRouter);
 app.use("/ai", aiRouter);
 
 app.get("/", (_req, res) => {

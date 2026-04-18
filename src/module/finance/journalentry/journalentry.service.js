@@ -43,6 +43,7 @@ async function enrichLines(rawLines) {
       supplier_id:   acc.linked_supplier_id   || line.supplier_id   || null,
       supplier_type: acc.linked_supplier_type || line.supplier_type || null,
       supplier_ref:  acc.linked_supplier_ref  || line.supplier_ref  || null,
+      tender_id:     line.tender_id || "",
     };
   });
 }
@@ -114,6 +115,7 @@ async function enrichAndValidateLines(lines) {
       supplier_id:   acc.linked_supplier_id   || line.supplier_id   || null,
       supplier_type: acc.linked_supplier_type || line.supplier_type || null,
       supplier_ref:  acc.linked_supplier_ref  || line.supplier_ref  || null,
+      tender_id:     line.tender_id || "",
     };
   });
 
@@ -334,6 +336,7 @@ class JournalEntryService {
       supplier_id:   line.supplier_id,
       supplier_type: line.supplier_type,
       supplier_ref:  line.supplier_ref,
+      tender_id:     line.tender_id || "",
     }));
 
     const reversalDoc = {
