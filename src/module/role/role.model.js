@@ -100,7 +100,6 @@ const RoleSchema = new mongoose.Schema(
         bank_transaction: Actions,
         journal_entry: Actions,
         banks: Actions,
-        tds: Actions,
         cash_entry: Actions,
         ledger_entry: Actions,
         supplier_outstanding: Actions,
