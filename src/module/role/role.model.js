@@ -111,9 +111,9 @@ const RoleSchema = new mongoose.Schema(
         general_ledger: Actions,
         balance_sheet: Actions,
         cash_flow: Actions,
-        gstr_1: Actions,
-        gstr_2b: Actions,
-        gstr_3b: Actions,
+        gstr1: Actions,
+        gstr2b: Actions,
+        gstr3b: Actions,
         itc_reversal: Actions,
         tds_register: Actions,
         
