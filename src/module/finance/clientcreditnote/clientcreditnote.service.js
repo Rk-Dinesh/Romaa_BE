@@ -100,7 +100,10 @@ class ClientCNService {
       payload.bill_ref
         ? { _id: payload.bill_ref }
         : { bill_id: payload.bill_id }
-    ).select("_id bill_id tender_id tender_name client_id client_name client_ref status").lean();
+    ).select(
+      "_id bill_id tender_id tender_name client_id client_name client_ref " +
+      "client_gstin client_state place_of_supply status"
+    ).lean();
 
     if (!bill) throw new Error("Original client bill not found. Please verify the bill reference and try again");
     if (bill.status === "Draft" || bill.status === "Rejected") {
@@ -116,9 +119,12 @@ class ClientCNService {
       bill_id:     bill.bill_id,
       tender_id:   bill.tender_id,
       tender_name: bill.tender_name || "",
-      client_id:   bill.client_id,
-      client_name: bill.client_name || "",
-      client_ref:  bill.client_ref  || null,
+      client_id:    bill.client_id,
+      client_name:  bill.client_name  || "",
+      client_ref:   bill.client_ref   || null,
+      client_gstin: bill.client_gstin || "",
+      client_state: bill.client_state || "",
+      place_of_supply: bill.place_of_supply || "InState",
 
       items: (payload.items || []).map((i) => ({
         item_code:  i.item_code  || "",

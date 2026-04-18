@@ -30,9 +30,14 @@ const ClientCNSchema = new mongoose.Schema(
     // ── Tender & client snapshots ─────────────────────────────────────────────
     tender_id:   { type: String, default: "", index: true },
     tender_name: { type: String, default: "" },
-    client_id:   { type: String, default: "" },
-    client_name: { type: String, default: "" },
-    client_ref:  { type: mongoose.Schema.Types.ObjectId, ref: "Clients", default: null },
+    client_id:    { type: String, default: "" },
+    client_name:  { type: String, default: "" },
+    client_gstin: { type: String, default: "" },   // snapshot — used in GSTR-1 CDNR
+    client_state: { type: String, default: "" },   // snapshot — place-of-supply hint
+    client_ref:   { type: mongoose.Schema.Types.ObjectId, ref: "Clients", default: null },
+
+    // ── Place of Supply (GST) ─────────────────────────────────────────────────
+    place_of_supply: { type: String, enum: ["InState", "Others"], default: "InState" },
 
     items: [ItemSchema],
 
@@ -91,6 +96,11 @@ ClientCNSchema.pre("save", function (next) {
     this.sgst_pct = 0;
   } else {
     this.igst_pct = 0;
+  }
+
+  // Derive place_of_supply from tax_mode if not set explicitly
+  if (!this.place_of_supply) {
+    this.place_of_supply = this.tax_mode === "otherstate" ? "Others" : "InState";
   }
   this.cgst_amt  = round2(this.grand_total * this.cgst_pct / 100);
   this.sgst_amt  = round2(this.grand_total * this.sgst_pct / 100);

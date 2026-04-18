@@ -6,6 +6,10 @@ import PurchaseBillModel from "../purchasebill/purchasebill.model.js";
 import DebitNoteModel from "../debitnote/debitnote.model.js";
 import ExpenseVoucherModel from "../expensevoucher/expensevoucher.model.js";
 import PaymentVoucherModel from "../paymentvoucher/paymentvoucher.model.js";
+import VendorModel from "../../purchase/vendor/vendor.model.js";
+import ContractorModel from "../../hr/contractors/contractor.model.js";
+import EmployeeModel from "../../hr/employee/employee.model.js";
+import ClientModel from "../../clients/client.model.js";
 
 // ── GST account codes (constant — set in accounttree.seed.js) ────────────────
 const GST_INPUT_CODES   = ["1080-CGST", "1080-SGST", "1080-IGST"];
@@ -748,6 +752,7 @@ class ReportsService {
 
     for (const b of bills) {
       const gstin = b.client_gstin || "";
+      const pos   = b.place_of_supply || (b.tax_mode === "otherstate" ? "Others" : "InState");
       const taxable = b.grand_total || 0;
       const cgst = b.cgst_amt || 0;
       const sgst = b.sgst_amt || 0;
@@ -765,7 +770,8 @@ class ReportsService {
         client_id: b.client_id,
         client_name: b.client_name,
         client_gstin: gstin,
-        place_of_supply: b.place_of_supply || "",
+        client_state: b.client_state || "",
+        place_of_supply: pos,
         tax_mode:  b.tax_mode,
         taxable,
         cgst_pct:  b.cgst_pct, cgst_amt: cgst,
@@ -775,13 +781,18 @@ class ReportsService {
       };
 
       if (gstin) {
+        // Registered recipient → B2B regardless of state
         b2b.push(row);
-      } else if (b.tax_mode === "otherstate" && total > 250000) {
+      } else if (pos === "Others" && total > 250000) {
+        // Unregistered + interstate + > ₹2.5L → B2CL
         b2cl.push(row);
       } else {
-        const slabKey = `${b.tax_mode}|${b.cgst_pct + b.sgst_pct + b.igst_pct}`;
+        // All other unregistered → B2CS, grouped by state + rate slab
+        const slabKey = `${b.client_state || "_"}|${b.tax_mode}|${b.cgst_pct + b.sgst_pct + b.igst_pct}`;
         if (!b2cs[slabKey]) {
           b2cs[slabKey] = {
+            place_of_supply: pos,
+            client_state: b.client_state || "",
             tax_mode: b.tax_mode,
             rate_pct: r2(b.cgst_pct + b.sgst_pct + b.igst_pct),
             taxable: 0, cgst: 0, sgst: 0, igst: 0, invoice_count: 0,
@@ -796,6 +807,7 @@ class ReportsService {
     }
 
     for (const cn of cns) {
+      const gstin   = cn.client_gstin || "";
       const taxable = cn.grand_total || 0;
       const cgst = cn.cgst_amt || 0;
       const sgst = cn.sgst_amt || 0;
@@ -812,24 +824,29 @@ class ReportsService {
         bill_id:   cn.bill_id,
         client_id: cn.client_id,
         client_name: cn.client_name,
+        client_gstin: gstin,
+        client_state: cn.client_state || "",
+        place_of_supply: cn.place_of_supply || (cn.tax_mode === "otherstate" ? "Others" : "InState"),
         tax_mode:  cn.tax_mode,
         taxable, cgst_amt: cgst, sgst_amt: sgst, igst_amt: igst,
         cn_value:  r2(taxable + cgst + sgst + igst),
         reason:    cn.reason || "",
       };
-      // No client_gstin field yet on CN — treat all as unregistered for now
-      cdnur.push(row);
+      // Registered recipient → CDNR; unregistered → CDNUR
+      if (gstin) cdnr.push(row); else cdnur.push(row);
     }
 
     // Round + format b2cs
     const b2csRows = Object.values(b2cs).map((g) => ({
-      tax_mode:      g.tax_mode,
-      rate_pct:      g.rate_pct,
-      taxable:       r2(g.taxable),
-      cgst:          r2(g.cgst),
-      sgst:          r2(g.sgst),
-      igst:          r2(g.igst),
-      invoice_count: g.invoice_count,
+      place_of_supply: g.place_of_supply,
+      client_state:    g.client_state,
+      tax_mode:        g.tax_mode,
+      rate_pct:        g.rate_pct,
+      taxable:         r2(g.taxable),
+      cgst:            r2(g.cgst),
+      sgst:            r2(g.sgst),
+      igst:            r2(g.igst),
+      invoice_count:   g.invoice_count,
     }));
 
     return {
@@ -849,10 +866,6 @@ class ReportsService {
         total_igst:        r2(outIgst),
         total_output_tax:  r2(outCgst + outSgst + outIgst),
       },
-      notes: [
-        "client_gstin not yet captured on ClientBilling — all invoices fall into B2CS until populated.",
-        "CDNR (registered credit notes) will fill once client_gstin is added to ClientCreditNote.",
-      ],
     };
   }
 
@@ -1220,20 +1233,92 @@ class ReportsService {
       ExpenseVoucherModel.find(evFilter).lean(),
     ]);
 
-    // Per-deductee, per-section accumulator
-    const sectionMap = {};   // "194C" → { count, gross, tds }
-    const deducteeMap = {};  // "194C|VND-001" → { ... }
-    const monthMap   = {};   // "2025-04" → { ... }
+    // ── Pass 1: build raw rows (PAN deferred) ──────────────────────────────────
     const rows = [];
+
+    for (const pv of pvs) {
+      rows.push({
+        source:        "PaymentVoucher",
+        voucher_no:    pv.pv_no,
+        payment_date:  pv.pv_date,
+        deductee_type: pv.supplier_type,
+        deductee_id:   pv.supplier_id,
+        deductee_name: pv.supplier_name,
+        deductee_pan:  "",                    // filled in pass 2
+        deductee_gstin: pv.supplier_gstin || "",
+        tds_section:   pv.tds_section || "",
+        tds_pct:       pv.tds_pct || 0,
+        gross_amount:  r2(pv.gross_amount || 0),
+        tds_amount:    r2(pv.tds_amt || 0),
+        net_paid:      r2(pv.amount || 0),
+        tender_id:     pv.tender_id || "",
+      });
+    }
+
+    for (const ev of evs) {
+      rows.push({
+        source:        "ExpenseVoucher",
+        voucher_no:    ev.ev_no,
+        payment_date:  ev.ev_date,
+        deductee_type: ev.payee_type,
+        deductee_id:   ev.employee_id || "",
+        deductee_name: ev.payee_name || "",
+        deductee_pan:  "",                    // filled in pass 2
+        deductee_gstin: "",
+        tds_section:   ev.tds_section || "",
+        tds_pct:       ev.tds_pct || 0,
+        gross_amount:  r2(ev.gross_total || 0),
+        tds_amount:    r2(ev.tds_amt || 0),
+        net_paid:      r2(ev.net_paid || 0),
+        tender_id:     ev.tender_id || "",
+      });
+    }
+
+    // ── Pass 2: bulk-fetch PAN for unique deductees, enrich rows ──────────────
+    const idsByType = { Vendor: new Set(), Contractor: new Set(), Client: new Set(), Employee: new Set() };
+    for (const r of rows) {
+      if (!r.deductee_id) continue;
+      // PV supplier_type is "Vendor"/"Contractor"/"Client".
+      // EV payee_type is "Employee"/"External"/"Other"; only Employee maps to a master.
+      if (idsByType[r.deductee_type]) idsByType[r.deductee_type].add(r.deductee_id);
+    }
+
+    const [vendors, contractors, clients, employees] = await Promise.all([
+      idsByType.Vendor.size
+        ? VendorModel.find({ vendor_id: { $in: [...idsByType.Vendor] } }).select("vendor_id pan_no").lean()
+        : [],
+      idsByType.Contractor.size
+        ? ContractorModel.find({ contractor_id: { $in: [...idsByType.Contractor] } }).select("contractor_id pan_number").lean()
+        : [],
+      idsByType.Client.size
+        ? ClientModel.find({ client_id: { $in: [...idsByType.Client] } }).select("client_id pan_no").lean()
+        : [],
+      idsByType.Employee.size
+        ? EmployeeModel.find({ employeeId: { $in: [...idsByType.Employee] } }).select("employeeId payroll.panNumber").lean()
+        : [],
+    ]);
+
+    const panMap = {};
+    for (const v of vendors)     panMap[`Vendor|${v.vendor_id}`]         = v.pan_no || "";
+    for (const c of contractors) panMap[`Contractor|${c.contractor_id}`] = c.pan_number || "";
+    for (const c of clients)     panMap[`Client|${c.client_id}`]         = c.pan_no || "";
+    for (const e of employees)   panMap[`Employee|${e.employeeId}`]      = e.payroll?.panNumber || "";
+
+    for (const r of rows) {
+      r.deductee_pan = panMap[`${r.deductee_type}|${r.deductee_id}`] || "";
+    }
+
+    // ── Pass 3: aggregate by section / deductee / month ────────────────────────
+    const sectionMap  = {};
+    const deducteeMap = {};
+    const monthMap    = {};
 
     const monthKey = (d) => {
       const dt = new Date(d);
       return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
     };
 
-    const addRow = (entry) => {
-      rows.push(entry);
-
+    for (const entry of rows) {
       const sk = entry.tds_section;
       if (!sectionMap[sk]) sectionMap[sk] = { section: sk, count: 0, gross: 0, tds: 0 };
       sectionMap[sk].count += 1;
@@ -1258,44 +1343,6 @@ class ReportsService {
       monthMap[mk].count += 1;
       monthMap[mk].gross += entry.gross_amount;
       monthMap[mk].tds   += entry.tds_amount;
-    };
-
-    for (const pv of pvs) {
-      addRow({
-        source:        "PaymentVoucher",
-        voucher_no:    pv.pv_no,
-        payment_date:  pv.pv_date,
-        deductee_type: pv.supplier_type,
-        deductee_id:   pv.supplier_id,
-        deductee_name: pv.supplier_name,
-        deductee_pan:  "",                    // not currently stored
-        deductee_gstin: pv.supplier_gstin || "",
-        tds_section:   pv.tds_section || "",
-        tds_pct:       pv.tds_pct || 0,
-        gross_amount:  r2(pv.gross_amount || 0),
-        tds_amount:    r2(pv.tds_amt || 0),
-        net_paid:      r2(pv.amount || 0),
-        tender_id:     pv.tender_id || "",
-      });
-    }
-
-    for (const ev of evs) {
-      addRow({
-        source:        "ExpenseVoucher",
-        voucher_no:    ev.ev_no,
-        payment_date:  ev.ev_date,
-        deductee_type: ev.payee_type,
-        deductee_id:   ev.employee_id || "",
-        deductee_name: ev.payee_name || "",
-        deductee_pan:  "",                    // not currently stored
-        deductee_gstin: "",
-        tds_section:   ev.tds_section || "",
-        tds_pct:       ev.tds_pct || 0,
-        gross_amount:  r2(ev.gross_total || 0),
-        tds_amount:    r2(ev.tds_amt || 0),
-        net_paid:      r2(ev.net_paid || 0),
-        tender_id:     ev.tender_id || "",
-      });
     }
 
     // TDS payable account ledger movement (cross-check)

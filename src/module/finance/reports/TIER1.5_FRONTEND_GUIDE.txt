@@ -1,0 +1,272 @@
+================================================================================
+ ROMAA BACKEND — TIER 1.5 FIELD GAPS (FRONTEND INTEGRATION GUIDE)
+================================================================================
+
+Purpose
+  Tier 1 reports (Trial Balance, P&L, GSTR-1/2B/3B, TDS register, etc.) shipped
+  with three placeholder fields whose values were always empty. Tier 1.5 closes
+  those gaps end-to-end: the fields are now captured at document creation,
+  carried through credit notes, and consumed by the reports.
+
+  This document covers ONLY the deltas the FE needs to handle. It assumes you
+  have already integrated TIER1_FRONTEND_GUIDE.txt.
+
+Scope of changes
+  1. ClientBilling — captures client_gstin / client_state / place_of_supply
+  2. ClientCreditNote — same three fields, snapshotted from the source bill
+  3. GSTR-1 — B2B / B2CL / B2CS / CDNR / CDNUR classification now real
+  4. TDS Register — deductee_pan now populated on every row
+
+================================================================================
+ 1. CLIENTBILLING — NEW FIELDS
+================================================================================
+
+Endpoints affected
+  POST   /clientbilling/create
+  PATCH  /clientbilling/update/:id
+  GET    /clientbilling/list
+  GET    /clientbilling/:id
+
+New fields (now returned on every Bill response)
+
+  client_gstin       String   default ""
+                              15-char GSTIN of the client. Snapshotted at
+                              create time from the Clients master
+                              (clients.gstin).
+
+  client_state       String   default ""
+                              State name of the client (e.g. "Tamil Nadu").
+                              Snapshotted from clients.address.state.
+
+  place_of_supply    Enum     "InState" | "Others"   default "InState"
+                              Derived if not sent:
+                                tax_mode === "otherstate"  →  "Others"
+                                else                       →  "InState"
+
+Create-time behaviour
+  • The FE does NOT need to send any of these on POST /clientbilling/create.
+    The backend looks up the client master via tender.client_id and snapshots
+    gstin + state automatically.
+
+  • If the client master is updated later (e.g. GSTIN added), already-created
+    bills are NOT back-filled — the snapshot reflects state at create time
+    (this is intentional — historical invoices must keep their original GSTIN
+    for GST filing audit).
+
+Update behaviour
+  • PATCH /clientbilling/update/:id may explicitly pass client_gstin,
+    client_state, or place_of_supply to override the snapshot. Use this for
+    correction flows where the master was wrong at the time of billing.
+
+UI suggestions
+  • On Bill Detail page, show GSTIN + Place of Supply as a small "Tax Profile"
+    panel near the invoice header.
+  • On Bill Create form, no new inputs required — show the snapshotted GSTIN
+    as a read-only field once tender is selected, so the user can verify it.
+  • If client_gstin is empty AND tax_mode === "otherstate" AND grand_total
+    will exceed ₹2.5L, show an info badge: "This will be classified as B2CL
+    in GSTR-1." (purely informational — backend handles classification).
+
+
+================================================================================
+ 2. CLIENTCREDITNOTE — NEW FIELDS
+================================================================================
+
+Endpoints affected
+  POST   /clientcreditnote/create
+  PATCH  /clientcreditnote/update/:id
+  GET    /clientcreditnote/list
+  GET    /clientcreditnote/:id
+
+Same three fields as ClientBilling:
+  client_gstin       String   ""
+  client_state       String   ""
+  place_of_supply    Enum     "InState" | "Others"
+
+Create-time behaviour
+  • All three are snapshotted from the source bill (looked up by bill_ref or
+    bill_id in the create payload). FE does not send them.
+  • If the source bill is missing them (legacy data created before Tier 1.5),
+    the CCN will inherit "" / "InState". This is acceptable — old data does
+    not need backfill for GSTR-1 to function.
+
+UI suggestions
+  • On Credit Note Detail, display GSTIN + Place of Supply identical to the
+    bill — visually reinforce that a CN inherits the bill's tax profile.
+
+
+================================================================================
+ 3. GSTR-1 — UPDATED CLASSIFICATION
+================================================================================
+
+Endpoint
+  GET /reports/gstr-1?from_date=&to_date=
+
+What changed
+  Previously every invoice fell into B2CS (because client_gstin was always "").
+  Now the classification is real and follows GST rules.
+
+Classification logic (server-side, FE just renders the result)
+  ┌─────────────────────────────────────────────┬───────┐
+  │ Condition                                   │ Goes  │
+  │                                             │ to    │
+  ├─────────────────────────────────────────────┼───────┤
+  │ client_gstin present                        │ B2B   │
+  │ no gstin + place_of_supply="Others" + > ₹2.5L│ B2CL  │
+  │ everything else (unregistered)              │ B2CS  │
+  ├─────────────────────────────────────────────┼───────┤
+  │ Credit note + client_gstin present          │ CDNR  │
+  │ Credit note + no gstin                      │ CDNUR │
+  └─────────────────────────────────────────────┴───────┘
+
+Updated row shapes
+
+  b2b row:
+    {
+      bill_id, bill_date,
+      client_id, client_name,
+      client_gstin,                  ← NEW: always non-empty in B2B
+      client_state,                  ← NEW
+      place_of_supply,               ← NEW: "InState" | "Others"
+      tax_mode,
+      taxable,
+      cgst_pct, cgst_amt,
+      sgst_pct, sgst_amt,
+      igst_pct, igst_amt,
+      invoice_value
+    }
+
+  b2cl row: same shape as b2b (client_gstin will be "")
+
+  b2cs row (grouped — NOT per invoice):
+    {
+      place_of_supply,               ← NEW: drives state-wise GSTR-1 table 7
+      client_state,                  ← NEW: human-readable state name
+      tax_mode,
+      rate_pct,                      ← combined CGST+SGST or IGST %
+      taxable, cgst, sgst, igst,
+      invoice_count
+    }
+  Grouping key changed from (tax_mode + rate) to (state + tax_mode + rate),
+  so the row count may now be HIGHER than before. This is correct — GSTR-1
+  table 7 requires per-state breakdown.
+
+  cdnr / cdnur row:
+    {
+      ccn_no, ccn_date, bill_id,
+      client_id, client_name,
+      client_gstin,                  ← NEW (empty for cdnur)
+      client_state,                  ← NEW
+      place_of_supply,               ← NEW
+      tax_mode,
+      taxable, cgst_amt, sgst_amt, igst_amt,
+      cn_value, reason
+    }
+
+REMOVED FIELDS
+  The top-level  "notes": [...]  array on the GSTR-1 response is GONE.
+  If your UI was rendering it as an info banner, drop that block.
+
+UI updates required
+  • Remove the "B2C placeholder" warning banner driven by  notes[].
+  • B2B tab will now actually have rows once GSTIN-bearing clients are billed.
+  • B2CL tab is real — show the standard GSTN columns (GSTIN of supplier,
+    invoice no, date, place of supply, rate, taxable, IGST).
+  • B2CS tab grouping changed — if the table was sorted only by rate, add
+    a secondary sort/group by state.
+  • CDNR tab is real — render registered credit notes here instead of all
+    landing in CDNUR.
+
+Non-breaking
+  • The b2b/b2cl/b2cs/cdnr/cdnur top-level keys, the summary block, and the
+    pagination/filter contract are unchanged. Only row shapes gained fields.
+
+
+================================================================================
+ 4. TDS REGISTER — DEDUCTEE PAN NOW POPULATED
+================================================================================
+
+Endpoint
+  GET /reports/tds-register?from_date=&to_date=&section=
+
+What changed
+  Previously  deductee_pan  was always returned as  "".
+  Now it is bulk-joined from the relevant master per deductee_type:
+
+  ┌───────────────────────┬──────────────────────────────────────┐
+  │ deductee_type         │ Source                               │
+  ├───────────────────────┼──────────────────────────────────────┤
+  │ "Vendor"              │ vendors.pan_no                       │
+  │ "Contractor"          │ contractors.pan_number               │
+  │ "Client"              │ clients.pan_no                       │
+  │ "Employee"            │ employees.payroll.panNumber          │
+  │ "External" / "Other"  │ ""  (no master to join)              │
+  └───────────────────────┴──────────────────────────────────────┘
+
+Affected response fields
+
+  rows[].deductee_pan          → now real, "" only when master row is missing
+                                  PAN or the deductee type is External/Other.
+
+  by_deductee[].deductee_pan   → same; useful for grouping in 26Q export.
+
+No other field on the TDS Register response changed.
+
+UI updates required
+  • If the previous UI suppressed the PAN column because it was always empty,
+    re-enable it.
+  • The earlier suggestion in TIER1_FRONTEND_GUIDE.txt of a "PAN missing"
+    warning banner is now actionable — flag rows where deductee_pan === ""
+    AND deductee_type is one of (Vendor / Contractor / Client / Employee).
+    Those represent missing master data and will block 26Q upload.
+
+  Suggested badge:
+    Red dot on row if deductee_pan === "" and deductee_type ≠ "External"
+    Tooltip: "PAN missing on master — required for TDS return"
+
+
+================================================================================
+ 5. MIGRATION CHECKLIST FOR FE
+================================================================================
+
+  [ ] ClientBilling create form — show snapshotted GSTIN + Place of Supply
+      as read-only confirmation panel.
+
+  [ ] ClientBilling detail / list — render client_gstin column where useful
+      (e.g. invoice list filter "GSTIN registered only").
+
+  [ ] ClientCreditNote detail — render same three fields below the bill ref.
+
+  [ ] GSTR-1 page — remove the  notes[]  banner block.
+
+  [ ] GSTR-1 B2B tab — wire up; render the new fields (gstin, state, POS).
+
+  [ ] GSTR-1 B2CL tab — wire up.
+
+  [ ] GSTR-1 B2CS tab — re-render with state-wise grouping (rows count went up).
+
+  [ ] GSTR-1 CDNR tab — wire up.
+
+  [ ] TDS Register — enable PAN column; add "PAN missing" warning badge.
+
+
+================================================================================
+ 6. BACKWARDS COMPATIBILITY
+================================================================================
+
+  • Pre-Tier-1.5 bills / CCNs in the DB will have empty client_gstin /
+    client_state / "InState" place_of_supply. Reports will treat them as
+    unregistered InState (same as before) — no broken behaviour.
+
+  • There is NO data-migration script. Historical accuracy is preserved
+    intentionally (you cannot retroactively assign a client a GSTIN they
+    did not have on the invoice date).
+
+  • If the user wants to fix a specific historical invoice (e.g. real GSTIN
+    was missed), use PATCH /clientbilling/update/:id with the field set
+    explicitly. The pre-save hook will re-derive place_of_supply if not sent.
+
+
+================================================================================
+ END — File: src/module/finance/reports/TIER1.5_FRONTEND_GUIDE.txt
+================================================================================

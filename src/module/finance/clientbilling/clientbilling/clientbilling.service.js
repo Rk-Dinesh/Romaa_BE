@@ -1,6 +1,7 @@
 import BillingModel from "./clientbilling.model.js";
 import BidModel from "../../../tender/bid/bid.model.js";
 import TenderModel from "../../../tender/tender/tender.model.js";
+import ClientModel from "../../../clients/client.model.js";
 import LedgerService from "../../ledger/ledger.service.js";
 import JournalEntryService from "../../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../../FinanceCounter.model.js";
@@ -319,13 +320,29 @@ class BillingService {
       };
     });
 
-    // 5. Build the Final Payload with Tender Data
+    // 5. Snapshot GSTIN + state from Clients master (for GSTR-1 classification)
+    let clientGstin = "";
+    let clientState = "";
+    if (tenderDoc.client_id) {
+      const clientDoc = await ClientModel.findOne({ client_id: tenderDoc.client_id })
+        .select("gstin address")
+        .session(_session || null)
+        .lean();
+      if (clientDoc) {
+        clientGstin = clientDoc.gstin || "";
+        clientState = clientDoc.address?.state || "";
+      }
+    }
+
+    // 6. Build the Final Payload with Tender + Client Data
     const billPayload = {
       ...data,
-      // Mapping fields from TenderModel
-      tender_name: tenderDoc.tender_name || "",
-      client_id: tenderDoc.client_id || "",
-      client_name: tenderDoc.client_name || "",
+      // Mapping fields from TenderModel + ClientModel
+      tender_name:  tenderDoc.tender_name || "",
+      client_id:    tenderDoc.client_id   || "",
+      client_name:  tenderDoc.client_name || "",
+      client_gstin: data.client_gstin ?? clientGstin,
+      client_state: data.client_state ?? clientState,
       narration: data.narration || `RA Bill - ${tenderDoc.tender_name}`,
       items: finalItems,
       bill_id: data.bill_id || (await BillingService.generateBillId(_session)),

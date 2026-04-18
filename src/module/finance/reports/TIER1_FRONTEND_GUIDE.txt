@@ -218,24 +218,32 @@ Response shape:
     "total_invoices", "total_credit_notes",
     "total_taxable", "total_cgst", "total_sgst", "total_igst",
     "total_output_tax"
-  },
-  "notes": [ "client_gstin not yet captured..." ]
+  }
 }
 
 b2b / b2cl row shape:
   { bill_id, bill_date, client_id, client_name, client_gstin,
-    place_of_supply, tax_mode,
+    client_state, place_of_supply, tax_mode,
     taxable, cgst_pct, cgst_amt, sgst_pct, sgst_amt, igst_pct, igst_amt,
     invoice_value }
 
 b2cs row shape (grouped, not per-invoice):
-  { tax_mode, rate_pct, taxable, cgst, sgst, igst, invoice_count }
+  { place_of_supply, client_state, tax_mode, rate_pct,
+    taxable, cgst, sgst, igst, invoice_count }
+
+cdnr / cdnur row shape:
+  { ccn_no, ccn_date, bill_id, client_id, client_name, client_gstin,
+    client_state, place_of_supply, tax_mode,
+    taxable, cgst_amt, sgst_amt, igst_amt, cn_value, reason }
+
+Classification rules (computed server-side):
+  • client_gstin present                       → B2B (or CDNR for credit notes)
+  • no gstin + place_of_supply="Others" + > ₹2.5L → B2CL
+  • everything else                            → B2CS, grouped by state + rate
 
 UI suggestions:
   • Top tabs: B2B | B2CL | B2CS | CDNR | CDNUR   (count in each tab)
   • Summary strip above the tabs: 4 tiles — Taxable / CGST / SGST / IGST
-  • Render  notes[]  as an info banner so user knows B2C data is placeholder
-    until  client_gstin  is added on ClientBilling
   • Export to Excel / JSON (format matches GSTN schema field names)
 
 --------------------------------------------------------------------------------
@@ -411,17 +419,26 @@ Print / Export
     on day 1.
 
 --------------------------------------------------------------------------------
-OUTSTANDING (BACKEND GAPS TO RAISE WITH BE TEAM)
+TIER 1.5 — FIELD GAPS (RESOLVED)
 --------------------------------------------------------------------------------
 
-• client_gstin    → add to ClientBilling + ClientCreditNote.
-                    Once added, GSTR-1 B2B / CDNR sections will auto-populate.
+All previously-flagged gaps are now wired through end-to-end:
 
-• deductee_pan    → add to Vendor + Contractor masters.
-                    Needed for 26Q; currently returned as "" in TDS register.
+• client_gstin    → snapshot from Clients master onto ClientBilling at create;
+                    copied onto ClientCreditNote from the source bill.
+                    GSTR-1 now classifies B2B / CDNR using this field.
 
-• place_of_supply → add to ClientBilling (currently present on PurchaseBill).
-                    GSTR-1 B2B / B2CL classification depends on this.
+• place_of_supply → derived from tax_mode (otherstate → "Others", else "InState")
+                    on both ClientBilling and ClientCreditNote.
+                    GSTR-1 B2CL now uses (no gstin + place_of_supply="Others"
+                    + invoice_value > ₹2.5L); B2CS groups by client_state +
+                    rate slab.
+
+• deductee_pan    → already present on masters (Vendor.pan_no,
+                    Contractor.pan_number, Employee.payroll.panNumber,
+                    Client.pan_no). TDS register now bulk-joins against the
+                    correct master per deductee_type and surfaces PAN on each
+                    row + by_deductee summary.
 
 ================================================================================
  END — File: src/module/finance/reports/TIER1_FRONTEND_GUIDE.txt

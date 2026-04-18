@@ -44,10 +44,18 @@ const BillingSchema = new mongoose.Schema(
     tender_name:    { type: String, default: "" },
     bill_date:    { type: Date, default: Date.now },
 
-    // ── Client snapshot (filled at create from Tender) ────────────────────────
-    client_id:   { type: String, default: "" },
-    client_name: { type: String, default: "" },
+    // ── Client snapshot (filled at create from Tender + Clients master) ──────
+    client_id:    { type: String, default: "" },
+    client_name:  { type: String, default: "" },
+    client_gstin: { type: String, default: "" },   // snapshot — used in GSTR-1 B2B
+    client_state: { type: String, default: "" },   // snapshot — used to derive place_of_supply
 
+    // ── Place of Supply (GST) ─────────────────────────────────────────────────
+    // "InState"  — supplier's state = recipient's state  → CGST + SGST
+    // "Others"   — different state                        → IGST
+    // Derived from tax_mode if not set. Captured explicitly so GSTR-1 B2B / B2CL
+    // classification is accurate.
+    place_of_supply: { type: String, enum: ["InState", "Others"], default: "InState" },
 
     previous_bill_id: { type: mongoose.Schema.Types.ObjectId, ref: "billing", default: null },
 
@@ -170,6 +178,11 @@ BillingSchema.pre("save", function (next) {
     this.sgst_pct = 0;
   } else {
     this.igst_pct = 0;
+  }
+
+  // Derive place_of_supply from tax_mode if not set explicitly
+  if (!this.place_of_supply) {
+    this.place_of_supply = this.tax_mode === "otherstate" ? "Others" : "InState";
   }
   this.cgst_amt  = round2(this.grand_total * this.cgst_pct / 100);
   this.sgst_amt  = round2(this.grand_total * this.sgst_pct / 100);
