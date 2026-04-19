@@ -1,0 +1,481 @@
+════════════════════════════════════════════════════════════════════════════
+  ROMAA BACKEND — TIER 2 FRONTEND INTEGRATION GUIDE
+  Finance module additions (Bank Reconciliation, Recurring Vouchers,
+  Budgets, Aging, Fixed Assets, Form 26Q)
+════════════════════════════════════════════════════════════════════════════
+
+All endpoints require a valid access token (JWT) — send via:
+  • HTTP-only cookie `accessToken`  (preferred), OR
+  • Header `Authorization: Bearer <token>`
+
+All responses follow the standard shape:
+  { "status": true,  "data": ... }
+  { "status": false, "message": "..." }
+
+
+════════════════════════════════════════════════════════════════════════════
+  1. BANK RECONCILIATION               base: /bankreconciliation
+════════════════════════════════════════════════════════════════════════════
+
+Reconcile a bank statement against the JE bank-side lines.
+
+FLOW (UI):
+  1. User picks a bank account (from COA where is_bank_cash=true)
+  2. Create statement header + import lines  → POST /create
+  3. Click "Auto-match"                       → POST /:id/auto-match
+  4. For ambiguous lines, user picks manually → PATCH /:id/lines/:lineId/match
+  5. For bank charges with no book entry, user creates JE separately,
+     then matches again (or marks "ignored")  → PATCH .../ignore
+  6. When all lines matched, status auto-promotes to "reconciled"
+  7. Click "Close" when verified              → PATCH /:id/close
+
+KEY MENTAL MODEL:
+  Statement DEBIT  (money OUT) ↔ JE Cr Bank line
+  Statement CREDIT (money IN ) ↔ JE Dr Bank line
+
+──────────────────────────────────────────────────────────────────
+GET  /bankreconciliation/next-no
+     Returns preview of the next BR/<FY>/<seq> (no reservation).
+
+GET  /bankreconciliation/list
+     ?status=&bank_account_code=&statement_no=&fromdate=&todate=&page=&limit=
+     Response:
+       {
+         status: true,
+         currentPage, totalPages, totalCount,
+         data: [
+           { _id, statement_no, bank_account_code, bank_account_name,
+             statement_date_from, statement_date_to,
+             opening_balance, closing_balance,
+             total_debits, total_credits,
+             matched_count, unmatched_count, ignored_count,
+             status, createdAt }, ...
+         ]
+       }
+
+GET  /bankreconciliation/:id       → full document with lines[]
+
+GET  /bankreconciliation/unreconciled?bank_account_code=&fromdate=&todate=
+     Returns JE bank lines NOT yet matched to any statement — useful for
+     the "Unreconciled items" panel on the dashboard.
+
+GET  /bankreconciliation/summary?bank_account_code=&as_of=
+     Returns totals: book_balance, statement_balance, difference,
+     unmatched_dr, unmatched_cr — for account-level reconciliation card.
+
+POST /bankreconciliation/create
+     Body:
+       {
+         bank_account_code: "1070-HDFC",
+         statement_date_from: "2025-04-01",
+         statement_date_to:   "2025-04-30",
+         opening_balance: 105000,
+         closing_balance: 87500,
+         lines: [
+           { line_date: "2025-04-02", description: "NEFT - Hitachi Ltd",
+             ref_no: "N043220100123",
+             debit_amt: 50000, credit_amt: 0, balance: 55000 },
+           ...
+         ],
+         narration: "HDFC April 2025"
+       }
+
+POST /bankreconciliation/:id/lines      — append more lines later
+     Body: { lines: [...same line shape as create...] }
+
+POST /bankreconciliation/:id/auto-match?window_days=5
+     Finds JE bank lines with opposite direction, exact amount, within
+     ±window_days. Matches only if EXACTLY ONE candidate is found.
+     Response:
+       { statement_no, total_lines, auto_matched, ambiguous,
+         still_unmatched }
+     "ambiguous" = lines with >1 candidate — show user the options
+     to pick via manual-match.
+
+PATCH /bankreconciliation/:id/lines/:lineId/match
+     Body: { je_id, je_line_index, matched_by? }
+     Manual override — FE should show a picker of JE bank lines
+     (from /unreconciled).
+
+PATCH /bankreconciliation/:id/lines/:lineId/unmatch
+     Reverts to recon_status="unmatched".
+
+PATCH /bankreconciliation/:id/lines/:lineId/ignore
+     Body: { note?: "Bank charges — will adjust" }
+     Marks line as ignored (excluded from reconciliation count).
+
+PATCH /bankreconciliation/:id/close
+     Locks the statement. Lines become read-only.
+
+DELETE /bankreconciliation/:id   (only while status="draft")
+
+
+════════════════════════════════════════════════════════════════════════════
+  2. RECURRING VOUCHERS                base: /recurringvoucher
+════════════════════════════════════════════════════════════════════════════
+
+Stores a template that fires an ExpenseVoucher on a schedule (rent, AMC,
+internet, etc.). A cron runs daily at 02:00 to fire all due templates.
+
+──────────────────────────────────────────────────────────────────
+GET  /recurringvoucher/list
+     ?status=&voucher_type=&template_no=&search=&page=&limit=
+     status: "active" | "paused" | "ended"
+
+GET  /recurringvoucher/:id
+
+POST /recurringvoucher/create
+     Body:
+       {
+         template_name: "Office Rent — Madurai HO",
+         voucher_type:  "ExpenseVoucher",        // only type supported today
+         frequency:     "monthly",               // weekly|monthly|quarterly|yearly|custom_days
+         interval:      1,                        // every N periods (default 1)
+         custom_days:   0,                        // only when frequency="custom_days"
+         start_date:    "2025-05-01",
+         end_date:      null,                    // null = open-ended
+         day_of_month:  5,                       // for monthly/quarterly/yearly (1–28 recommended)
+         template_payload: {
+           // Matches ExpenseVoucherService.create() payload shape —
+           // minus ev_no (auto) and ev_date (set to run date)
+           payee_type:  "External",
+           payee_name:  "MGR Properties",
+           gross_total: 35000,
+           ...all EV fields...
+         },
+         narration: "Monthly office rent"
+       }
+
+PATCH /recurringvoucher/update/:id        — edit template fields
+PATCH /recurringvoucher/:id/pause         — status → "paused"
+PATCH /recurringvoucher/:id/resume        — status → "active"
+PATCH /recurringvoucher/:id/end           — status → "ended" (no more runs)
+
+POST /recurringvoucher/:id/run-now        — fire manually (outside schedule)
+POST /recurringvoucher/run-due?as_of=     — manual trigger of the cron job
+
+DELETE /recurringvoucher/:id              — only while run_count=0
+
+NEXT_RUN_DATE BEHAVIOR:
+  Monthly templates handle month-end clamping automatically:
+  Jan-31 + 1 month = Feb-28 (or Feb-29 in leap years), not Mar-3.
+
+GENERATED HISTORY:
+  The parent template contains generated_vouchers[] with
+  { voucher_no, voucher_ref, generated_at, failed, error_message }
+  — show this in a "Recent runs" drawer on the detail page.
+
+
+════════════════════════════════════════════════════════════════════════════
+  3. BUDGETS & VARIANCE                base: /budget
+════════════════════════════════════════════════════════════════════════════
+
+One Budget = one tender × one financial year × many budget lines
+(each keyed to a chart-of-accounts leaf). Variance = budget − actual,
+where "actual" is computed from approved JournalEntry lines in real time.
+
+UNIQUE CONSTRAINT: one budget per (tender_id, financial_year).
+
+──────────────────────────────────────────────────────────────────
+GET  /budget/list
+     ?tender_id=&financial_year=&status=&page=&limit=
+     status: "draft" | "approved" | "archived"
+
+GET  /budget/:id
+
+POST /budget/create
+     Body:
+       {
+         tender_id: "TND-001",
+         financial_year: "25-26",
+         lines: [
+           {
+             account_code: "5110",           // leaf from COA (Income or Expense)
+             period: "monthly",              // annual | quarterly | monthly
+             period_label: "2025-04",        // "" for annual, "Q1" for quarterly, "2025-04" for monthly
+             budget_amount: 250000,
+             notes: "Cement + steel May bucket"
+           },
+           { account_code: "4100", period: "annual", budget_amount: 12500000 },
+           ...
+         ],
+         narration: "FY26 budget for Chennai flyover"
+       }
+
+PATCH /budget/update/:id             — only while status="draft"
+PATCH /budget/:id/approve            — status → "approved"
+PATCH /budget/:id/archive            — status → "archived"
+DELETE /budget/:id                   — hard delete (only draft)
+
+GET  /budget/variance/:id?as_of=
+     Returns per-line variance with budget, actual, variance, status.
+     Response:
+       {
+         budget_no, tender_id, tender_name, financial_year,
+         as_of,
+         lines: [
+           {
+             account_code, account_name, account_type,   // "Income" | "Expense"
+             period, period_label,
+             budget:   250000,
+             actual:   187400,
+             variance:  62600,    // Expense: budget − actual; Income: actual − budget
+             variance_pct: 25.04,
+             status: "under" | "over" | "on_track",
+             is_favourable: true
+           }, ...
+         ],
+         totals: { total_budget, total_actual, total_variance }
+       }
+
+GET  /budget/variance/by-tender?tender_id=&financial_year=&as_of=
+     Same shape but for the (tender, FY) pair without knowing the budget _id.
+
+
+════════════════════════════════════════════════════════════════════════════
+  4. AGING REPORTS                     base: /reports
+════════════════════════════════════════════════════════════════════════════
+
+Buckets (relative to as_of):
+  not_due   : due_date >= as_of
+  d_0_30    : 1–30 days overdue
+  d_31_60   : 31–60 days overdue
+  d_61_90   : 61–90 days overdue
+  d_90_plus : 91+ days overdue
+
+Amounts are in ₹ (rupees), rounded to 2 decimals.
+
+──────────────────────────────────────────────────────────────────
+GET /reports/ar-aging?as_of=&tender_id=&client_id=
+    Source: ClientBilling status="Approved" with balance_due > 0.
+    Response:
+      {
+        as_of, filter,
+        buckets:     { not_due, d_0_30, d_31_60, d_61_90, d_90_plus },
+        grand_total,
+        by_party:    [ { party_type:"Client", party_id, party_name,
+                         total, not_due, d_0_30, ... } ],
+        rows:        [ { bill_id, bill_date, due_date, party_id,
+                         party_name, tender_id, tender_name,
+                         net_amount, amount_received, balance_due,
+                         days_overdue, bucket } ],
+        summary:     { bill_count, client_count }
+      }
+
+GET /reports/ap-aging?as_of=&tender_id=&vendor_id=&contractor_id=
+    Source: PurchaseBill (status="approved") + WeeklyBilling (status="Approved"),
+            both filtered on balance_due > 0.
+    Same shape as AR, with:
+      by_party:   party_type ∈ { "Vendor", "Contractor" }
+      rows[].source: "PurchaseBill" | "WeeklyBilling"
+      summary:    { bill_count, vendor_count, contractor_count }
+    NOTE: WeeklyBilling rows have tender_name="" (field not tracked).
+
+
+════════════════════════════════════════════════════════════════════════════
+  5. FIXED ASSET REGISTER & DEPRECIATION     base: /fixedasset
+════════════════════════════════════════════════════════════════════════════
+
+Captures capitalised assets for depreciation + book-value reporting.
+Monthly depreciation JE is posted automatically by a cron on the 1st
+of each month at 03:00 for the PREVIOUS month. Manual runs are supported
+(for catch-up or testing).
+
+DEPRECIATION METHODS:
+  SLM (Straight Line):
+    monthly_charge = (cost − salvage) / useful_life_months
+  WDV (Written Down Value):
+    monthly_charge = nbv × (wdv_rate_pct / 100) / 12
+
+Asset auto-flips to status="fully_depreciated" once book_value ≤ salvage.
+
+──────────────────────────────────────────────────────────────────
+GET  /fixedasset/register?as_of_date=&category=&status=
+     Consolidated register for B/S note. Returns cost, accum_dep,
+     NBV as-of a given date.
+     Response:
+       {
+         as_of,
+         rows: [
+           { asset_no, asset_name, category,
+             acquisition_date, acquisition_cost,
+             accumulated_depreciation, net_book_value,
+             depreciation_method, useful_life_months, wdv_rate_pct,
+             status, tender_id, tender_name }, ...
+         ],
+         totals: { total_cost, total_accumulated_depreciation,
+                   total_net_book_value, asset_count }
+       }
+
+GET  /fixedasset/list?status=&category=&tender_id=&q=&page=&limit=
+
+GET  /fixedasset/:id
+GET  /fixedasset/:id/schedule?max_months=120
+     Projects future monthly depreciation until book value reaches salvage.
+
+POST /fixedasset/create
+     Body:
+       {
+         asset_name:   "Tata Hitachi EX210",
+         category:     "Plant & Machinery",     // Plant & Machinery|Vehicles|Equipment & Tools|Furniture & Fixtures|Other
+         linked_machinery_id: "MCH-001",        // optional link to ops record
+         acquisition_date: "2024-07-15",
+         acquisition_cost: 6500000,
+         salvage_value:    500000,
+         depreciation_method: "SLM",            // "SLM" | "WDV"
+         useful_life_months:  96,               // required for SLM
+         wdv_rate_pct:        0,                // required for WDV only
+         asset_account_code:                    "1110",      // e.g. Plant & Machinery
+         accumulated_depreciation_account_code: "1110-DEP",
+         depreciation_expense_account_code:    "5410",
+         tender_id: "TND-001",
+         narration: "Purchased for Chennai flyover"
+       }
+
+PATCH /fixedasset/update/:id          — limited fields only (name, tags, tender)
+PATCH /fixedasset/:id/archive
+
+POST /fixedasset/post-depreciation
+     Body: { period_date?: "2025-04-15" }     // any date in target month
+     Returns:
+       {
+         period: "2025-04",
+         posted, skipped, failed,
+         details: [ { asset_no, skipped?, charge?, je_no?,
+                      closing_nbv?, reason? } ]
+       }
+     Idempotent — re-running for the same month will skip already-posted.
+
+POST /fixedasset/:id/depreciate
+     Body: { period_date?: "2025-04-15" }
+     Post depreciation for ONE asset only.
+
+POST /fixedasset/:id/dispose
+     Body:
+       {
+         disposal_date: "2025-10-01",
+         disposal_amount: 2500000,          // sale proceeds (0 for scrap)
+         cash_account_code: "1070-HDFC",    // required if proceeds > 0
+         gain_loss_account_code: "4200",    // required if gain_loss != 0
+         notes: "Sold to Anil Motors"
+       }
+     Posts disposal JE (Dr AccDep, Dr Cash, Cr Asset, Dr/Cr Gain-or-Loss).
+     Asset state only updates if JE posts successfully.
+     Response: { asset, je_no, gain_loss }
+
+CATEGORY → RECOMMENDED ACCOUNT MAPPING (from seed):
+  Plant & Machinery       →  1110 + 1110-DEP + 5410 (Depr — P&M)
+  Vehicles                →  1130 + create a 1130-DEP + 5420 (Depr — Vehicles)
+  Equipment & Tools       →  1120 + (needs new contra) + 5410
+  Furniture & Fixtures    →  1140 + (needs new contra) + 5410
+  (FE can fetch these via /accounttree/posting-accounts by subtype)
+
+
+════════════════════════════════════════════════════════════════════════════
+  6. FORM 26Q  (Quarterly TDS Return — Non-Salary)     base: /reports
+════════════════════════════════════════════════════════════════════════════
+
+Generates 26Q-ready data from PaymentVoucher + ExpenseVoucher TDS deductions.
+Excludes section 192 (salary) — that goes to Form 24Q.
+
+Quarter calendar (FY-aligned):
+  Q1: Apr–Jun   Q2: Jul–Sep   Q3: Oct–Dec   Q4: Jan–Mar
+
+Filing due dates:
+  Q1: 31 Jul    Q2: 31 Oct    Q3: 31 Jan    Q4: 31 May
+
+──────────────────────────────────────────────────────────────────
+GET /reports/form-26q
+    ?financial_year=25-26
+    &quarter=Q1                     // Q1|Q2|Q3|Q4
+    &tan=XXX12345A                  // deductor TAN
+    &deductor_name=Romaa Infra
+    &deductor_pan=AABCR1234C
+    &deductor_address=Madurai
+
+    Response:
+      {
+        form: "26Q",
+        financial_year, quarter,
+        period: { from, to },
+        due_date: "2025-07-31",
+        deductor: { tan, name, pan, address },
+        summary: {
+          total_entries, total_paid, total_tds,
+          pan_missing,                // ← flag these to user
+          sections_count, deductees_count
+        },
+        by_section: [
+          { section_code:"194C", entry_count, total_paid, total_tds }, ...
+        ],
+        by_deductee: [
+          { section_code, pan, deductee_name, deductee_type,
+            entry_count, total_paid, total_tds }, ...
+        ],
+        deductee_records: [
+          {
+            sl_no, deductee_code,     // "01"=individual, "02"=company/other
+            pan, deductee_name, section_code,
+            payment_date, amount_paid,
+            tds_rate_pct, tds_amount,
+            surcharge, education_cess,
+            total_tax_deducted, total_tax_deposited,  // deposited=0 (challan-side)
+            bsr_code, challan_date, challan_serial_no,
+            book_entry_flag: "N",
+            voucher_no, deductee_type, deductee_id, tender_id
+          }, ...
+        ],
+        pan_missing_rows: [...same shape, filtered to pan missing...],
+        notes: [...4 guidance lines to display to user...]
+      }
+
+GET /reports/form-26q/csv?financial_year=...&quarter=...&...
+    Downloads a CSV of deductee_records for import into
+    Saral TDS / Genius / RPU utility.
+    Set Accept: text/csv (not strictly required; Content-Type is
+    returned as text/csv with attachment disposition).
+
+UX RECOMMENDATIONS:
+  • Show pan_missing count as a red badge at top — those entries
+    attract 20% TDS u/s 206AA and must be fixed before filing.
+  • Challan fields (BSR, date, serial) are blank — display a note:
+    "Fill challan details at TDS portal before uploading RPU file."
+  • Deductee code column: individual=01, company/others=02 —
+    the current default is 02 for Vendor/Contractor/Client,
+    01 for Employee. Let user override per row before CSV export.
+
+
+════════════════════════════════════════════════════════════════════════════
+  CRON JOBS (runs on the server, no FE action needed)
+════════════════════════════════════════════════════════════════════════════
+  01:00 daily   — Auto-reversal of JE marked auto_reverse_date
+  02:00 daily   — Fire all due recurring voucher templates
+  03:00 1st-of-month — Post monthly depreciation for previous month
+
+
+════════════════════════════════════════════════════════════════════════════
+  ERROR HANDLING
+════════════════════════════════════════════════════════════════════════════
+  400 — validation/business-rule errors (show to user)
+  401 — missing/invalid token (redirect to login)
+  404 — record not found
+  500 — unexpected server error (show generic message)
+
+Every error body: { status: false, message: "<human-readable reason>" }
+
+
+════════════════════════════════════════════════════════════════════════════
+  DROPDOWN / REFERENCE ENDPOINTS (already exist — reuse)
+════════════════════════════════════════════════════════════════════════════
+  • GET /accounttree/posting-accounts?is_bank_cash=true
+      → for Bank Reconciliation account picker
+  • GET /accounttree/posting-accounts?account_type=Expense
+      → for Budget line account picker
+  • GET /accounttree/posting-accounts?account_subtype=Fixed Asset
+      → for Fixed Asset account_account_code picker
+  • GET /accounttree/posting-accounts?account_subtype=Depreciation
+      → for Fixed Asset depreciation_expense_account_code picker
+
+════════════════════════════════════════════════════════════════════════════
+  End of Tier 2 Frontend Integration Guide
+════════════════════════════════════════════════════════════════════════════

@@ -35,6 +35,7 @@ const JE_TYPES = [
   "Inter-Account Transfer",// Moving funds between bank accounts or cost centres
   "Reversal",              // Correction: reverses a prior approved JE entry-for-entry
   "Adjustment",            // General period-end or audit adjustment
+  "Disposal",              // Fixed asset disposal/retirement
   "Other",                 // Miscellaneous
   // ── Auto-generated from voucher approvals ─────────────────────────────────
   "Purchase Invoice",      // Auto-created on PurchaseBill approval

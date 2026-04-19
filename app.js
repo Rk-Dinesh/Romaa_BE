@@ -70,6 +70,12 @@ import financeDropdownRouter from "./src/module/finance/dropdown/dropdown.route.
 import bankTransferRouter from "./src/module/finance/banktransfer/banktransfer.route.js";
 import expenseVoucherRouter from "./src/module/finance/expensevoucher/expensevoucher.route.js";
 import reportsRouter from "./src/module/finance/reports/reports.route.js";
+import bankReconciliationRouter from "./src/module/finance/bankreconciliation/bankreconciliation.route.js";
+import recurringVoucherRouter from "./src/module/finance/recurringvoucher/recurringvoucher.route.js";
+import RecurringVoucherService from "./src/module/finance/recurringvoucher/recurringvoucher.service.js";
+import budgetRouter from "./src/module/finance/budget/budget.route.js";
+import fixedAssetRouter from "./src/module/finance/fixedasset/fixedasset.route.js";
+import FixedAssetService from "./src/module/finance/fixedasset/fixedasset.service.js";
 import aiRouter from "./src/module/ai/ai.route.js";
 import SiteDrawingRouter from "./src/module/documents/sitedrawingdocuments/SiteDrawing.route.js";
 
@@ -88,6 +94,29 @@ cron.schedule("0 1 * * *", async () => {
     logger.info("Auto-reversal cron: completed");
   } catch (err) {
     logger.error("Auto-reversal cron error:", err.message);
+  }
+});
+
+// Daily 02:00: fire all due recurring voucher templates
+cron.schedule("0 2 * * *", async () => {
+  try {
+    const result = await RecurringVoucherService.runDue();
+    logger.info(`Recurring voucher cron: fired=${result.fired} failed=${result.failed}`);
+  } catch (err) {
+    logger.error("Recurring voucher cron error:", err.message);
+  }
+});
+
+// Monthly on 1st at 03:00: post depreciation for the PREVIOUS calendar month
+cron.schedule("0 3 1 * *", async () => {
+  try {
+    const prev = new Date();
+    prev.setDate(1);
+    prev.setMonth(prev.getMonth() - 1);
+    const result = await FixedAssetService.postMonthlyDepreciation({ period_date: prev });
+    logger.info(`Depreciation cron: period=${result.period} posted=${result.posted} skipped=${result.skipped} failed=${result.failed}`);
+  } catch (err) {
+    logger.error("Depreciation cron error:", err.message);
   }
 });
 
@@ -220,6 +249,10 @@ app.use("/finance", financeDropdownRouter); // alias: /finance/payable-bills, /f
 app.use("/banktransfer", bankTransferRouter);
 app.use("/expensevoucher", expenseVoucherRouter);
 app.use("/reports", reportsRouter);
+app.use("/bankreconciliation", bankReconciliationRouter);
+app.use("/recurringvoucher",   recurringVoucherRouter);
+app.use("/budget",             budgetRouter);
+app.use("/fixedasset",         fixedAssetRouter);
 app.use("/ai", aiRouter);
 
 app.get("/", (_req, res) => {

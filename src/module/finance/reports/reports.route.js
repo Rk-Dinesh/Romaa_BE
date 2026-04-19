@@ -10,6 +10,10 @@ import {
   getGstr3b,
   getItcReversalRegister,
   getTdsRegister,
+  getArAging,
+  getApAging,
+  getForm26Q,
+  getForm26QCsv,
 } from "./reports.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 
@@ -95,6 +99,36 @@ reportsRouter.get(
   verifyJWT,
  // verifyPermission("finance", "reports", "read"),
   getTdsRegister,
+);
+
+// ── Aging reports ───────────────────────────────────────────────────────────
+// GET /reports/ar-aging?as_of=&tender_id=&client_id=
+reportsRouter.get(
+  "/ar-aging",
+  verifyJWT,
+  getArAging,
+);
+
+// GET /reports/ap-aging?as_of=&tender_id=&vendor_id=&contractor_id=
+reportsRouter.get(
+  "/ap-aging",
+  verifyJWT,
+  getApAging,
+);
+
+// ── Form 26Q (Quarterly TDS Statement) ──────────────────────────────────────
+// GET /reports/form-26q?financial_year=25-26&quarter=Q1&tan=&deductor_name=&deductor_pan=&deductor_address=
+reportsRouter.get(
+  "/form-26q",
+  verifyJWT,
+  getForm26Q,
+);
+
+// GET /reports/form-26q/csv?financial_year=25-26&quarter=Q1   (downloads a CSV)
+reportsRouter.get(
+  "/form-26q/csv",
+  verifyJWT,
+  getForm26QCsv,
 );
 
 export default reportsRouter;

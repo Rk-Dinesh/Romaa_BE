@@ -10,6 +10,7 @@ import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
 import EmployeeModel from "../../hr/employee/employee.model.js";
 import ClientModel from "../../clients/client.model.js";
+import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 
 // ── GST account codes (constant — set in accounttree.seed.js) ────────────────
 const GST_INPUT_CODES   = ["1080-CGST", "1080-SGST", "1080-IGST"];
@@ -1381,6 +1382,384 @@ class ReportsService {
       by_section:  round(sectionMap).sort((a, b) => a.section.localeCompare(b.section)),
       by_deductee: round(deducteeMap).sort((a, b) => b.tds - a.tds),
       by_month:    round(monthMap).sort((a, b) => a.month.localeCompare(b.month)),
+    };
+  }
+
+  // ── GET /reports/ar-aging?as_of=&tender_id=&client_id= ─────────────────────
+  //
+  // Accounts Receivable aging — what clients owe Romaa, bucketed by overdue days.
+  //
+  // Buckets (relative to as_of):
+  //   not_due  : due_date >= as_of (or no due_date and bill within 0 days)
+  //   d_0_30   : 1–30 days overdue
+  //   d_31_60  : 31–60 days overdue
+  //   d_61_90  : 61–90 days overdue
+  //   d_90_plus: 91+ days overdue
+  //
+  // Source: ClientBilling status="Approved" with balance_due > 0. Bills use
+  // bill_date as the due reference (ClientBilling has no due_date field today).
+  static async arAging({ as_of, tender_id, client_id } = {}) {
+    const asOf = as_of ? new Date(as_of) : new Date();
+    asOf.setHours(23, 59, 59, 999);
+
+    const filter = { status: "Approved", balance_due: { $gt: 0 } };
+    if (tender_id) filter.tender_id = tender_id;
+    if (client_id) filter.client_id = client_id;
+
+    const bills = await ClientBillingModel.find(filter)
+      .select("bill_id bill_date client_id client_name tender_id tender_name net_amount amount_received balance_due")
+      .lean();
+
+    const buckets = ["not_due", "d_0_30", "d_31_60", "d_61_90", "d_90_plus"];
+    const empty = () => Object.fromEntries(buckets.map(b => [b, 0]));
+    const partyMap = {};       // client_id → { client_name, total, ...buckets }
+    const totals   = empty();
+    let grandTotal = 0;
+    const rows = [];
+
+    for (const b of bills) {
+      const refDate = new Date(b.bill_date);
+      const days = Math.floor((asOf - refDate) / 86400000);
+      let bucket;
+      if (days <= 0)      bucket = "not_due";
+      else if (days <= 30) bucket = "d_0_30";
+      else if (days <= 60) bucket = "d_31_60";
+      else if (days <= 90) bucket = "d_61_90";
+      else                 bucket = "d_90_plus";
+
+      const amt = r2(b.balance_due || 0);
+      totals[bucket] += amt;
+      grandTotal     += amt;
+
+      const key = b.client_id || "__nokey__";
+      if (!partyMap[key]) {
+        partyMap[key] = {
+          client_id:   b.client_id   || "",
+          client_name: b.client_name || "",
+          total: 0,
+          ...empty(),
+        };
+      }
+      partyMap[key].total          += amt;
+      partyMap[key][bucket]        += amt;
+
+      rows.push({
+        bill_id:        b.bill_id,
+        bill_date:      b.bill_date,
+        client_id:      b.client_id,
+        client_name:    b.client_name,
+        tender_id:      b.tender_id,
+        tender_name:    b.tender_name,
+        net_amount:     r2(b.net_amount || 0),
+        amount_received: r2(b.amount_received || 0),
+        balance_due:    amt,
+        days_overdue:   Math.max(0, days),
+        bucket,
+      });
+    }
+
+    const roundBuckets = (o) => Object.fromEntries(
+      Object.entries(o).map(([k, v]) => [k, typeof v === "number" ? r2(v) : v])
+    );
+
+    return {
+      as_of:      asOf,
+      filter:     { tender_id: tender_id || null, client_id: client_id || null },
+      buckets:    roundBuckets(totals),
+      grand_total: r2(grandTotal),
+      by_client:  Object.values(partyMap)
+        .map(roundBuckets)
+        .sort((a, b) => b.total - a.total),
+      rows:       rows.sort((a, b) => b.days_overdue - a.days_overdue),
+      summary: {
+        bill_count:  rows.length,
+        client_count: Object.keys(partyMap).length,
+      },
+    };
+  }
+
+  // ── GET /reports/ap-aging?as_of=&tender_id=&vendor_id=&contractor_id= ──────
+  //
+  // Accounts Payable aging — what Romaa owes vendors + contractors.
+  // Source: PurchaseBill status="approved" + WeeklyBilling status="Approved",
+  //         each with balance_due > 0.
+  //
+  // PurchaseBill has a real due_date (doc_date + credit_days). WeeklyBilling
+  // does not, so falls back to bill_date.
+  static async apAging({ as_of, tender_id, vendor_id, contractor_id } = {}) {
+    const asOf = as_of ? new Date(as_of) : new Date();
+    asOf.setHours(23, 59, 59, 999);
+
+    const pbFilter = { status: "approved", balance_due: { $gt: 0 } };
+    if (tender_id) pbFilter.tender_id = tender_id;
+    if (vendor_id) pbFilter.vendor_id = vendor_id;
+
+    const wbFilter = { status: "Approved", balance_due: { $gt: 0 } };
+    if (tender_id)     wbFilter.tender_id     = tender_id;
+    if (contractor_id) wbFilter.contractor_id = contractor_id;
+
+    // If user filtered to a specific vendor, skip contractor source entirely (and vice versa)
+    const [pbills, wbills] = await Promise.all([
+      contractor_id
+        ? []
+        : PurchaseBillModel.find(pbFilter)
+            .select("doc_id doc_date due_date vendor_id vendor_name tender_id tender_name net_amount amount_paid balance_due")
+            .lean(),
+      vendor_id
+        ? []
+        : WeeklyBillingModel.find(wbFilter)
+            .select("bill_no bill_date contractor_id contractor_name tender_id total_amount net_payable amount_paid balance_due")
+            .lean(),
+    ]);
+
+    const buckets = ["not_due", "d_0_30", "d_31_60", "d_61_90", "d_90_plus"];
+    const empty = () => Object.fromEntries(buckets.map(b => [b, 0]));
+    const partyMap = {};       // "Vendor|VND-001" / "Contractor|CTR-001" → aggregate
+    const totals   = empty();
+    let grandTotal = 0;
+    const rows = [];
+
+    const bucketise = (days) => {
+      if (days <= 0)       return "not_due";
+      if (days <= 30)      return "d_0_30";
+      if (days <= 60)      return "d_31_60";
+      if (days <= 90)      return "d_61_90";
+      return "d_90_plus";
+    };
+
+    for (const b of pbills) {
+      const refDate = new Date(b.due_date || b.doc_date);
+      const days = Math.floor((asOf - refDate) / 86400000);
+      const bucket = bucketise(days);
+      const amt = r2(b.balance_due || 0);
+      totals[bucket] += amt;
+      grandTotal     += amt;
+
+      const key = `Vendor|${b.vendor_id || "__nokey__"}`;
+      if (!partyMap[key]) {
+        partyMap[key] = {
+          party_type: "Vendor", party_id: b.vendor_id || "", party_name: b.vendor_name || "",
+          total: 0, ...empty(),
+        };
+      }
+      partyMap[key].total += amt;
+      partyMap[key][bucket] += amt;
+
+      rows.push({
+        source:        "PurchaseBill",
+        bill_id:       b.doc_id,
+        bill_date:     b.doc_date,
+        due_date:      b.due_date || b.doc_date,
+        party_type:    "Vendor",
+        party_id:      b.vendor_id,
+        party_name:    b.vendor_name,
+        tender_id:     b.tender_id,
+        tender_name:   b.tender_name,
+        net_amount:    r2(b.net_amount || 0),
+        amount_paid:   r2(b.amount_paid || 0),
+        balance_due:   amt,
+        days_overdue:  Math.max(0, days),
+        bucket,
+      });
+    }
+
+    for (const b of wbills) {
+      const refDate = new Date(b.bill_date);
+      const days = Math.floor((asOf - refDate) / 86400000);
+      const bucket = bucketise(days);
+      const amt = r2(b.balance_due || 0);
+      totals[bucket] += amt;
+      grandTotal     += amt;
+
+      const key = `Contractor|${b.contractor_id || "__nokey__"}`;
+      if (!partyMap[key]) {
+        partyMap[key] = {
+          party_type: "Contractor", party_id: b.contractor_id || "", party_name: b.contractor_name || "",
+          total: 0, ...empty(),
+        };
+      }
+      partyMap[key].total += amt;
+      partyMap[key][bucket] += amt;
+
+      rows.push({
+        source:        "WeeklyBilling",
+        bill_id:       b.bill_no,
+        bill_date:     b.bill_date,
+        due_date:      b.bill_date,
+        party_type:    "Contractor",
+        party_id:      b.contractor_id,
+        party_name:    b.contractor_name,
+        tender_id:     b.tender_id,
+        tender_name:   "",
+        net_amount:    r2(b.net_payable || b.total_amount || 0),
+        amount_paid:   r2(b.amount_paid || 0),
+        balance_due:   amt,
+        days_overdue:  Math.max(0, days),
+        bucket,
+      });
+    }
+
+    const roundBuckets = (o) => Object.fromEntries(
+      Object.entries(o).map(([k, v]) => [k, typeof v === "number" ? r2(v) : v])
+    );
+
+    return {
+      as_of:       asOf,
+      filter:      { tender_id: tender_id || null, vendor_id: vendor_id || null, contractor_id: contractor_id || null },
+      buckets:     roundBuckets(totals),
+      grand_total: r2(grandTotal),
+      by_party:    Object.values(partyMap)
+        .map(roundBuckets)
+        .sort((a, b) => b.total - a.total),
+      rows:        rows.sort((a, b) => b.days_overdue - a.days_overdue),
+      summary: {
+        bill_count:        rows.length,
+        vendor_count:      Object.keys(partyMap).filter(k => k.startsWith("Vendor|")).length,
+        contractor_count:  Object.keys(partyMap).filter(k => k.startsWith("Contractor|")).length,
+      },
+    };
+  }
+
+  // ── GET /reports/form-26q?financial_year=&quarter=&tan=&deductor_name= ─────
+  //
+  // Form 26Q — quarterly TDS statement for payments OTHER than salary.
+  // Salary TDS (section 192) is filed via Form 24Q and is excluded here.
+  //
+  // Output is structured to be ready for RPU (Return Preparation Utility) import
+  // OR for CSV export to tools like Saral/Genius. Challan detail fields are
+  // surfaced but left blank — they're entered on the TDS portal at payment time
+  // and are not tracked inside Romaa_BE today.
+  //
+  // Quarter calendar (FY-aligned):
+  //   Q1: Apr–Jun   Q2: Jul–Sep   Q3: Oct–Dec   Q4: Jan–Mar
+  //
+  // Due date for filing 26Q:
+  //   Q1: 31 Jul    Q2: 31 Oct    Q3: 31 Jan    Q4: 31 May
+  static async form26Q({ financial_year, quarter, tan, deductor_name, deductor_pan, deductor_address }) {
+    if (!financial_year) throw new Error("financial_year is required (e.g. '25-26')");
+    if (!quarter)        throw new Error("quarter is required (Q1|Q2|Q3|Q4)");
+    if (!["Q1", "Q2", "Q3", "Q4"].includes(quarter)) {
+      throw new Error("quarter must be one of Q1, Q2, Q3, Q4");
+    }
+
+    // Resolve quarter date range (FY-aligned)
+    const fyStartYear = 2000 + parseInt(financial_year.split("-")[0], 10);
+    const QMAP = {
+      Q1: { fromM: 3,  toM: 5,  fromY: fyStartYear,     toY: fyStartYear,     dueDate: `${fyStartYear}-07-31`     },
+      Q2: { fromM: 6,  toM: 8,  fromY: fyStartYear,     toY: fyStartYear,     dueDate: `${fyStartYear}-10-31`     },
+      Q3: { fromM: 9,  toM: 11, fromY: fyStartYear,     toY: fyStartYear,     dueDate: `${fyStartYear + 1}-01-31` },
+      Q4: { fromM: 0,  toM: 2,  fromY: fyStartYear + 1, toY: fyStartYear + 1, dueDate: `${fyStartYear + 1}-05-31` },
+    };
+    const q = QMAP[quarter];
+    const from = new Date(q.fromY, q.fromM, 1, 0, 0, 0, 0);
+    const to   = new Date(q.toY,   q.toM + 1, 0, 23, 59, 59, 999);   // last day of last month
+
+    // Reuse tdsRegister — returns enriched rows with PAN
+    const register = await ReportsService.tdsRegister({ from_date: from, to_date: to });
+
+    // Exclude section 192 (salary — goes to 24Q)
+    const rows = (register.rows || []).filter(r => r.tds_section && r.tds_section !== "192");
+
+    // Build deductee-level records (one entry per payment)
+    const deducteeRecords = rows.map((r, idx) => ({
+      sl_no:              idx + 1,
+      deductee_code:      r.deductee_type === "Vendor"     ? "02"      // company vendor (best-effort default)
+                         : r.deductee_type === "Contractor" ? "02"
+                         : r.deductee_type === "Client"     ? "02"
+                         : "01",                                        // individual
+      pan:                r.deductee_pan || "PANNOTAVBL",
+      deductee_name:      r.deductee_name || "",
+      section_code:       r.tds_section,
+      payment_date:       r.payment_date,
+      amount_paid:        r.gross_amount,
+      tds_amount:         r.tds_amount,
+      tds_rate_pct:       r.tds_pct,
+      surcharge:          0,                    // not tracked separately
+      education_cess:     0,                    // not tracked separately
+      total_tax_deducted: r.tds_amount,
+      total_tax_deposited: 0,                   // challan-side — blank until challan booked
+      bsr_code:           "",                   // challan detail
+      challan_date:       "",                   // challan detail
+      challan_serial_no:  "",                   // challan detail
+      book_entry_flag:    "N",
+      voucher_no:         r.voucher_no,
+      deductee_type:      r.deductee_type,
+      deductee_id:        r.deductee_id,
+      tender_id:          r.tender_id || "",
+    }));
+
+    // Group per deductee × section (collapsed view — useful for challan reconciliation)
+    const collapsedMap = {};
+    for (const d of deducteeRecords) {
+      const k = `${d.section_code}|${d.pan || d.deductee_name}`;
+      if (!collapsedMap[k]) {
+        collapsedMap[k] = {
+          section_code:  d.section_code,
+          pan:           d.pan,
+          deductee_name: d.deductee_name,
+          deductee_type: d.deductee_type,
+          entry_count:   0,
+          total_paid:    0,
+          total_tds:     0,
+        };
+      }
+      collapsedMap[k].entry_count += 1;
+      collapsedMap[k].total_paid  += d.amount_paid;
+      collapsedMap[k].total_tds   += d.tds_amount;
+    }
+    const byDeductee = Object.values(collapsedMap)
+      .map(d => ({ ...d, total_paid: r2(d.total_paid), total_tds: r2(d.total_tds) }))
+      .sort((a, b) => b.total_tds - a.total_tds);
+
+    // Section-level totals (header challan summary)
+    const sectionMap = {};
+    for (const d of deducteeRecords) {
+      const sk = d.section_code;
+      if (!sectionMap[sk]) sectionMap[sk] = { section_code: sk, entry_count: 0, total_paid: 0, total_tds: 0 };
+      sectionMap[sk].entry_count += 1;
+      sectionMap[sk].total_paid  += d.amount_paid;
+      sectionMap[sk].total_tds   += d.tds_amount;
+    }
+    const bySection = Object.values(sectionMap)
+      .map(s => ({ ...s, total_paid: r2(s.total_paid), total_tds: r2(s.total_tds) }))
+      .sort((a, b) => a.section_code.localeCompare(b.section_code));
+
+    // PAN-missing audit (critical for 26Q — any entry without PAN attracts 20% TDS)
+    const missingPan = deducteeRecords.filter(d => !d.pan || d.pan === "PANNOTAVBL");
+
+    const totalPaid = r2(deducteeRecords.reduce((s, d) => s + d.amount_paid, 0));
+    const totalTds  = r2(deducteeRecords.reduce((s, d) => s + d.tds_amount,  0));
+
+    return {
+      form:              "26Q",
+      financial_year,
+      quarter,
+      period:            { from, to },
+      due_date:          q.dueDate,
+      deductor: {
+        tan:          tan || "",
+        name:         deductor_name || "",
+        pan:          deductor_pan || "",
+        address:      deductor_address || "",
+      },
+      summary: {
+        total_entries:   deducteeRecords.length,
+        total_paid:      totalPaid,
+        total_tds:       totalTds,
+        pan_missing:     missingPan.length,
+        sections_count:  bySection.length,
+        deductees_count: byDeductee.length,
+      },
+      by_section:        bySection,
+      by_deductee:       byDeductee,
+      deductee_records:  deducteeRecords,
+      pan_missing_rows:  missingPan,
+      notes: [
+        "Excludes TDS under section 192 (salary) — that is filed via Form 24Q.",
+        "Challan fields (BSR, date, serial) are not tracked in Romaa; fill at TDS portal before upload.",
+        "Deductee code 01=Individual, 02=Company/others. Review per deductee before filing.",
+        "PAN-missing entries attract TDS @ 20% u/s 206AA — fix those before filing.",
+      ],
     };
   }
 }
