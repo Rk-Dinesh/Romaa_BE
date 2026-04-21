@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import ReceiptVoucherModel from "./receiptvoucher.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
@@ -393,20 +394,39 @@ class ReceiptVoucherService {
       throw new Error("Bank account code is required to approve this receipt voucher. Please provide it in the request or update the voucher first");
     }
 
-    rv.status = "approved";
-    await rv.save();
+    // Attempt to use a MongoDB session for atomicity (requires replica set).
+    // Falls back gracefully to no-session mode on standalone MongoDB.
+    let session = null;
+    try {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    } catch {
+      session = null;
+    }
 
-    // 1. Post to supplier sub-ledger (Dr entry — reduces supplier balance)
-    await postToLedger(rv);
+    try {
+      rv.status = "approved";
+      await rv.save(session ? { session } : {});
 
-    // 2. Update every referenced client bill with this RV's receipt details
-    await markBillsReceived(rv);
+      // 1. Post to supplier sub-ledger (Dr entry — reduces supplier balance)
+      await postToLedger(rv);
 
-    // 3. Post double-entry JE: Dr bank / Cr supplier account
-    //    (JE service also updates AccountTree available_balance for both sides)
-    await ReceiptVoucherService.#postJE(rv);
+      // 2. Update every referenced client bill with this RV's receipt details
+      await markBillsReceived(rv);
 
-    return rv;
+      // 3. Post double-entry JE: Dr bank / Cr supplier account
+      //    (JE service also updates AccountTree available_balance for both sides)
+      await ReceiptVoucherService.#postJE(rv);
+
+      if (session) await session.commitTransaction();
+
+      return rv;
+    } catch (err) {
+      if (session) await session.abortTransaction();
+      throw err;
+    } finally {
+      if (session) session.endSession();
+    }
   }
 }
 

@@ -1,3 +1,6 @@
+import { initSentry, Sentry } from "./src/config/sentry.js";
+initSentry(); // must be called before other imports take effect for auto-instrumentation
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -90,16 +93,37 @@ import statutoryDeadlineRouter from "./src/module/finance/statutorydeadline/stat
 import supplierScorecardRouter from "./src/module/finance/supplierscorecard/supplierscorecard.route.js";
 import form26asRouter from "./src/module/finance/form26as/form26as.route.js";
 import consolidationRouter from "./src/module/finance/consolidation/consolidation.route.js";
+import bulkImportRouter from "./src/module/finance/bulk/bulk.route.js";
 import aiRouter from "./src/module/ai/ai.route.js";
 import SiteDrawingRouter from "./src/module/documents/sitedrawingdocuments/SiteDrawing.route.js";
 import currencyRouter from "./src/module/finance/currency/currency.route.js";
 import { correlationIdMiddleware } from "./src/common/correlationId.js";
+import { ERROR_CODES } from "./src/common/errorCodes.js";
+import { requestContextMiddleware } from "./src/common/requestContext.js";
+import { etagMiddleware } from "./src/common/etag.js";
+import { rlsMiddleware } from "./src/common/rowLevelSecurity.js";
+import { idempotencyMiddleware } from "./src/common/idempotency.js";
+import helmet from "helmet";
+import { createRateLimiter } from "./src/common/rateLimiter.js";
+import auditLogRouter from "./src/module/finance/audit/auditlog.route.js";
+import archivalRouter from "./src/module/finance/archival/archival.route.js";
+import financeSettingsRouter from "./src/module/finance/settings/financesettings.route.js";
+import webhookRouter from "./src/module/finance/events/webhook.route.js";
+import { initWebhookListeners } from "./src/module/finance/events/webhook.service.js";
+import metricsRouter from "./src/module/finance/metrics/metrics.route.js";
+import swaggerUi from "swagger-ui-express";
+import { swaggerSpec } from "./src/config/swagger.js";
 
 dotenv.config();
 const PORT = process.env.PORT;
 
 const app = express();
-connectDB();
+connectDB().then(() => {
+  // Initialize webhook listeners AFTER DB is connected so subscriptions can be queried
+  initWebhookListeners();
+}).catch(() => {
+  // connectDB logs its own errors; webhook listeners will not be active if DB is unavailable
+});
 startAbsenteeismCron();
 startYearEndLeaveResetCron();
 
@@ -172,7 +196,12 @@ app.use(
 app.use(cookieParser(process.env.ACCESS_TOKEN_SECRET)); //Secure Cookie Parser
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(correlationIdMiddleware); // Attach x-correlation-id to every request/response
+app.use(correlationIdMiddleware);     // Attach x-correlation-id to every request/response
+app.use(requestContextMiddleware);   // AsyncLocalStorage context — correlationId, userId, ip
+app.use(etagMiddleware);             // ETag caching for GET responses (304 Not Modified)
+app.use(rlsMiddleware);              // Attach getRLSFilter() helper to every request
+app.use(idempotencyMiddleware);  // Cache POST responses for duplicate X-Idempotency-Key requests
+app.use(helmet()); // Security headers (XSS, clickjacking, MIME sniffing, etc.)
 
 // NoSQL injection sanitizer — Express v5 compatible (req.query is a read-only getter in v5)
 // Strips keys starting with '$' or containing '.' from req.body and req.params.
@@ -250,6 +279,27 @@ app.use("/dlp", dlpRouter);
 app.use("/nmrattendance", nmrAttendanceRouter);
 app.use("/drawingvboqde", drawingVsBOQDERouter);
 app.use("/workdone", workdoneRouter);
+// ── Finance rate limiter: 60 req/min per IP — generous for legit use, blocks bots ──
+const financeRateLimit = createRateLimiter({
+  windowMs: 60_000,
+  max: 60,
+  message: "Too many finance requests, please slow down.",
+});
+app.use([
+  "/purchasebill", "/journalentry", "/paymentvoucher", "/receiptvoucher",
+  "/creditnote", "/debitnote", "/expensevoucher", "/banktransfer",
+  "/ledger", "/accounttree", "/finance/bulk", "/finance/currency",
+  "/reports", "/bankreconciliation", "/recurringvoucher", "/budget",
+  "/fixedasset", "/advance", "/retention", "/gst-matcher",
+  "/einvoice", "/ewaybill", "/contract-poc", "/approvals",
+  "/year-end-close", "/ledger-seal", "/statutory-deadlines",
+  "/supplier-scorecard", "/form26as", "/consolidation",
+  "/clientbilling", "/clientcreditnote", "/weeklybilling",
+  "/finance/audit",
+  "/finance/archival",
+  "/finance/settings",
+], financeRateLimit);
+
 app.use("/purchasebill", purchaseBillRouter); //fix_finance
 app.use("/weeklybilling", weeklyBillingRouter);
 app.use("/ledger", ledgerRouter);
@@ -262,6 +312,7 @@ app.use("/companybankaccount", companyBankAccountRouter);
 app.use("/companycashaccount", companyCashAccountRouter);
 app.use("/journalentry", journalEntryRouter);
 app.use("/finance-dropdown", financeDropdownRouter);
+app.use("/finance/bulk",       bulkImportRouter);
 app.use("/finance", financeDropdownRouter); // alias: /finance/payable-bills, /finance/parties/:tenderId, etc.
 app.use("/banktransfer", bankTransferRouter);
 app.use("/expensevoucher", expenseVoucherRouter);
@@ -285,15 +336,75 @@ app.use("/statutory-deadlines", statutoryDeadlineRouter);
 app.use("/supplier-scorecard",  supplierScorecardRouter);
 app.use("/form26as",           form26asRouter);
 app.use("/consolidation",      consolidationRouter);
+app.use("/finance/audit",      auditLogRouter);
+app.use("/finance/archival",   archivalRouter);
+app.use("/finance/settings",  financeSettingsRouter);
+app.use("/finance/webhooks",  webhookRouter);
+app.use("/finance",           metricsRouter); // mounts GET /finance/metrics
 app.use("/ai", aiRouter);
+
+// ── Swagger / OpenAPI docs ────────────────────────────────────────────────────
+app.use("/api/docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.get("/api/docs.json", (_req, res) => res.json(swaggerSpec));
+
+// ── API v1 versioned aliases (backward-compatible) ────────────────────────────
+// Existing unversioned routes remain active; /api/v1/<path> also works.
+const v1 = express.Router();
+v1.use("/purchasebill",         purchaseBillRouter);
+v1.use("/weeklybilling",        weeklyBillingRouter);
+v1.use("/ledger",               ledgerRouter);
+v1.use("/creditnote",           creditNoteRouter);
+v1.use("/debitnote",            debitNoteRouter);
+v1.use("/paymentvoucher",       paymentVoucherRouter);
+v1.use("/receiptvoucher",       receiptVoucherRouter);
+v1.use("/accounttree",          accountTreeRouter);
+v1.use("/companybankaccount",   companyBankAccountRouter);
+v1.use("/companycashaccount",   companyCashAccountRouter);
+v1.use("/journalentry",         journalEntryRouter);
+v1.use("/finance-dropdown",     financeDropdownRouter);
+v1.use("/finance/bulk",         bulkImportRouter);
+v1.use("/banktransfer",         bankTransferRouter);
+v1.use("/expensevoucher",       expenseVoucherRouter);
+v1.use("/reports",              reportsRouter);
+v1.use("/bankreconciliation",   bankReconciliationRouter);
+v1.use("/recurringvoucher",     recurringVoucherRouter);
+v1.use("/budget",               budgetRouter);
+v1.use("/fixedasset",           fixedAssetRouter);
+v1.use("/advance",              advanceAllocationRouter);
+v1.use("/retention",            retentionLedgerRouter);
+v1.use("/gst-matcher",          gstMatcherRouter);
+v1.use("/finance/attachments",  financeAttachmentRouter);
+v1.use("/finance/currency",     currencyRouter);
+v1.use("/einvoice",             einvoiceRouter);
+v1.use("/ewaybill",             ewaybillRouter);
+v1.use("/contract-poc",         contractPocRouter);
+v1.use("/approvals",            approvalRouter);
+v1.use("/year-end-close",       yearEndCloseRouter);
+v1.use("/ledger-seal",          ledgerSealRouter);
+v1.use("/statutory-deadlines",  statutoryDeadlineRouter);
+v1.use("/supplier-scorecard",   supplierScorecardRouter);
+v1.use("/form26as",             form26asRouter);
+v1.use("/consolidation",        consolidationRouter);
+v1.use("/clientbilling",        billingRouter);
+v1.use("/clientcreditnote",     clientCNRouter);
+v1.use("/finance/audit",        auditLogRouter);
+v1.use("/finance/archival",     archivalRouter);
+v1.use("/finance/settings",    financeSettingsRouter);
+v1.use("/finance/webhooks",    webhookRouter);
+app.use("/api/v1", v1);
 
 app.get("/", (_req, res) => {
   res.send(`Welcome to Romaa Backend`);
 });
 
-// ── Global error handler (Task 6) ────────────────────────────────────────────
+// ── Sentry error handler — must capture BEFORE our handler sends the response ──
+if (process.env.SENTRY_DSN) {
+  app.use(Sentry.expressErrorHandler());
+}
+
+// ── Global error handler ──────────────────────────────────────────────────────
 // Must be registered AFTER all routes so Express routes errors here via next(err).
-app.use((err, req, res, next) => {
+app.use((err, req, res, _next) => {
   const correlationId = req.correlationId;
   const status = err.status || err.statusCode || 500;
   logger.error({
@@ -304,9 +415,10 @@ app.use((err, req, res, next) => {
     method:  req.method,
   });
   res.status(status).json({
-    status:  false,
-    message: status === 500 ? "Internal server error" : err.message,
-    ...(correlationId && { correlationId }),
+    status:     false,
+    message:    status === 500 ? "Internal server error" : err.message,
+    error_code: err.errorCode || ERROR_CODES.INTERNAL_ERROR,
+    ...(correlationId && { correlation_id: correlationId }),
   });
 });
 

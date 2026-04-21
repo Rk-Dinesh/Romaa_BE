@@ -45,6 +45,9 @@ const employeeSchema = new mongoose.Schema(
         ref: "Tenders"
       }
     ],
+    // Row-level security: list of tender_ids (string business keys) this Site employee
+    // is allowed to see. Finance/Admin roles ignore this field (GLOBAL_ROLES bypass).
+    assigned_tenders: [{ type: String }],
     accessMode: {
       type: String,
       enum: ["WEBSITE", "MOBILE", "BOTH"],

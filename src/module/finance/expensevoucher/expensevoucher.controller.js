@@ -1,4 +1,5 @@
 import ExpenseVoucherService from "./expensevoucher.service.js";
+import { paginatedResponse } from "../../../common/App.helperFunction.js";
 
 // GET /expensevoucher/next-no
 export const getNextEvNo = async (_req, res) => {
@@ -21,18 +22,18 @@ export const getList = async (req, res) => {
     const from_date = req.query.fromdate || req.query.from_date;
     const to_date   = req.query.todate   || req.query.to_date;
 
+    const rlsFilter = await req.getRLSFilter();
     const result = await ExpenseVoucherService.getList({
       status, payment_mode, payee_type, employee_id, tender_id,
       expense_account_code, paid_from_account_code, ev_no,
       from_date, to_date, page, limit, search,
-    });
+    }, rlsFilter);
 
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages:  result.pagination.pages,
-      totalCount:  result.pagination.total,
-      data:        result.data,
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });

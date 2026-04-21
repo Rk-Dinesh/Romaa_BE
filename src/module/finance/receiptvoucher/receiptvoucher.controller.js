@@ -1,4 +1,5 @@
 import ReceiptVoucherService from "./receiptvoucher.service.js";
+import { paginatedResponse } from "../../../common/App.helperFunction.js";
 
 // GET /receiptvoucher/next-no
 export const getNextRvNo = async (_req, res) => {
@@ -19,12 +20,11 @@ export const getList = async (req, res) => {
     const result = await ReceiptVoucherService.getList({
       supplier_type, supplier_id, tender_id, status, receipt_mode, rv_no, from_date, to_date, page, limit, search,
     });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -42,12 +42,11 @@ export const getListCash = async (req, res) => {
       supplier_type, supplier_id, tender_id, status, rv_no, from_date, to_date, page, limit, search,
       receipt_mode: "Cash",
     });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -65,12 +64,11 @@ export const getListBank = async (req, res) => {
       supplier_type, supplier_id, tender_id, status, rv_no, from_date, to_date, page, limit, search,
       receipt_mode: "bank",
     });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });

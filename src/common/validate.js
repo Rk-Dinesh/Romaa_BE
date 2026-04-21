@@ -1,5 +1,6 @@
 // Zod validation middleware factory
 import { ZodError } from "zod";
+import { ERROR_CODES } from "./errorCodes.js";
 
 export const validate = (schema) => (req, res, next) => {
   try {
@@ -8,9 +9,10 @@ export const validate = (schema) => (req, res, next) => {
   } catch (err) {
     if (err instanceof ZodError) {
       return res.status(400).json({
-        status: false,
-        message: "Validation failed",
-        errors: err.errors.map(e => ({ field: e.path.join("."), message: e.message })),
+        status:     false,
+        message:    "Validation failed",
+        error_code: ERROR_CODES.VALIDATION_FAILED,
+        errors:     err.errors.map(e => ({ field: e.path.join("."), message: e.message })),
       });
     }
     next(err);

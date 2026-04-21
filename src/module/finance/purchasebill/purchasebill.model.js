@@ -123,7 +123,7 @@ const PurchaseBillSchema = new mongoose.Schema(
     // ── Lifecycle ─────────────────────────────────────────────────────────────
     status: {
       type: String,
-      enum: ["draft", "pending", "approved"],
+      enum: ["draft", "pending", "approved", "cancelled"],
       default: "pending",
     },
 
@@ -165,6 +165,14 @@ const PurchaseBillSchema = new mongoose.Schema(
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
 
+    // ── RCM (Reverse Charge Mechanism) ───────────────────────────────────────────
+    // When rcm_applicable = true, the vendor does NOT charge GST.
+    // The recipient (company) self-assesses and pays GST directly to the government.
+    // Line items must have 0 GST; RCM liability is tracked via rcm_amount.
+    rcm_applicable: { type: Boolean, default: false },
+    rcm_rate:       { type: Number,  default: 18 },   // self-assessed GST rate (%)
+    rcm_amount:     { type: Number,  default: 0 },    // computed by pre-save: taxable_value × rcm_rate / 100
+
     // ── TDS (Tax Deducted at Source) ──────────────────────────────────────────
     // Deducted from net_amount at time of payment — reduces net_payable to vendor.
     tds_applicable: { type: Boolean, default: false },
@@ -198,6 +206,24 @@ const PurchaseBillSchema = new mongoose.Schema(
 PurchaseBillSchema.pre("save", function (next) {
   // 0. Optimistic locking: increment _version on every update (not on initial create)
   if (!this.isNew) this._version += 1;
+
+  // 0a. GST cross-validation: CGST+SGST and IGST are mutually exclusive per line item
+  if (this.line_items && this.line_items.length > 0) {
+    for (let i = 0; i < this.line_items.length; i++) {
+      const li = this.line_items[i];
+      const hasCGSTSGST = (li.cgst_pct > 0 || li.sgst_pct > 0);
+      const hasIGST = (li.igst_pct > 0);
+      if (hasCGSTSGST && hasIGST) {
+        return next(new Error(`Line item ${i + 1}: Cannot have both CGST/SGST and IGST. Use intrastate (CGST+SGST) or interstate (IGST) — not both.`));
+      }
+      if (this.tax_mode === "instate" && hasIGST) {
+        return next(new Error(`Line item ${i + 1}: IGST must be 0 for intrastate supply (tax_mode: instate).`));
+      }
+      if (this.tax_mode === "otherstate" && hasCGSTSGST) {
+        return next(new Error(`Line item ${i + 1}: CGST/SGST must be 0 for interstate supply (tax_mode: otherstate).`));
+      }
+    }
+  }
 
   // 1. Per-item tax amounts derived from pct × gross_amt
   //    Enforce tax_mode: instate → CGST+SGST only (zero IGST)
@@ -290,6 +316,25 @@ PurchaseBillSchema.pre("save", function (next) {
   }
   // net_payable = net_amount - tds_amount (stored in balance_due context — TDS reduces cash outflow)
 
+  // 10. RCM (Reverse Charge Mechanism) validation and liability computation.
+  // When rcm_applicable = true, the vendor does NOT charge GST (line items must have 0 GST).
+  // The recipient self-assesses and pays GST directly — tracked as rcm_amount.
+  if (this.rcm_applicable) {
+    const hasGST = (this.line_items || []).some(
+      (li) => (li.cgst_amt > 0) || (li.sgst_amt > 0) || (li.igst_amt > 0)
+    );
+    if (hasGST) {
+      return next(new Error(
+        "RCM bills must have 0 GST on line items — GST liability is self-assessed by the recipient. " +
+        "Remove GST rates from all line items or disable rcm_applicable."
+      ));
+    }
+    const rcmRate    = this.rcm_rate || 18;
+    this.rcm_amount  = round2(this.taxable_value * rcmRate / 100);
+  } else {
+    this.rcm_amount = 0;
+  }
+
   next();
 });
 
@@ -304,6 +349,8 @@ PurchaseBillSchema.index(
   { vendor_id: 1, invoice_no: 1 },
   { unique: true, partialFilterExpression: { invoice_no: { $ne: "" } } }
 ); // prevent duplicate vendor invoice numbers
+PurchaseBillSchema.index({ fin_year: 1, status: 1, doc_date: -1 }); // FY + status reporting
+PurchaseBillSchema.index({ approved_at: 1 });                        // approval timeline reports
 
 const PurchaseBillModel = mongoose.model("PurchaseBill", PurchaseBillSchema);
 export default PurchaseBillModel;

@@ -1,6 +1,6 @@
 import PurchaseBillService from "./purchasebill.service.js";
 import logger from "../../../config/logger.js";
-import { logError } from "../../../common/App.helperFunction.js";
+import { logError, paginatedResponse } from "../../../common/App.helperFunction.js";
 
 // GET /purchasebill/list?fromdate=&todate=&doc_id=&tender_id=&vendor_id=&tax_mode=&invoice_no=&status=&search=&page=&limit=
 export const getBills = async (req, res) => {
@@ -8,15 +8,15 @@ export const getBills = async (req, res) => {
     const { doc_id, tender_id, vendor_id, tax_mode, invoice_no, status, page, limit, search } = req.query;
     const from_date = req.query.fromdate || req.query.from_date;
     const to_date   = req.query.todate   || req.query.to_date;
+    const rlsFilter = await req.getRLSFilter();
     const result = await PurchaseBillService.getBills({
       from_date, to_date, doc_id, tender_id, vendor_id, tax_mode, invoice_no, status, page, limit, search,
-    });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
+    }, rlsFilter);
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit || limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -35,12 +35,11 @@ export const getBillsByTender = async (req, res) => {
     const result = await PurchaseBillService.getBillsByTender(tenderId, {
       status, vendor_id, from_date, to_date, invoice_no, tax_mode, page, limit, search,
     });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit || limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -83,7 +82,11 @@ export const getNextDocId = async (_req, res) => {
 // PATCH /purchasebill/approve/:id
 export const approvePurchaseBill = async (req, res) => {
   try {
-    const data = await PurchaseBillService.approvePurchaseBill(req.params.id);
+    const data = await PurchaseBillService.approvePurchaseBill(
+      req.params.id,
+      req.user?._id || null,
+      { correlationId: req.correlationId }
+    );
     res.status(200).json({ status: true, message: "Purchase bill approved and posted to ledger", data });
   } catch (error) {
     logError(logger, req, error, "approvePurchaseBill");
@@ -96,7 +99,10 @@ export const approvePurchaseBill = async (req, res) => {
 // POST /purchasebill/create
 export const createPurchaseBill = async (req, res) => {
   try {
-    const data = await PurchaseBillService.createPurchaseBill(req.body);
+    const data = await PurchaseBillService.createPurchaseBill(req.body, {
+      correlationId: req.correlationId,
+      ipAddress:     req.ip,
+    });
     res.status(201).json({ status: true, message: "Purchase bill created", data });
   } catch (error) {
     logError(logger, req, error, "createPurchaseBill");
@@ -119,7 +125,10 @@ export const getPurchaseBillById = async (req, res) => {
 // PATCH /purchasebill/update/:id
 export const updatePurchaseBill = async (req, res) => {
   try {
-    const data = await PurchaseBillService.updatePurchaseBill(req.params.id, req.body);
+    const data = await PurchaseBillService.updatePurchaseBill(req.params.id, req.body, {
+      correlationId: req.correlationId,
+      actorId:       req.user?._id || null,
+    });
     res.status(200).json({ status: true, message: "Purchase bill updated", data });
   } catch (error) {
     logError(logger, req, error, "updatePurchaseBill");
@@ -131,7 +140,10 @@ export const updatePurchaseBill = async (req, res) => {
 // DELETE /purchasebill/delete/:id
 export const deletePurchaseBill = async (req, res) => {
   try {
-    const data = await PurchaseBillService.deletePurchaseBill(req.params.id);
+    const data = await PurchaseBillService.deletePurchaseBill(req.params.id, {
+      correlationId: req.correlationId,
+      actorId:       req.user?._id || null,
+    });
     res.status(200).json({ status: true, message: "Purchase bill deleted", data });
   } catch (error) {
     const code = error.message.includes("not found") || error.message.includes("Cannot delete") ? 400 : 500;

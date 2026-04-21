@@ -1,4 +1,5 @@
 import BudgetService from "./budget.service.js";
+import { paginatedResponse } from "../../../common/App.helperFunction.js";
 
 export const create = async (req, res) => {
   try {
@@ -16,12 +17,11 @@ export const getList = async (req, res) => {
   try {
     const { tender_id, financial_year, status, page, limit } = req.query;
     const result = await BudgetService.getList({ tender_id, financial_year, status, page, limit });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages:  result.pagination.pages,
-      totalCount:  result.pagination.total,
-      data: result.data,
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
     });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });

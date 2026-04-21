@@ -1,6 +1,26 @@
+import nodemailer from "nodemailer";
 import ApprovalRuleModel from "./approvalrule.model.js";
 import ApprovalRequestModel from "./approvalrequest.model.js";
 import EmployeeModel from "../../hr/employee/employee.model.js";
+import AuditLogService from "../audit/auditlog.service.js";
+import logger from "../../../config/logger.js";
+import { APPROVAL_STATUS, AUDIT_ACTION } from "../finance.constants.js";
+import { emitFinanceEvent, FINANCE_EVENTS } from "../events/financeEvents.js";
+
+// ── Internal email helper ─────────────────────────────────────────────────────
+const _transporter = nodemailer.createTransport({
+  service: "gmail",
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+});
+
+async function _sendEmail({ to, subject, html }) {
+  await _transporter.sendMail({
+    from: `"Romaa Finance" <${process.env.SMTP_USER}>`,
+    to,
+    subject,
+    html,
+  });
+}
 
 // Set to true to block all vouchers without an approval rule from auto-approving.
 // When false (default), vouchers with no matching rule pass through unblocked
@@ -54,8 +74,8 @@ class ApprovalService {
     if (!Number.isFinite(amt))       throw new Error("amount must be numeric");
 
     const existing = await ApprovalRequestModel.findOne({ source_type, source_ref });
-    if (existing && existing.status === "pending") return { required: true, request: existing };
-    if (existing && existing.status === "approved") return { required: true, request: existing, already_approved: true };
+    if (existing && existing.status === APPROVAL_STATUS.PENDING) return { required: true, request: existing };
+    if (existing && existing.status === APPROVAL_STATUS.APPROVED) return { required: true, request: existing, already_approved: true };
 
     const rule = await this.getRule(source_type);
     if (!rule) {
@@ -114,13 +134,41 @@ class ApprovalService {
       initiated_by:      initiator_id,
       rule_snapshot:     { min_amount: band.min_amount, max_amount: band.max_amount, label: band.label || "" },
     });
+
+    // Email — notify required approvers of new request
+    try {
+      const initiatorDoc = await EmployeeModel.findById(initiator_id).select("name").lean();
+      const initiatorName = initiatorDoc?.name || "Team";
+
+      if (band.approvers?.length) {
+        const approvers = await EmployeeModel.find({ _id: { $in: band.approvers } }).select("name email").lean();
+        for (const approver of approvers) {
+          if (approver.email) {
+            await _sendEmail({
+              to:      approver.email,
+              subject: `Action Required: Approve ${source_no}`,
+              html: `
+                <p>Hi ${approver.name},</p>
+                <p>A new <strong>${source_type}</strong> <strong>${source_no}</strong>
+                for ₹${amt.toLocaleString("en-IN")} requires your approval.</p>
+                <p>Submitted by: ${initiatorName}</p>
+                <p>Please log in to review and approve/reject.</p>
+              `,
+            });
+          }
+        }
+      }
+    } catch (emailErr) {
+      logger.warn({ context: "approval.initiate.email", message: emailErr.message });
+    }
+
     return { required: true, request };
   }
 
   static async _applyAction({ request_id, actor_id, action, comment = "" }) {
     const request = await ApprovalRequestModel.findById(request_id);
     if (!request)                          throw new Error("Approval request not found");
-    if (request.status !== "pending")      throw new Error(`Request already ${request.status}`);
+    if (request.status !== APPROVAL_STATUS.PENDING) throw new Error(`Request already ${request.status}`);
 
     if (!request.required_approvers.includes(actor_id)) {
       throw new Error("You are not authorized to act on this request");
@@ -129,17 +177,51 @@ class ApprovalService {
     const actor = await EmployeeModel.findById(actor_id).select("name email").lean().catch(() => null);
     const actorName = actor?.name || "";
 
-    if (action === "rejected") {
-      request.status        = "rejected";
+    if (action === APPROVAL_STATUS.REJECTED) {
+      request.status        = APPROVAL_STATUS.REJECTED;
       request.rejected_by   = actor_id;
       request.next_approver_id = "";
       request.completed_at  = new Date();
       request.approval_log.push({ action, actor_id, actor_name: actorName, comment });
       await request.save();
+
+      // Audit log — reject
+      await AuditLogService.log({
+        entity_type: "Approval",
+        entity_id:   request._id,
+        entity_no:   request.source_no,
+        action:      AUDIT_ACTION.REJECT,
+        actor_id:    actor_id,
+        meta:        { reason: comment, source_type: request.source_type },
+      });
+
+      emitFinanceEvent(FINANCE_EVENTS.APPROVAL_REJECTED, { source_no: request.source_no, source_type: request.source_type, actor_id });
+
+      // Email — notify initiator of rejection
+      try {
+        const initiator = await EmployeeModel.findById(request.initiated_by).select("name email").lean();
+        if (initiator?.email) {
+          await _sendEmail({
+            to:      initiator.email,
+            subject: `Rejected: ${request.source_no}`,
+            html: `
+              <p>Hi ${initiator.name},</p>
+              <p>Your <strong>${request.source_type}</strong> <strong>${request.source_no}</strong>
+              has been <strong style="color:red">rejected</strong>.</p>
+              <p>Reason: ${comment || "No reason provided"}</p>
+              <p>Rejected by: ${actorName || "Finance Team"}</p>
+              <p>Please review and resubmit.</p>
+            `,
+          });
+        }
+      } catch (emailErr) {
+        logger.warn({ context: "approval.reject.email", message: emailErr.message });
+      }
+
       return request;
     }
 
-    if (action === "approved") {
+    if (action === APPROVAL_STATUS.APPROVED) {
       if (request.approved_by.includes(actor_id)) {
         throw new Error("You have already approved this request");
       }
@@ -151,7 +233,7 @@ class ApprovalService {
         : request.required_approvers.every((a) => request.approved_by.includes(a));
 
       if (doneAll) {
-        request.status           = "approved";
+        request.status           = APPROVAL_STATUS.APPROVED;
         request.next_approver_id = "";
         request.completed_at     = new Date();
       } else {
@@ -159,6 +241,41 @@ class ApprovalService {
         request.next_approver_id = pending || "";
       }
       await request.save();
+
+      // Audit log — approve (only when fully approved)
+      if (doneAll) {
+        await AuditLogService.log({
+          entity_type: "Approval",
+          entity_id:   request._id,
+          entity_no:   request.source_no,
+          action:      AUDIT_ACTION.APPROVE,
+          actor_id:    actor_id,
+          meta:        { source_type: request.source_type, amount: request.amount },
+        });
+
+        emitFinanceEvent(FINANCE_EVENTS.APPROVAL_APPROVED, { source_no: request.source_no, source_type: request.source_type, amount: request.amount, actor_id });
+
+        // Email — notify initiator of approval
+        try {
+          const initiator = await EmployeeModel.findById(request.initiated_by).select("name email").lean();
+          if (initiator?.email) {
+            await _sendEmail({
+              to:      initiator.email,
+              subject: `Approved: ${request.source_no}`,
+              html: `
+                <p>Hi ${initiator.name},</p>
+                <p>Your <strong>${request.source_type}</strong> <strong>${request.source_no}</strong>
+                for ₹${request.amount?.toLocaleString("en-IN") || 0} has been <strong style="color:green">approved</strong>.</p>
+                <p>Approved by: ${actorName || "Finance Team"}</p>
+                <p>Date: ${new Date().toLocaleDateString("en-IN")}</p>
+              `,
+            });
+          }
+        } catch (emailErr) {
+          logger.warn({ context: "approval.approve.email", message: emailErr.message });
+        }
+      }
+
       return request;
     }
 
@@ -169,11 +286,11 @@ class ApprovalService {
   }
 
   static async approve({ request_id, actor_id, comment = "" }) {
-    return this._applyAction({ request_id, actor_id, action: "approved", comment });
+    return this._applyAction({ request_id, actor_id, action: APPROVAL_STATUS.APPROVED, comment });
   }
 
   static async reject({ request_id, actor_id, comment = "" }) {
-    return this._applyAction({ request_id, actor_id, action: "rejected", comment });
+    return this._applyAction({ request_id, actor_id, action: APPROVAL_STATUS.REJECTED, comment });
   }
 
   static async comment({ request_id, actor_id, comment = "" }) {
@@ -183,7 +300,7 @@ class ApprovalService {
   static async withdraw({ request_id, actor_id, comment = "" }) {
     const request = await ApprovalRequestModel.findById(request_id);
     if (!request)                       throw new Error("Approval request not found");
-    if (request.status !== "pending")   throw new Error(`Request already ${request.status}`);
+    if (request.status !== APPROVAL_STATUS.PENDING) throw new Error(`Request already ${request.status}`);
     if (request.initiated_by !== actor_id) throw new Error("Only the initiator can withdraw");
     request.status        = "withdrawn";
     request.completed_at  = new Date();

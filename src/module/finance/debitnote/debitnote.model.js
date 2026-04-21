@@ -117,6 +117,19 @@ DebitNoteSchema.pre("save", function (next) {
   // Optimistic locking: increment _version on every update (not on initial create)
   if (!this.isNew) this._version += 1;
 
+  // GST cross-validation: CGST/SGST and IGST are mutually exclusive
+  const hasCGSTSGST = (this.cgst_pct > 0 || this.sgst_pct > 0);
+  const hasIGST = (this.igst_pct > 0);
+  if (hasCGSTSGST && hasIGST) {
+    return next(new Error("Cannot have both CGST/SGST and IGST. Use intrastate (CGST+SGST) or interstate (IGST) — not both."));
+  }
+  if (this.sales_type === "Local" && hasIGST) {
+    return next(new Error("IGST must be 0 for local (intrastate) supply."));
+  }
+  if (this.sales_type === "Interstate" && hasCGSTSGST) {
+    return next(new Error("CGST/SGST must be 0 for interstate supply."));
+  }
+
   const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
   if (this.taxable_amount > 0 && (this.cgst_pct > 0 || this.sgst_pct > 0 || this.igst_pct > 0)) {
     this.cgst_amt  = r2(this.taxable_amount * this.cgst_pct  / 100);

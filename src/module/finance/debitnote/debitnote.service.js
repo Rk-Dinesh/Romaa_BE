@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import DebitNoteModel from "./debitnote.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
@@ -429,17 +430,35 @@ class DebitNoteService {
 
   // PATCH /debitnote/approve/:id
   static async approve(id) {
-    const dn = await DebitNoteModel.findById(id);
-    if (!dn)                      throw new Error("Debit note not found");
-    if (dn.status === "approved") throw new Error("Already approved");
+    // Attempt MongoDB session for atomicity (requires replica set).
+    // Falls back gracefully to no-session mode on standalone MongoDB.
+    let session = null;
+    try {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    } catch {
+      session = null;
+    }
 
-    dn.status = "approved";
-    await dn.save();
+    try {
+      const dn = await DebitNoteModel.findById(id).session(session || null);
+      if (!dn)                      throw new Error("Debit note not found");
+      if (dn.status === "approved") throw new Error("Already approved");
 
-    // Full approval flow: supplier ledger + GL + bill adjustment
-    await approveDN(dn);
+      dn.status = "approved";
+      await dn.save(session ? { session } : {});
 
-    return dn;
+      // Full approval flow: supplier ledger + GL + bill adjustment
+      await approveDN(dn);
+
+      if (session) await session.commitTransaction();
+      return dn;
+    } catch (err) {
+      if (session) await session.abortTransaction();
+      throw err;
+    } finally {
+      if (session) session.endSession();
+    }
   }
 }
 

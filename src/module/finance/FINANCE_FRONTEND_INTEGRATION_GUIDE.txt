@@ -1,0 +1,2433 @@
+================================================================================
+  ROMAA FINANCE MODULE — FULL FRONTEND INTEGRATION GUIDE
+  Generated: 2026-04-21
+================================================================================
+
+TABLE OF CONTENTS
+─────────────────
+ 1.  Global Conventions
+ 2.  Authentication & Headers
+ 3.  Response Format & Error Handling
+ 4.  Pagination
+ 5.  Enum Reference (all dropdown values)
+ 6.  Submodule APIs
+      01. Account Tree (Chart of Accounts)
+      02. Advance Allocation
+      03. Approval Workflow
+      04. Archival
+      05. Attachment
+      06. Audit Log
+      07. Bank Reconciliation
+      08. Bank Transfer
+      09. Budget
+      10. Bulk Import / Export
+      11. Client Billing
+      12. Client Credit Note
+      13. Company Bank Account
+      14. Company Cash Account
+      15. Consolidation
+      16. Contract POC (% Completion)
+      17. Credit Note
+      18. Currency & Exchange Rates
+      19. Debit Note
+      20. Finance Dropdown (Helper)
+      21. eInvoice
+      22. eWaybill
+      23. Expense Voucher
+      24. Fixed Asset
+      25. Form 26AS
+      26. GST Matcher
+      27. Journal Entry
+      28. Ledger
+      29. Ledger Seal (Tamper-Evident Chain)
+      30. Payment Voucher
+      31. Purchase Bill
+      32. Receipt Voucher
+      33. Recurring Voucher
+      34. Reports
+      35. Retention Ledger
+      36. Finance Settings
+      37. Statutory Deadline
+      38. Supplier Scorecard
+      39. Weekly Billing
+      40. Year-End Close
+      41. Finance Metrics
+      42. Webhooks
+ 7.  Workflow Guides (end-to-end sequences)
+ 8.  Zod Schema Quick Reference (all POST/PATCH body fields)
+
+================================================================================
+1. GLOBAL CONVENTIONS
+================================================================================
+
+Base URL
+  All routes are available under two equivalent prefixes:
+    /api/v1/<module>          ← preferred, versioned
+    /<module>                 ← legacy alias, still supported
+
+  Finance-scoped routes (no standalone route file per module) use:
+    /finance/<subpath>
+
+  Examples:
+    POST /api/v1/purchasebill/create
+    GET  /api/v1/finance/currency/list
+    GET  /api/v1/finance/bulk/purchasebill/template
+
+Date Format
+  All dates are ISO 8601 strings: "2025-04-15"  or "2025-04-15T00:00:00.000Z"
+  Financial Year format: "25-26"  (two-digit year range, Apr-Mar)
+
+Idempotency
+  For all POST (create) endpoints, send a unique key to prevent duplicate
+  submissions on retry:
+    Header: X-Idempotency-Key: <uuid-v4>
+  The server caches the first successful response for 24 hours.
+  On re-send with the same key, it returns the cached response (not re-processed).
+
+Optimistic Locking
+  All update (PATCH) endpoints require the current _version field.
+  Fetch the record first, send back _version unchanged.
+  If another user saved in between, the server returns 409 Conflict.
+
+  PATCH /api/v1/purchasebill/update/:id
+  Body: { ...changes, _version: 3 }
+  On version mismatch → 409 { status: false, message: "Version conflict", error_code: "VERSION_CONFLICT" }
+
+Financial Year Auto-Filter
+  All list endpoints default to the current financial year.
+  To see other years pass: ?fin_year=24-25
+
+================================================================================
+2. AUTHENTICATION & HEADERS
+================================================================================
+
+Login to get tokens:
+  POST /api/v1/auth/login
+  Body: { emp_id, password }
+  Response sets HTTP-only cookies: accessToken, refreshToken
+
+Every protected request must include one of:
+  a) Cookie (browser): automatic if same-origin
+  b) Header (mobile/SPA cross-origin):
+       Authorization: Bearer <accessToken>
+
+Refresh token:
+  POST /api/v1/auth/refresh
+  (Reads refreshToken cookie or body.refreshToken)
+  Returns new accessToken cookie + body { accessToken }
+
+Required headers for all finance requests:
+  Content-Type: application/json          ← for JSON body
+  Content-Type: multipart/form-data       ← for file upload endpoints
+  X-Idempotency-Key: <uuid>              ← recommended on all POST
+  Authorization: Bearer <token>          ← if not using cookies
+
+Row-Level Security (RLS)
+  Site-role employees only see records linked to their assigned tenders.
+  No frontend changes needed — the filter is applied server-side automatically.
+  Finance Manager, Admin, Director, MD see all records.
+
+================================================================================
+3. RESPONSE FORMAT & ERROR HANDLING
+================================================================================
+
+SUCCESS (2xx)
+─────────────
+  { "status": true, "data": { ... } }                    ← single record
+  { "status": true, "data": [ ... ] }                    ← array
+  { "status": true, "message": "...", "data": { ... } }  ← create/update
+  { "status": true, "count": 5, "data": [ ... ] }        ← counted array
+  202 { "status": true, "message": "...", "job_id": "..." } ← async job
+
+PAGINATED SUCCESS
+─────────────────
+  {
+    "status": true,
+    "data": [ ... ],
+    "pagination": {
+      "current_page": 1,
+      "page_size": 20,
+      "total_items": 134,
+      "total_pages": 7
+    }
+  }
+  OR legacy shape (some older endpoints):
+  { "currentPage": 1, "totalPages": 7, "totalCount": 134, "data": [ ... ] }
+
+ERROR (4xx / 5xx)
+─────────────────
+  {
+    "status": false,
+    "message": "Human-readable description",
+    "error_code": "MACHINE_READABLE_CODE",
+    "correlation_id": "uuid-for-support"
+  }
+
+Error Codes Reference:
+  VALIDATION_FAILED          → 400, Zod schema violation (see errors[] array)
+  NOT_FOUND                  → 404, record doesn't exist
+  DUPLICATE_ENTRY            → 409, unique constraint (e.g., duplicate invoice_no)
+  INVALID_TRANSITION         → 400, illegal status change (e.g., approve cancelled bill)
+  APPROVAL_REQUIRED          → 400, bill exceeds threshold, must go through approval
+  INSUFFICIENT_PERMISSION    → 403, RBAC check failed
+  IDEMPOTENCY_CONFLICT       → 409, key already used with different body
+  RATE_LIMIT_EXCEEDED        → 429, too many requests (check Retry-After header)
+  BALANCE_MISMATCH           → 400, Journal Entry Dr ≠ Cr
+  RCM_GST_CONFLICT           → 400, RCM bill must have zero GST
+  CURRENCY_NOT_FOUND         → 400, currency code not in master
+  EXCHANGE_RATE_MISSING      → 400, no exchange rate for that date
+  BULK_IMPORT_FAILED         → 400, import job failed entirely
+  LEDGER_SEAL_BROKEN         → 400, tamper detected in ledger chain
+  INTERNAL_ERROR             → 500, unexpected server error
+
+Validation Error Detail (VALIDATION_FAILED):
+  {
+    "status": false,
+    "message": "Validation failed",
+    "error_code": "VALIDATION_FAILED",
+    "errors": [
+      { "field": "invoice_no", "message": "Required" },
+      { "field": "amount", "message": "Expected number, received string" }
+    ]
+  }
+
+Rate Limit (429):
+  Response header: Retry-After: 47  (seconds until window resets)
+  Finance routes: 60 requests/minute per IP
+
+================================================================================
+4. PAGINATION
+================================================================================
+
+Send page and limit as query params:
+  GET /api/v1/purchasebill/list?page=2&limit=20
+
+Defaults: page=1, limit=20
+Max limit: 100 (server enforced)
+
+Response:
+  pagination.current_page  → current page number
+  pagination.page_size     → records per page
+  pagination.total_items   → total matching records
+  pagination.total_pages   → Math.ceil(total_items / page_size)
+
+================================================================================
+5. ENUM REFERENCE
+================================================================================
+
+BILL_STATUS        draft | pending | approved | cancelled
+APPROVAL_STATUS    pending | approved | rejected | withdrawn
+TAX_MODE           instate | otherstate
+PAYMENT_MODE       bank | cash | upi | cheque | neft | rtgs | imps
+ENTRY_TYPE         Dr | Cr
+SUPPLIER_TYPE      vendor | contractor
+PAID_STATUS        unpaid | partial | paid
+TDS_SECTION        194C | 194J | 194I | 194Q | 194H
+VOUCHER_SOURCE     PurchaseBill | PaymentVoucher | ReceiptVoucher | CreditNote
+                   DebitNote | ExpenseVoucher | BankTransfer | JournalEntry
+                   ClientBilling | WeeklyBilling
+AUDIT_ACTION       create | update | approve | reject | delete | import
+                   export | reverse | cancel
+
+Fixed Asset Methods
+  depreciation_method      SLM | WDV
+  it_block                 Building | Plant | Furniture | Computers | Vehicles | Other
+
+Journal Entry Types
+  je_type                  Adjustment | Opening | Closing | Accrual | Prepayment
+                           Depreciation | TDS | GST | Transfer | Other
+
+Expense Voucher Payee
+  payee_type               Employee | External
+
+Credit / Debit Note
+  sales_type               Local | Interstate
+  adj_type                 Against Bill | Standalone
+  tax_type                 GST | Non-GST
+  raised_by (debit note)   Company | Vendor
+
+Budget Period
+  period                   annual | quarterly | monthly
+
+Weekly Billing Status
+  Generated | Pending | Approved | Cancelled
+
+Attachment Source Types
+  PurchaseBill | PaymentVoucher | ReceiptVoucher | ExpenseVoucher | JournalEntry
+  CreditNote | DebitNote | ClientCreditNote | ClientBilling | WeeklyBilling
+  BankTransfer | BankReconciliation | FixedAsset | RetentionRelease
+  Gstr2bUpload | Other
+
+Attachment Categories
+  Invoice | Receipt | Bank Statement | Contract | Approval | Tax Document
+  Delivery Challan | Photo | Other
+
+================================================================================
+6. SUBMODULE APIs
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+01. ACCOUNT TREE (Chart of Accounts)
+    Base URL: /accounttree
+    Permission: finance > accounttree
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /accounttree/list
+  Query: account_type, account_subtype, parent_code, tax_type, is_group(bool),
+         is_posting_account(bool), is_bank_cash(bool), is_personal(bool),
+         is_active(bool), search, fromdate, todate, page, limit
+  Response: paginated list of accounts
+
+GET    /accounttree/posting-accounts
+  Query: account_type, is_bank_cash, tax_type
+  Response: { status, data[] } — accounts where is_posting_account=true
+  USE: populate "Account" dropdowns in voucher line items
+
+GET    /accounttree/tree
+  Query: root (optional, account code — omit for full tree)
+  Response: { status, data: tree }  — nested tree structure for COA tree view
+
+GET    /accounttree/search?q=<text>
+  Response: { status, data[] } — fuzzy search by name or code
+  USE: type-ahead search in account pickers
+
+GET    /accounttree/by-code/:code
+  Response: { status, data }
+
+GET    /accounttree/by-supplier/:supplierId
+  Query: supplier_type (vendor|contractor)
+  Response: { status, data[] } — payable ledger accounts for that supplier
+
+GET    /accounttree/:id
+  Response: { status, data }
+
+POST   /accounttree/create
+  Body: {
+    code: "4001",               required
+    name: "Sales Revenue",      required
+    parent_code: "4000",
+    account_type: "Income",
+    account_subtype: "Operating",
+    is_group: false,
+    is_posting_account: true,
+    is_bank_cash: false,
+    is_personal: false,
+    tax_type: "GST",
+    opening_balance: 0,
+    available_balance: 0
+  }
+  Response: 201 { status, message, data }
+
+POST   /accounttree/seed
+  Purpose: Seeds the default Chart of Accounts (idempotent, safe to call again)
+  Response: { status, message, created, updated }
+
+PATCH  /accounttree/update/:id
+  Body: partial account fields
+  Response: 200 { status, message, data }
+
+DELETE /accounttree/delete/:id
+  Response: 200 (soft-delete — sets is_active=false)
+
+────────────────────────────────────────────────────────────────────────────────
+02. ADVANCE ALLOCATION
+    Base URL: /advance
+    Permission: finance > advanceallocation
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /advance/outstanding/paid
+  Query: party_type, party_id, tender_id
+  Response: { status, data[] } — advances paid out but not yet allocated
+  USE: "Allocate Against Bill" flow for payments
+
+GET    /advance/outstanding/received
+  Query: party_type, party_id, tender_id
+  Response: { status, data[] } — advances received but not yet allocated
+
+GET    /advance/summary
+  Query: side (paid|received), tender_id
+  Response: { status, data } — total outstanding by party
+
+POST   /advance/allocate
+  Body: { voucher_id, bill_id, amount }
+  Response: 200 { status, message: "Allocated", data }
+
+POST   /advance/unallocate
+  Body: { allocation_id }
+  Response: 200 { status, message: "Un-allocated", data }
+
+GET    /advance/voucher/:id
+  Query: voucher_type
+  Response: { status, data } — all allocations on a voucher
+
+GET    /advance/bill/:id
+  Query: bill_type
+  Response: { status, data } — all allocations on a bill
+
+────────────────────────────────────────────────────────────────────────────────
+03. APPROVAL WORKFLOW
+    Base URL: /approvals
+    Permission: finance > approval
+────────────────────────────────────────────────────────────────────────────────
+
+SETUP (Admin)
+
+POST   /approvals/rules
+  Body: {
+    source_type: "PurchaseBill",   required  (use VOUCHER_SOURCE enum)
+    thresholds: [
+      { min_amount: 0, max_amount: 50000, approvers: ["<employeeId>"], any_of: true },
+      { min_amount: 50001, approvers: ["<mgr1Id>", "<mgr2Id>"], any_of: false }
+    ],
+    is_active: true
+  }
+  Response: 200 { status, message: "Rule saved", data }
+
+GET    /approvals/rules
+  Query: source_type
+  Response: { status, data[] }
+
+GET    /approvals/rules/:source_type
+  Response: { status, data }
+
+MANUAL INITIATE (when auto-initiation is not triggered)
+
+POST   /approvals/requests
+  Body: {
+    source_type: "PurchaseBill",    required  (VOUCHER_SOURCE enum)
+    source_ref:  "<objectId>",      required
+    source_no:   "PB/25-26/0042",
+    amount:      75000,
+    narration:   "Exceeds site manager limit"
+  }
+  Response: 201 { status, data }
+  NOTE: Normally the server initiates this automatically on bill approve.
+        Use this endpoint if you need to manually queue a document for approval.
+
+APPROVAL QUEUE (Approver)
+
+GET    /approvals/requests/pending-for-me
+  Query: source_type, page, limit
+  Response: paginated — requests where logged-in user is an approver
+  USE: Approval inbox / notification badge count
+
+GET    /approvals/requests
+  Query: source_type, status (pending|approved|rejected), page, limit
+  Response: paginated
+
+GET    /approvals/requests/:id
+  Response: { status, data } — includes approval_log[] with history
+
+POST   /approvals/requests/:id/approve
+  Body: { comment: "Looks good" }    (optional)
+  Response: 200 { status, message: "Approved", data }
+
+POST   /approvals/requests/:id/reject
+  Body: { comment: "Invoice mismatch" }    (optional)
+  Response: 200 { status, message: "Rejected", data }
+
+POST   /approvals/requests/:id/comment
+  Body: { comment: "Please attach invoice scan" }
+  Response: 200 { status, message: "Commented", data }
+
+POST   /approvals/requests/:id/withdraw
+  Body: { comment }    (optional)
+  Response: 200 { status, message: "Withdrawn", data }
+
+NOTE: Approval is auto-initiated by the server when a bill/voucher exceeds
+      the configured threshold. The frontend shows "Pending Approval" status
+      and the approver sees it in pending-for-me.
+
+────────────────────────────────────────────────────────────────────────────────
+04. ARCHIVAL (FY Year-End Archival)
+    Base URL: /finance/archival
+    Permission: finance > audit_trail (admin only)
+────────────────────────────────────────────────────────────────────────────────
+
+POST   /finance/archival/start
+  Body: { fin_year: "24-25" }
+  Response: 202 { status, message, job_id }
+  NOTE: Async — poll /jobs for progress
+
+GET    /finance/archival/jobs
+  Response: { status, count, data[] }  — all archival job history
+
+GET    /finance/archival/:fin_year
+  Response: { status, data: { status, progress, created_at, completed_at } }
+  status: pending | running | completed | failed
+
+────────────────────────────────────────────────────────────────────────────────
+05. ATTACHMENT (Finance Documents)
+    Base URL: /finance/attachments
+    Permission: finance > finance_attachment
+────────────────────────────────────────────────────────────────────────────────
+
+POST   /finance/attachments/upload         (multipart/form-data)
+  Form fields:
+    files               multiple files  (field name "files")
+    source_type         required  (e.g., "PurchaseBill")
+    source_ref          MongoDB ObjectId of the document
+    source_no           human-readable number (e.g., "PB/25-26/0042")
+    tender_id
+    category            see Attachment Categories enum
+    description
+    tags                comma-separated or JSON array
+  Response: 201 { status, message, data: { count, files[] } }
+
+POST   /finance/attachments/upload-one     (multipart/form-data)
+  Same fields, single file only
+  Response: 201 { status, message, data }
+
+GET    /finance/attachments/for-source
+  Query: source_type (required), source_ref OR source_no, include_deleted=false
+  Response: { status, data[] }
+  USE: Show attachment tab on any voucher detail page
+
+GET    /finance/attachments/list
+  Query: page, limit, source_type, category, uploaded_by
+  Response: paginated
+
+GET    /finance/attachments/:id/download
+  Query: expires_seconds (default 3600)
+  Response: { status, data: { url, expires_at } }
+  NOTE: url is a pre-signed S3 URL. Open in new tab or trigger download.
+
+PATCH  /finance/attachments/:id
+  Body: { category, description, tags: [] }
+  Response: 200 { status, message: "Updated", data }
+
+DELETE /finance/attachments/:id
+  Query: hard_delete=false  (soft delete by default)
+  Body: { reason }    (optional)
+  Response: 200
+
+POST   /finance/attachments/:id/restore
+  Response: 200 { status, message: "Restored", data }
+
+GET    /finance/attachments/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+06. AUDIT LOG
+    Base URL: /finance/audit
+    Permission: finance > audit (read only)
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /finance/audit
+  Query: entity_type, action (see AUDIT_ACTION), from_date, to_date,
+         actor_id, page, limit
+  Response: paginated
+  USE: Finance audit trail report page
+
+GET    /finance/audit/:entity_type/:entity_id
+  Response: { status, count, data[] }
+  USE: Show change history on a specific voucher detail page
+  Example: GET /finance/audit/PurchaseBill/<bill_id>
+
+Audit Log Entry Shape:
+  {
+    entity_type: "PurchaseBill",
+    entity_id: "<objectId>",
+    entity_no: "PB/25-26/0042",
+    action: "approve",
+    actor_id: "<employeeId>",
+    actor_name: "Ramesh Kumar",
+    changes: { before: { status: "draft" }, after: { status: "approved" } },
+    correlation_id: "uuid",
+    ip_address: "192.168.1.1",
+    createdAt: "2025-04-15T10:30:00Z"
+  }
+
+────────────────────────────────────────────────────────────────────────────────
+07. BANK RECONCILIATION
+    Base URL: /bankreconciliation
+    Permission: finance > bankreconciliation
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /bankreconciliation/next-no
+  Response: { status, data: { next_no } }
+
+GET    /bankreconciliation/list
+  Query: status, bank_account_code, statement_no, fromdate, todate, page, limit
+  Response: paginated
+
+GET    /bankreconciliation/unreconciled
+  Query: bank_account_code (required), fromdate, todate
+  Response: { status, data[] } — JE lines not yet matched
+  USE: Left panel in bank reconciliation UI
+
+GET    /bankreconciliation/summary
+  Query: bank_account_code (required), as_of (date)
+  Response: { status, data } — statement vs book balance comparison
+
+POST   /bankreconciliation/create
+  Body: {
+    statement_no: "STMT/25-26/001",   required
+    bank_account_code: "1200",         required
+    statement_date: "2025-03-31",      required
+    opening_balance: 50000,
+    closing_balance: 75000
+  }
+  Response: 201 { status, message: "Bank statement created", data }
+
+POST   /bankreconciliation/:id/lines
+  Body: {
+    lines: [
+      { txn_date: "2025-03-15", description: "NEFT receipt", amount: 10000, dr_cr: "Cr" }
+    ]
+  }
+  Response: 200 { status, message: "Lines appended", data }
+
+POST   /bankreconciliation/:id/auto-match
+  Body: { window_days: 3 }
+  Response: 200 { status, message: "Auto-match complete", data: { matched, unmatched } }
+
+PATCH  /bankreconciliation/:id/lines/:lineId/match
+  Body: { je_id: "<objectId>", amount: 10000 }
+  Response: 200 { status, message: "Line matched", data }
+
+PATCH  /bankreconciliation/:id/lines/:lineId/unmatch
+  Response: 200 { status, message: "Line unmatched", data }
+
+PATCH  /bankreconciliation/:id/lines/:lineId/ignore
+  Body: { note: "Bank charge — no JE" }
+  Response: 200 { status, message: "Line marked as ignored", data }
+
+PATCH  /bankreconciliation/:id/close
+  Response: 200 { status, message: "Statement closed", data }
+
+DELETE /bankreconciliation/:id
+  Response: 200
+
+GET    /bankreconciliation/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+08. BANK TRANSFER
+    Base URL: /banktransfer
+    Permission: finance > banktransfer
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /banktransfer/next-no
+  Response: { status, data: { next_no } }
+
+GET    /banktransfer/list
+  Query: status, tender_id, from_account_code, to_account_code, transfer_no,
+         fromdate, todate, search, page, limit
+  Response: paginated
+
+POST   /banktransfer/create
+  Body: {
+    transfer_no: "BT/25-26/001",    required
+    transfer_date: "2025-04-01",
+    document_year: "25-26",
+    from_account_code: "1200",       required
+    from_account_name: "HDFC Main",
+    to_account_code: "1201",         required
+    to_account_name: "ICICI Payroll",
+    amount: 500000,                  required, > 0
+    transfer_mode: "NEFT",
+    reference_no: "REF123",
+    cheque_no: "",
+    cheque_date: null,
+    tender_id: "",
+    narration: "Payroll fund transfer",
+    status: "draft"
+  }
+  Response: 201 { status, message, data }
+
+PATCH  /banktransfer/update/:id
+  Body: partial + _version
+  Response: 200
+
+DELETE /banktransfer/delete/:id
+  NOTE: Draft only
+  Response: 200
+
+PATCH  /banktransfer/approve/:id
+  Response: 200 { status, message: "Bank transfer approved and posted to ledger", data }
+
+GET    /banktransfer/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+09. BUDGET
+    Base URL: /budget
+    Permission: finance > budget
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /budget/list
+  Query: tender_id, financial_year, status, page, limit
+  Response: paginated
+
+POST   /budget/create
+  Body: {
+    tender_id: "TND-001",        required
+    financial_year: "25-26",     required
+    narration: "Annual budget",
+    lines: [                     required, min 1
+      {
+        account_code: "5001",    required
+        account_name: "Materials",
+        account_type: "Expense",
+        period: "annual",        annual | quarterly | monthly
+        period_label: "FY 2025-26",
+        budget_amount: 2000000,
+        notes: ""
+      }
+    ]
+  }
+  Response: 201 { status, message: "Budget created", data }
+
+GET    /budget/variance/by-tender
+  Query: tender_id, financial_year, as_of (date)
+  Response: { status, data }  — budget vs actuals per account
+
+GET    /budget/variance/:id
+  Query: as_of (date)
+  Response: { status, data }
+
+PATCH  /budget/update/:id
+  Body: partial + _version
+  Response: 200
+
+PATCH  /budget/:id/approve
+  Response: 200 { status, message: "Budget approved", data }
+
+PATCH  /budget/:id/archive
+  Response: 200
+
+DELETE /budget/:id
+  Response: 200
+
+GET    /budget/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+10. BULK IMPORT / EXPORT
+    Base URL: /finance/bulk
+    Permission: finance > purchase_bill (read for export, create for import)
+────────────────────────────────────────────────────────────────────────────────
+
+Supported Modules:
+  purchasebill | paymentvoucher | receiptvoucher | journalentry
+  expensevoucher | creditnote | debitnote
+
+Supported Report Exports (read-only, no import):
+  trial_balance | profit_loss | ledger | aged_payables
+
+DOWNLOAD TEMPLATE
+
+GET    /finance/bulk/:module/template
+  Response: CSV file download
+  USE: "Download Template" button before import
+
+IMPORT (async, returns job ID)
+
+POST   /finance/bulk/:module/import    (multipart/form-data)
+  Form field: file (CSV or Excel .xlsx, max 10MB)
+  Response: 202 {
+    status: true,
+    message: "Import started. Poll job status for progress.",
+    job_id: "<objectId>"
+  }
+
+GET    /finance/bulk/jobs/:jobId
+  Response: {
+    status: true,
+    data: {
+      _id, module, filename, status,
+      success: 45,       ← rows imported OK
+      failed: 2,         ← rows with errors
+      total: 47,
+      errors: [{ row: 12, message: "vendor_id not found" }],
+      initiated_at, completed_at
+    }
+  }
+  Poll every 2 seconds until status = "completed" or "failed"
+
+EXPORT
+
+GET    /finance/bulk/:module/export
+  Query: from_date, to_date, fin_year, status, vendor_id, client_id,
+         tender_id, account_code, format (csv|excel, default: excel)
+  Response: file download (Excel or CSV)
+  NOTE: Large exports are streamed — do not set short request timeouts.
+
+────────────────────────────────────────────────────────────────────────────────
+11. CLIENT BILLING
+    Base URL: /clientbilling
+    Permission: finance > clientbilling
+────────────────────────────────────────────────────────────────────────────────
+
+NOTE: Upload endpoints do NOT require JWT (designed for mobile/site upload).
+      Delete and Approve DO require JWT.
+
+POST   /clientbilling/upload-csv    (multipart/form-data)
+  Form fields:
+    file                     required (CSV)
+    tender_id                required
+    bill_id                  custom bill ID
+    bill_date
+    tax_mode                 instate | otherstate
+    cgst_pct                 number (default 0)
+    sgst_pct                 number (default 0)
+    igst_pct                 number (default 0)
+    retention_pct            number (default 0)
+    deductions               JSON string array: [{ label, amount }]
+    created_by_user
+  Response: 201 { status, message, data }
+
+PATCH  /clientbilling/update-csv    (multipart/form-data, Draft only)
+  Query: bill_id (required)
+  Same form fields as upload (all optional for update)
+  Response: 200
+
+GET    /clientbilling/history/:tender_id
+  Response: { status, count, data[] }  — bill timeline for tender
+
+GET    /clientbilling/api/details
+  Query: tender_id (required), bill_id (required)
+  Response: { status, data }  — full bill with item measurements
+
+GET    /clientbilling/api/bill
+  Query: tender_id (required), bill_id (required)
+  Response: { status, data }  — bill excluding zero-quantity items
+
+DELETE /clientbilling/api/delete      ← JWT required
+  Query: bill_id (required)
+  Response: 200 { status, message, data: { bill_id, steel_estimates_deleted, billing_estimates_deleted } }
+
+PATCH  /clientbilling/api/approve/:id  ← JWT required
+  Response: 200 { status, message: "Client bill approved and posted to ledger", data }
+
+────────────────────────────────────────────────────────────────────────────────
+12. CLIENT CREDIT NOTE
+    Base URL: /clientcreditnote
+    Permission: finance > clientcreditnote
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /clientcreditnote/list
+  Query: page, limit, various filters
+  Response: paginated
+
+GET    /clientcreditnote/:id
+  Response: { status, data }
+
+POST   /clientcreditnote/create
+  Body: { client_id, ccn_date, amount, tax_type, reason, ... }
+  Response: 201
+
+PATCH  /clientcreditnote/update/:id
+  Body: partial + _version
+  Response: 200
+
+DELETE /clientcreditnote/delete/:id
+  NOTE: Draft only
+  Response: 200
+
+PATCH  /clientcreditnote/approve/:id
+  Response: 200
+
+PATCH  /clientcreditnote/status/:id
+  Body: { status: "cancelled" }
+  Response: 200
+
+────────────────────────────────────────────────────────────────────────────────
+13. COMPANY BANK ACCOUNT
+    Base URL: /companybankaccount
+    Permission: finance > settings
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /companybankaccount/list
+  Response: { status, data[] }
+
+GET    /companybankaccount/by-code/:code
+  Response: { status, data }
+
+POST   /companybankaccount/create
+  Body: {
+    account_number: "001234567890",
+    bank_name: "HDFC Bank",
+    branch: "MG Road, Bangalore",
+    account_code: "1200",       GL account code from COA
+    account_type: "Current",
+    is_primary: true,
+    ifsc_code: "HDFC0001234",
+    opening_balance: 0
+  }
+  Response: 201
+
+PATCH  /companybankaccount/update/:id
+  Response: 200
+
+DELETE /companybankaccount/delete/:id
+  NOTE: Soft-deactivate, not hard delete
+  Response: 200
+
+GET    /companybankaccount/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+14. COMPANY CASH ACCOUNT
+    Base URL: /companycashaccount
+    Permission: JWT only (no RBAC check — any authenticated user can manage cash accounts)
+────────────────────────────────────────────────────────────────────────────────
+
+Same CRUD pattern as Company Bank Account.
+Used for petty cash / site cash boxes.
+
+GET    /companycashaccount/list
+GET    /companycashaccount/by-code/:code
+POST   /companycashaccount/create
+PATCH  /companycashaccount/update/:id
+DELETE /companycashaccount/delete/:id
+GET    /companycashaccount/:id
+
+────────────────────────────────────────────────────────────────────────────────
+15. CONSOLIDATION (Multi-Entity Reports)
+    Base URL: /consolidation
+    Permission: finance > consolidation
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /consolidation/entities
+  Response: { status, data[] }
+
+GET    /consolidation/trial-balance
+  Query: as_of_date
+  Response: { status, data }
+
+GET    /consolidation/pnl
+  Query: financial_year, from_date, to_date
+  Response: { status, data }
+
+GET    /consolidation/balance-sheet
+  Query: as_of_date
+  Response: { status, data }
+
+GET    /consolidation/inter-entity
+  Query: financial_year, from_date, to_date
+  Response: { status, data }  — inter-company eliminations view
+
+────────────────────────────────────────────────────────────────────────────────
+16. CONTRACT POC (Percentage of Completion)
+    Base URL: /contract-poc
+    Permission: finance > contractpoc
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /contract-poc/list
+  Query: page, limit, filters
+  Response: { status, count, data[] }
+
+GET    /contract-poc/compute-all
+  Query: as_of (date)
+  Response: computed POC metrics for all active tenders
+
+GET    /contract-poc/:tender_id
+  Response: { status, data }
+
+GET    /contract-poc/:tender_id/compute
+  Query: as_of (date)
+  Response: { status, data }  — real-time POC without saving
+
+POST   /contract-poc/
+  Body: { tender_id, contract_value, completed_value, ... }
+  Response: 201 { status, message: "POC record saved", data }
+
+POST   /contract-poc/:tender_id/snapshot
+  Body: {
+    as_of: "2025-03-31",
+    contract_asset_code: "1300",
+    contract_liability_code: "2100",
+    revenue_code: "4001"
+  }
+  Response: 200 { status, message: "POC snapshot persisted", data }
+  NOTE: This posts the POC adjustment JE to the ledger.
+
+────────────────────────────────────────────────────────────────────────────────
+17. CREDIT NOTE (Vendor/Contractor)
+    Base URL: /creditnote
+    Permission: finance > creditnote
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /creditnote/next-no
+  Response: { status, next_no, format }  — e.g., "CN/25-26/0001"
+
+GET    /creditnote/list
+  Query: supplier_type (vendor|contractor), supplier_id, tender_id, status,
+         adj_type, tax_type, cn_no, fromdate, todate, search, page, limit
+  Response: paginated
+
+GET    /creditnote/by-supplier/:supplierId
+  Query: supplier_type, status, fromdate, todate, search, page, limit
+  Response: paginated
+
+GET    /creditnote/by-tender/:tenderId
+  Query: supplier_id, supplier_type, status, fromdate, todate, search, page, limit
+  Response: paginated
+
+POST   /creditnote/create
+  Body: {
+    supplier_id: "VND-001",         required
+    supplier_type: "Vendor",        Vendor | Contractor
+    cn_date: "2025-04-10",
+    document_year: "25-26",
+    reference_no: "INVREF123",
+    reference_date: "2025-04-01",
+    location: "Bangalore",
+    sales_type: "Local",            Local | Interstate
+    adj_type: "Against Bill",       Against Bill | Standalone
+    tax_type: "GST",                GST | Non-GST
+    rev_charge: false,
+    bill_ref: "<objectId>",
+    bill_no: "PB/25-26/0042",
+    tender_id: "TND-001",
+    amount: 5000,                   required, >= 0
+    round_off: 0,
+    taxable_amount: 4237,
+    cgst_pct: 9,
+    sgst_pct: 9,
+    igst_pct: 0,
+    gst_percent: 18,
+    entries: [],
+    narration: "Rate difference",
+    status: "draft"
+  }
+  Response: 201 { status, message, data }
+
+PATCH  /creditnote/approve/:id
+  Response: 200
+
+PATCH  /creditnote/update/:id
+  Body: partial + _version
+  Response: 200
+
+DELETE /creditnote/delete/:id
+  NOTE: Draft only
+  Response: 200
+
+GET    /creditnote/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+18. CURRENCY & EXCHANGE RATES
+    Base URL: /finance/currency
+    Permission: finance > settings
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /finance/currency/list
+  Response: { status, data[] }
+  USE: Populate currency dropdown on PurchaseBill (for foreign vendors)
+  Data shape: { code, name, symbol, decimals, is_active, is_base }
+
+GET    /finance/currency/rates
+  Query: currency (code), limit (default 50)
+  Response: { status, data[] }  — historical exchange rates
+
+GET    /finance/currency/:code
+  Response: { status, data }  — single currency (e.g., /finance/currency/USD)
+
+POST   /finance/currency/upsert
+  Body: { code: "USD", name: "US Dollar", symbol: "$", is_active: true }
+  Response: 200 { status, message: "Currency saved", data }
+
+POST   /finance/currency/rates/upsert
+  Body: {
+    from_currency: "USD",
+    date: "2025-04-01",
+    rate: 83.50,           INR per 1 USD
+    source: "manual",
+    narration: "RBI reference rate"
+  }
+  Response: 200 { status, message: "Exchange rate saved", data }
+
+PATCH  /finance/currency/:code/inactive
+  Response: 200 { status, message: "Currency deactivated", data }
+
+HOW MULTI-CURRENCY WORKS:
+  1. Set currency + exchange_rate on a bill:
+     POST /purchasebill/create  →  { ..., currency: "USD", exchange_rate: 83.50 }
+  2. The server computes net_amount_inr = net_amount × exchange_rate
+  3. All ledger entries are posted in INR (base currency)
+  4. The original foreign currency amount is stored for display
+
+────────────────────────────────────────────────────────────────────────────────
+19. DEBIT NOTE
+    Base URL: /debitnote
+    Permission: finance > debitnote
+────────────────────────────────────────────────────────────────────────────────
+
+Same structure as Credit Note. Key differences:
+  - raised_by field: "Company" | "Vendor"
+  - service_amt field for service charges
+
+GET    /debitnote/next-no
+GET    /debitnote/list
+GET    /debitnote/by-supplier/:supplierId
+GET    /debitnote/by-tender/:tenderId
+POST   /debitnote/create
+PATCH  /debitnote/approve/:id
+PATCH  /debitnote/update/:id
+DELETE /debitnote/delete/:id
+GET    /debitnote/:id
+
+Body for create (additional fields vs credit note):
+  {
+    ...same as creditnote...
+    service_amt: 500,
+    raised_by: "Company"    Company | Vendor
+  }
+
+────────────────────────────────────────────────────────────────────────────────
+20. FINANCE DROPDOWN (Helper Endpoints)
+    Base URL: /finance-dropdown   (also aliased at /finance — both are valid)
+    Permission: finance > any
+────────────────────────────────────────────────────────────────────────────────
+
+USE THESE to populate dropdowns without loading full list endpoints.
+
+GET    /finance-dropdown/bank-accounts
+  Query: type (bank|cash — omit for both)
+  Response: { status, count, data[] }
+  Data shape: { _id, account_code, account_name, account_type, account_number }
+
+GET    /finance-dropdown/bank-only
+  Response: bank accounts only
+
+GET    /finance-dropdown/cash-only
+  Response: cash accounts only
+
+GET    /finance-dropdown/payable-bills
+  Query: supplier_id, supplier_type, tender_id
+  Response: { status, count, data[] }  — approved + unpaid bills
+  USE: "Select bills to pay" dropdown in Payment Voucher
+
+GET    /finance-dropdown/payable-bills/vendor
+  Query: supplier_id, tender_id
+  Response: vendor bills only
+
+GET    /finance-dropdown/payable-bills/contractor
+  Query: supplier_id, tender_id
+  Response: contractor bills only
+
+GET    /finance-dropdown/parties/:tenderId
+  Query: type (vendor|contractor|client)
+  Response: { status, count, data[] }  — parties linked to tender
+  USE: Supplier picker filtered by tender
+
+────────────────────────────────────────────────────────────────────────────────
+21. eINVOICE (IRN Generation)
+    Base URL: /einvoice
+    Permission: finance > einvoice
+────────────────────────────────────────────────────────────────────────────────
+
+NOTE: eInvoice requires GST portal credentials configured server-side.
+
+POST   /einvoice/generate
+  Body: { source_type: "ClientBilling", source_id: "<objectId>", ... }
+  Response: 201 { status, message, data: { irn, ack_no, ack_date, qr_code, signed_invoice } }
+
+GET    /einvoice/list
+  Query: page, limit, filters
+  Response: { status, data[] }
+
+GET    /einvoice/by-irn/:irn
+  Response: { status, data }
+
+POST   /einvoice/:id/cancel
+  Body: { reason: "Data entry error" }
+  Response: 200 { status, message, data }
+
+GET    /einvoice/:id/qr
+  Response: { status, data: { qr_code } }  — base64 QR string for display
+
+GET    /einvoice/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+22. eWAYBILL
+    Base URL: /ewaybill
+    Permission: finance > ewaybill
+────────────────────────────────────────────────────────────────────────────────
+
+POST   /ewaybill/generate
+  Body: { bill_id: "<objectId>", ... }
+  Response: 201 { status, message, data: { ewb_no, ewb_date, qr_code, expiry } }
+
+POST   /ewaybill/:id/part-b
+  Body: { delivery_state, vehicle_number, transport_mode }
+  Response: 200
+
+POST   /ewaybill/:id/cancel
+  Body: { reason }
+  Response: 200
+
+POST   /ewaybill/mark-expired
+  Body: { ewb_id, reason }
+  Response: 200
+
+GET    /ewaybill/list
+  Query: page, limit, filters
+  Response: { status, data[] }
+
+GET    /ewaybill/by-ewb-no/:ewb_no
+  Response: { status, data }
+
+GET    /ewaybill/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+23. EXPENSE VOUCHER
+    Base URL: /expensevoucher
+    Permission: finance > expense_voucher
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /expensevoucher/next-no
+  Response: { status, next_no, format }  — e.g., "EV/25-26/0001"
+
+GET    /expensevoucher/list
+  Query: status, tender_id, financial_year, fromdate, todate, search, page, limit
+  Response: paginated
+
+GET    /expensevoucher/by-tender/:tenderId
+  Response: paginated
+
+GET    /expensevoucher/by-employee/:employeeId
+  Response: paginated
+
+POST   /expensevoucher/create
+  Body: {
+    ev_date: "2025-04-10",
+    document_year: "25-26",
+    payee_name: "Site Engineer Ramesh",
+    payee_type: "Employee",             Employee | External
+    employee_id: "EMP-012",
+    paid_from_account_code: "1300",     cash account GL code
+    paid_from_account_name: "Petty Cash",
+    payment_mode: "Cash",
+    reference_no: "",
+    cheque_no: "",
+    cheque_date: null,
+    tender_id: "TND-001",
+    bill_photo_url: "",                 S3 URL (upload separately to /attachments first)
+    bill_no: "BILL123",
+    tds_section: "",
+    tds_pct: 0,
+    narration: "Site material purchase",
+    status: "draft",
+    lines: [                            required, min 1
+      {
+        expense_account_code: "5010",   required
+        description: "Sand and gravel",
+        amount: 2500,                   required, > 0
+        gst_pct: 18,
+        cgst_amt: 225,
+        sgst_amt: 225,
+        igst_amt: 0,
+        tender_id: "TND-001"
+      }
+    ]
+  }
+  Response: 201
+
+PATCH  /expensevoucher/approve/:id
+  Response: 200
+
+PATCH  /expensevoucher/update/:id
+  Body: partial + _version
+  Response: 200
+
+DELETE /expensevoucher/delete/:id
+  NOTE: Draft only
+  Response: 200
+
+GET    /expensevoucher/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+24. FIXED ASSET
+    Base URL: /fixedasset
+    Permission: finance > fixedasset
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /fixedasset/register
+  Response: { status, data[] }  — full asset register with WDV, accumulated dep
+
+GET    /fixedasset/list
+  Query: status (Active|Disposed|Archived), category, page, limit
+  Response: paginated
+
+GET    /fixedasset/dual-depreciation-report
+  Query: as_of (date)
+  Response: { status, data[] }  — SLM vs IT Act WDV comparison (for IT computations)
+
+POST   /fixedasset/create
+  Body: {
+    asset_name: "JCB Excavator",          required
+    category: "Plant",
+    acquisition_date: "2024-01-15",        required
+    acquisition_cost: 4500000,             required, > 0
+    salvage_value: 200000,
+    depreciation_method: "SLM",           SLM | WDV
+    useful_life_months: 120,              for SLM
+    wdv_rate_pct: 15,                     for WDV
+    asset_account_code: "1500",           required
+    accumulated_depreciation_account_code: "1501",  required
+    depreciation_expense_account_code: "6100",      required
+    tender_id: "TND-001",
+    linked_machinery_id: "MCH-003",
+    it_block: "Plant",
+    it_rate_pct: 15,
+    it_acquired_in_year_half: false,
+    narration: "JCB for site excavation"
+  }
+  Response: 201
+
+GET    /fixedasset/:id/schedule
+  Response: { status, data[] }  — full depreciation schedule (month by month)
+
+POST   /fixedasset/post-depreciation
+  Body: { period_date: "2025-03-31" }
+  Response: 200 { status, data: { period, posted, skipped, failed } }
+  NOTE: Batch — posts depreciation JE for ALL active assets for the month.
+
+POST   /fixedasset/:id/depreciate
+  Body: { period_date: "2025-03-31" }
+  Response: 200 — depreciation for single asset only
+
+POST   /fixedasset/:id/dispose
+  Body: {
+    disposal_date: "2025-04-01",
+    disposal_value: 300000,
+    gain_loss: 100000        positive = gain, negative = loss
+  }
+  Response: 200
+
+PATCH  /fixedasset/update/:id
+  Body: partial + _version (limited fields — cannot change acquisition_cost)
+  Response: 200
+
+PATCH  /fixedasset/:id/archive
+  Response: 200
+
+GET    /fixedasset/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+25. FORM 26AS
+    Base URL: /form26as
+    Permission: finance > form_26as
+────────────────────────────────────────────────────────────────────────────────
+
+POST   /form26as/upload    (multipart/form-data)
+  Form fields: file, financial_year, section (194C|194J|194I etc.)
+  Response: 201 { status, message, data }
+
+GET    /form26as/list
+  Query: financial_year, section, page, limit
+  Response: { status, data[] }
+
+GET    /form26as/reconcile
+  Query: financial_year (required)
+  Response: { status, data: { matched: [], unmatched: [] } }
+  USE: Compare Form 26AS TDS credits against TDS register
+
+DELETE /form26as/:id
+  Response: 200
+
+────────────────────────────────────────────────────────────────────────────────
+26. GST MATCHER (GSTR-2B Reconciliation)
+    Base URL: /gst-matcher
+    Permission: finance > gstmatcher
+────────────────────────────────────────────────────────────────────────────────
+
+POST   /gst-matcher/upload    (multipart/form-data)
+  Form fields: file (GSTR-2B Excel/CSV from GST portal)
+  Query: from_date, to_date
+  Response: 201 { status, message, data: { upload_id, rows_processed } }
+
+GET    /gst-matcher/list
+  Query: status, from_date, to_date, page, limit
+  Response: { status, data[] }
+
+GET    /gst-matcher/:id
+  Response: { status, data }
+
+DELETE /gst-matcher/:id
+  Response: 200
+
+POST   /gst-matcher/match
+  Body: { upload_id: "<objectId>", match_threshold: 0.99 }
+  Response: 200 { status, data: { matched, unmatched, errors } }
+  NOTE: match_threshold 0-1 (0.99 = 99% similarity required)
+
+POST   /gst-matcher/:id/link
+  Body: { supplier_invoice_id: "<objectId>", gstr2b_item_id: "<objectId>" }
+  Response: 200 { status, message, data }
+
+POST   /gst-matcher/:id/unlink
+  Body: { link_id: "<objectId>" }
+  Response: 200
+
+────────────────────────────────────────────────────────────────────────────────
+27. JOURNAL ENTRY
+    Base URL: /journalentry
+    Permission: finance > journalentry
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /journalentry/next-no
+  Response: { status, next_no, format }  — e.g., "JE/25-26/0001"
+
+GET    /journalentry/list
+  Query: je_type, status, tender_id, financial_year, is_reversal(bool),
+         je_no, account_code, fromdate, todate, search, page, limit
+  Response: paginated
+
+POST   /journalentry/create
+  Body: {
+    je_no: "JE/25-26/0001",           required (get from /next-no)
+    je_date: "2025-04-10",
+    document_year: "25-26",
+    je_type: "Adjustment",            see Journal Entry Types enum
+    narration: "Correction entry",    required
+    tender_id: "TND-001",
+    is_reversal: false,
+    reversal_of: null,
+    auto_reverse_date: null,          if set, a reversal JE is auto-created on this date
+    status: "draft",
+    allow_closed_fy: false,
+    lines: [                          required, min 2
+      {
+        account_code: "5001",         required
+        dr_cr: "Dr",                  Dr | Cr
+        debit_amt: 10000,
+        credit_amt: 0,
+        narration: "Material expense",
+        tender_id: "TND-001"
+      },
+      {
+        account_code: "2001",
+        dr_cr: "Cr",
+        debit_amt: 0,
+        credit_amt: 10000,
+        narration: "Accounts payable"
+      }
+    ]
+  }
+  VALIDATION: sum(debit_amt) must equal sum(credit_amt) within 0.01 tolerance
+  Response: 201
+
+PATCH  /journalentry/approve/:id
+  Response: 200  (posts all lines to ledger)
+
+POST   /journalentry/reverse/:id
+  Body: { reversal_type: "same_day"|"next_day", reason: "Accrual reversal" }
+  Response: 201 { status, message: "Reversal JE created", data }
+
+POST   /journalentry/process-auto-reversals
+  Response: 200 { status, results: { processed, failed } }
+  NOTE: Called by server cron daily. Can also be triggered manually.
+
+PATCH  /journalentry/update/:id
+  Body: partial + _version
+  Response: 200
+
+DELETE /journalentry/delete/:id
+  NOTE: Draft only
+  Response: 200
+
+GET    /journalentry/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+28. LEDGER
+    Base URL: /ledger
+    Permission: finance > ledger (read)
+────────────────────────────────────────────────────────────────────────────────
+
+READ-ONLY — all GET, no create/update/delete.
+Ledger entries are created automatically when vouchers are approved.
+
+GET    /ledger/trial-balance
+  Query: as_of_date (default today), include_zero=false
+  Response: { status, data[] }
+  Data shape: [{ account_code, account_name, debit_total, credit_total, balance }]
+
+GET    /ledger/summary
+  Response: { status, data[] }  — all suppliers with outstanding balance
+
+GET    /ledger/balance/:supplierId
+  Response: { status, data }  — current payable/receivable balance
+
+GET    /ledger/statement/:supplierId
+  Response: { status, data[] }  — payables statement grouped by voucher type
+
+GET    /ledger/supplier/:supplierId
+  Query: fromdate, todate
+  Response: { status, data[] }  — full transaction register (with running balance)
+
+GET    /ledger/account/:accountCode
+  Query: fromdate, todate, page, limit
+  Response: paginated — general ledger for a specific GL account
+
+GET    /ledger/tender-balance/:tenderId
+  Response: { status, data }  — total outstanding for a tender
+
+GET    /ledger/tender/:tenderId
+  Response: { status, data[] }  — all ledger entries for a tender
+
+GET    /ledger/cash-book
+  Response: { status, data[] }
+
+GET    /ledger/itc-register
+  Response: { status, data[] }  — Input Tax Credit register
+
+────────────────────────────────────────────────────────────────────────────────
+29. LEDGER SEAL (Tamper-Evident Hash Chain)
+    Base URL: /ledger-seal
+    Permission: finance > ledger_seal
+────────────────────────────────────────────────────────────────────────────────
+
+PURPOSE: Cryptographic hash chain over approved JEs.
+         Any post-approval edit breaks the chain and is detected.
+
+POST   /ledger-seal/seal-approved
+  Body: { financial_year: "25-26", seal_date: "2025-03-31" }
+  Response: 200 { status, message, data: { sealed_count, hash } }
+  USE: Run at month-end or year-end to commit approved JEs to chain
+
+GET    /ledger-seal/verify
+  Response: { status, data: { is_valid: true, entries_count, last_hash } }
+  USE: Audit verification — show "Ledger Integrity: ✓ Verified" badge
+
+GET    /ledger-seal/verify-seq
+  Query: from (sequence number), to (sequence number, optional)
+  Response: { status, data: { verified: true, seals_checked: 150, broken: [] } }
+  If broken: { verified: false, broken: [{ sequence, je_no, reason }] }
+
+GET    /ledger-seal/status
+  Response: { status, data: { sealed, pending, last_seal_date } }
+  USE: Dashboard badge showing "X JEs pending sealing"
+
+GET    /ledger-seal/list
+  Response: { status, data[] }
+
+GET    /ledger-seal/:sequence
+  Response: { status, data }  — single seal record
+
+────────────────────────────────────────────────────────────────────────────────
+30. PAYMENT VOUCHER
+    Base URL: /paymentvoucher
+    Permission: finance > bank_transaction
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /paymentvoucher/next-no
+  Response: { status, next_no, format }  — e.g., "PV/25-26/0001"
+
+GET    /paymentvoucher/list
+  Query: status, tender_id, supplier_id, payment_mode, fromdate, todate,
+         search, page, limit
+  Response: paginated
+
+GET    /paymentvoucher/list/cash
+  Query: same as /list
+  Response: cash-mode vouchers only
+
+GET    /paymentvoucher/list/bank
+  Response: bank-mode vouchers only
+
+GET    /paymentvoucher/by-supplier/:supplierId
+  Query: page, limit, filters
+  Response: paginated
+
+GET    /paymentvoucher/by-tender/:tenderId
+  Response: paginated
+
+POST   /paymentvoucher/create
+  Body: {
+    supplier_id: "VND-001",         required
+    supplier_type: "Vendor",        Vendor | Contractor  (required)
+    pv_date: "2025-04-10",
+    document_year: "25-26",
+    payment_mode: "Bank",           see PAYMENT_MODE enum
+    bank_account_code: "1200",
+    bank_name: "HDFC",
+    bank_ref: "UTR123456",
+    cheque_no: "",
+    cheque_date: null,
+    tender_id: "TND-001",
+    amount: 50000,                  required, >= 0
+    gross_amount: 52000,
+    tds_section: "194C",
+    tds_pct: 2,
+    narration: "Payment against PB/25-26/0042",
+    status: "draft",
+    bill_refs: [                    bills this payment settles
+      { bill_id: "<objectId>", bill_no: "PB/25-26/0042", amount: 50000 }
+    ],
+    entries: [                      GL lines (optional — auto-generated if empty)
+      { account_code: "2001", dr_cr: "Dr", debit_amt: 50000, credit_amt: 0 },
+      { account_code: "1200", dr_cr: "Cr", debit_amt: 0, credit_amt: 50000 }
+    ]
+  }
+  Response: 201
+
+PATCH  /paymentvoucher/approve/:id
+  Response: 200  (posts to ledger, marks linked bills as paid/partial)
+
+PATCH  /paymentvoucher/update/:id
+  Body: partial + _version
+  Response: 200
+
+DELETE /paymentvoucher/delete/:id
+  NOTE: Draft only
+  Response: 200
+
+GET    /paymentvoucher/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+31. PURCHASE BILL
+    Base URL: /purchasebill
+    Permission: finance > purchasebill
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /purchasebill/next-id
+  Query: tender_id
+  Response: { status, next_id }
+
+GET    /purchasebill/list
+  Query: from_date, to_date, tender_id, vendor_id, tax_mode (instate|otherstate),
+         invoice_no, status (draft|pending|approved|cancelled),
+         search, page, limit
+  Response: paginated
+
+GET    /purchasebill/by-tender/:tenderId
+  Response: paginated
+
+GET    /purchasebill/summary/:tenderId
+  Response: { status, data }  — total billed, paid, outstanding for tender
+
+GET    /purchasebill/summary-all
+  Response: { status, data[] }  — summary across all tenders
+
+POST   /purchasebill/create
+  Body: {
+    vendor_id: "VND-001",           required
+    invoice_no: "INV-2025-042",     becomes unique per vendor
+    invoice_date: "2025-04-01",
+    doc_date: "2025-04-05",
+    credit_days: 30,
+    narration: "Steel supply April 2025",
+    tender_id: "TND-001",
+    place_of_supply: "InState",     InState | OutState
+    currency: "INR",                ISO code (default INR)
+    exchange_rate: 1,
+    rcm_applicable: false,
+    rcm_rate: 0,
+    status: "draft",
+    line_items: [
+      {
+        description: "TMT Bars 12mm",
+        hsn_code: "7214",
+        quantity: 10,
+        unit: "MT",
+        rate: 55000,
+        taxable_amount: 550000,
+        gst_rate: 18,
+        cgst_pct: 9,    sgst_pct: 9,    igst_pct: 0,
+        cgst_amt: 49500, sgst_amt: 49500, igst_amt: 0,
+        total_amount: 649000,
+        tds_applicable: false,
+        tds_section: "",
+        tds_rate: 0
+      }
+    ],
+    additional_charges: [
+      { description: "Freight", amount: 5000 }
+    ]
+  }
+  IMPORTANT: If tax_mode=instate → cgst+sgst must be non-zero, igst must be 0.
+             If tax_mode=otherstate → igst must be non-zero, cgst+sgst must be 0.
+             If rcm_applicable=true → all GST amounts must be 0.
+  Response: 201
+
+PATCH  /purchasebill/approve/:id
+  Response: 200  (posts to GL, marks GRNs as billed)
+  NOTE: If net_amount >= approval threshold, returns 400 APPROVAL_REQUIRED.
+        Frontend should redirect to /approvals flow.
+
+PATCH  /purchasebill/update/:id
+  Body: partial + _version
+  Response: 200
+
+DELETE /purchasebill/delete/:id
+  NOTE: Soft-deletes and releases linked GRNs back to unbilled state
+  Response: 200
+
+GET    /purchasebill/:id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+32. RECEIPT VOUCHER
+    Base URL: /receiptvoucher
+    Permission: finance > bank_transaction
+────────────────────────────────────────────────────────────────────────────────
+
+Mirror of Payment Voucher for incoming receipts.
+Used to record client payments received.
+
+GET    /receiptvoucher/next-no
+GET    /receiptvoucher/list
+GET    /receiptvoucher/list/cash
+GET    /receiptvoucher/list/bank
+GET    /receiptvoucher/by-supplier/:supplierId   (client in this context)
+GET    /receiptvoucher/by-tender/:tenderId
+POST   /receiptvoucher/create
+PATCH  /receiptvoucher/approve/:id
+PATCH  /receiptvoucher/update/:id
+DELETE /receiptvoucher/delete/:id
+GET    /receiptvoucher/:id
+
+Body for create (key difference from Payment Voucher):
+  {
+    supplier_id: "<clientId>",
+    supplier_type: "Client",         ← receipt is from a client
+    receipt_mode: "Bank",            ← receipt_mode (not payment_mode)
+    against_ref: "<clientBillingId>",
+    against_no: "CB/TND-001/0003",
+    amount: 100000,
+    ...
+  }
+
+────────────────────────────────────────────────────────────────────────────────
+33. RECURRING VOUCHER (Templates)
+    Base URL: /recurringvoucher
+    Permission: finance > recurringvoucher
+────────────────────────────────────────────────────────────────────────────────
+
+PURPOSE: Auto-generate vouchers on a schedule (rent, subscriptions, etc.)
+
+GET    /recurringvoucher/list
+  Query: status (Active|Paused|Ended), voucher_type, page, limit
+  Response: paginated
+
+POST   /recurringvoucher/create
+  Body: {
+    voucher_type: "ExpenseVoucher",    VOUCHER_SOURCE enum
+    frequency: "monthly",              daily | weekly | monthly | quarterly | annually
+    start_date: "2025-04-01",
+    end_date: "2026-03-31",           null for indefinite
+    voucher_data: {                    same as the create body for that voucher type
+      payee_name: "Office Landlord",
+      amount: 50000,
+      narration: "Monthly rent",
+      lines: [...]
+    }
+  }
+  Response: 201
+
+POST   /recurringvoucher/run-due
+  Response: 200 { status, data: { fired, failed } }
+  NOTE: Also runs automatically via daily cron at midnight.
+
+PATCH  /recurringvoucher/:id/pause
+PATCH  /recurringvoucher/:id/resume
+PATCH  /recurringvoucher/:id/end
+  Body: { end_date: "2025-12-31" }
+POST   /recurringvoucher/:id/run-now    ← fire once immediately (testing)
+PATCH  /recurringvoucher/update/:id
+DELETE /recurringvoucher/:id
+GET    /recurringvoucher/:id
+
+────────────────────────────────────────────────────────────────────────────────
+34. REPORTS
+    Base URL: /reports
+    Permission: finance > report
+────────────────────────────────────────────────────────────────────────────────
+
+All read-only GET endpoints. All require JWT.
+
+FINANCIAL STATEMENTS
+
+GET    /reports/trial-balance
+  Query: as_of_date (default today), include_zero=false
+  Response: { status, data: [{ account_code, account_name, debit_total, credit_total, balance }] }
+
+GET    /reports/profit-loss
+  Query: from_date, to_date, tender_id
+  Response: { status, data }  — Income, Expense, Net P&L
+
+GET    /reports/balance-sheet
+  Query: as_of_date
+  Response: { status, data }  — Assets, Liabilities, Equity
+
+GET    /reports/general-ledger
+  Query: account_code (required), from_date, to_date, page, limit
+  Response: paginated — all transactions for that account with running balance
+
+GET    /reports/cash-flow
+  Query: from_date, to_date
+  Response: { status, data[] }  — Operating / Investing / Financing
+
+GET    /reports/cash-flow-forecast
+  Query: as_of, horizon_days (default 30), client_credit_days, contractor_credit_days
+  Response: { status, data[] }  — projected inflows/outflows
+
+GET    /reports/fund-flow
+  Query: opening_date, closing_date
+  Response: { status, data[] }
+
+GET    /reports/ratio-analysis
+  Query: as_of_date
+  Response: { status, data }  — Current Ratio, Quick Ratio, Debt/Equity, etc.
+
+TENDER / PROJECT REPORTS
+
+GET    /reports/tender-profitability
+  Query: from_date, to_date, tender_id
+  Response: { status, data[] }  — Revenue, Cost, Gross Margin per tender
+
+GST REPORTS
+
+GET    /reports/gstr-1
+  Query: from_date, to_date
+  Response: { status, data[] }  — outward supplies (client billing)
+
+GET    /reports/gstr-2b
+  Query: from_date, to_date
+  Response: { status, data[] }  — inward supplies (purchase bills)
+
+GET    /reports/gstr-3b
+  Query: from_date, to_date
+  Response: { status, data[] }  — net GST liability
+
+GET    /reports/gstr-9
+  Query: financial_year
+  Response: { status, data[] }  — annual return
+
+GET    /reports/itc-reversal
+  Query: from_date, to_date
+  Response: { status, data[] }  — ITC reversal register
+
+TDS / TCS REPORTS
+
+GET    /reports/tds-register
+  Query: from_date, to_date, section (194C|194J|194I|194Q|194H)
+  Response: { status, data[] }
+
+GET    /reports/form-26q
+  Query: financial_year, quarter (Q1|Q2|Q3|Q4), tan, deductor_name,
+         deductor_pan, deductor_address
+  Response: { status, data[] }
+
+GET    /reports/form-26q/csv
+  Response: CSV file download
+
+GET    /reports/form-24q
+  Same as form-26q (for salary TDS)
+
+GET    /reports/form-24q/csv
+
+GET    /reports/form-16
+  Query: financial_year, employee_id, tan, deductor_name
+  Response: { status, data[] }
+
+GET    /reports/form-16a
+  Query: financial_year, quarter, deductee_id, section
+
+AGING REPORTS
+
+GET    /reports/ar-aging
+  Query: as_of (date), tender_id, client_id
+  Response: { status, data[] }  — client receivables by aging bucket (0-30, 31-60, 61-90, 90+)
+
+GET    /reports/ap-aging
+  Query: as_of, tender_id, vendor_id, contractor_id
+  Response: { status, data[] }  — vendor/contractor payables by aging bucket
+
+AUDIT TRAIL REPORT
+
+GET    /reports/audit-trail
+  Query: from_date, to_date, doc_type, je_type, user_id, source_no, je_no,
+         tender_id, page, limit
+  Response: paginated
+
+GET    /reports/audit-trail/document
+  Query: source_type (required), source_no (required)
+  Response: { status, data[] }  — full history of a specific document
+
+────────────────────────────────────────────────────────────────────────────────
+35. RETENTION LEDGER
+    Base URL: /retention
+    Permission: finance > retentionledger
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /retention/payable/outstanding
+  Response: { status, data[] }  — retention withheld from contractors still payable
+
+GET    /retention/receivable/outstanding
+  Response: { status, data[] }  — retention held by clients still receivable
+
+GET    /retention/summary
+  Response: { status, data }
+
+GET    /retention/bill/:id
+  Response: { status, data[] }  — releases against a specific bill
+
+POST   /retention/release
+  Body: { bill_id: "<objectId>", amount: 50000, reason: "DLP period complete" }
+  Response: 201 { status, message, data }
+
+GET    /retention/release/list
+  Query: page, limit, filters
+  Response: { status, data[] }
+
+GET    /retention/release/:id
+  Response: { status, data }
+
+POST   /retention/release/:id/approve
+  Response: 200
+
+POST   /retention/release/:id/cancel
+  Response: 200
+
+────────────────────────────────────────────────────────────────────────────────
+36. FINANCE SETTINGS
+    Base URL: /finance/settings
+    Permission: finance > settings (admin only)
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /finance/settings
+  Response: { status, data[] }  — all key-value settings
+  Default keys and values:
+    approval.purchasebill.threshold  →  50000
+    approval.paymentvoucher.threshold → 100000
+    finance.default_fin_year         →  "25-26"
+    tds.default_section              →  "194C"
+    bulk.max_rows_per_import         →  1000
+
+PUT    /finance/settings/:key
+  Body: { value: <new value> }
+  Response: 200 { status, message, data }
+  Example: PUT /finance/settings/approval.purchasebill.threshold
+           Body: { value: 75000 }
+
+────────────────────────────────────────────────────────────────────────────────
+37. STATUTORY DEADLINE
+    Base URL: /statutory-deadlines
+    Permission: finance > statutory_deadline
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /statutory-deadlines/calendar
+  Response: { status, data[] }  — all deadlines with filed/unfiled status
+  USE: Compliance calendar view (highlight overdue in red)
+
+GET    /statutory-deadlines/upcoming
+  Response: { status, data[] }  — deadlines in next 30 days
+  USE: Dashboard reminder widget
+
+POST   /statutory-deadlines/filings
+  Body: {
+    deadline_id: "<objectId>",
+    filing_date: "2025-04-10",
+    reference: "GST3B-Q4-FY2425"
+  }
+  Response: 201 { status, message, data }
+
+GET    /statutory-deadlines/filings
+  Response: { status, data[] }  — all filing records
+
+DELETE /statutory-deadlines/filings/:id
+  Response: 200 (un-file if filed by mistake)
+
+────────────────────────────────────────────────────────────────────────────────
+38. SUPPLIER SCORECARD
+    Base URL: /supplier-scorecard
+    Permission: finance > supplierscorecard
+────────────────────────────────────────────────────────────────────────────────
+
+All read-only. Computed from purchase bill and payment data.
+
+GET    /supplier-scorecard/vendors
+  Response: { status, data[] }
+  Data: [{ vendor_id, vendor_name, total_billed, avg_payment_days, overdue_count, score }]
+
+GET    /supplier-scorecard/contractors
+  Response: { status, data[] }
+
+GET    /supplier-scorecard/vendor/:vendor_id
+  Response: { status, data }  — detailed scorecard with invoice history
+
+GET    /supplier-scorecard/contractor/:contractor_id
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+39. WEEKLY BILLING (Contractor Sub-Bills)
+    Base URL: /weeklybilling
+    Permission: finance > weeklybilling
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /weeklybilling/api/list/:tenderId
+  Response: { status, count, data[] }  — all weekly bills for tender
+
+GET    /weeklybilling/api/detail/:billNo
+  NOTE: bill_no contains "/" — URL-encode as %2F
+  Example: GET /weeklybilling/api/detail/WB%2FTND-001%2F25-26%2F0001
+  Response: { status, data }  — full bill with sub-bills
+
+GET    /weeklybilling/api/sub-bill/:subBillNo
+  Response: { status, data[] }  — transaction lines for sub-bill
+
+GET    /weeklybilling/api/contractor-summary/:tenderId
+  Query: fromDate, toDate
+  Response: { status, data[] }  — work done summary by contractor
+
+POST   /weeklybilling/api/generate
+  Body: {
+    tender_id: "TND-001",       required
+    vendor_id: "CON-005",
+    from_date: "2025-04-01",
+    to_date: "2025-04-07",
+    items: [
+      { work_order_id: "WO-001", work_done_id: "<id>", quantity: 50, rate: 1200 }
+    ]
+  }
+  Response: 201 { status, message, data }
+  Error 409: if duplicate bill for same period
+
+PATCH  /weeklybilling/api/approve/:billId
+  Response: 200
+
+PATCH  /weeklybilling/api/status/:billId
+  Body: { status: "Pending" }   Generated | Pending | Approved | Cancelled
+  Response: 200
+
+────────────────────────────────────────────────────────────────────────────────
+40. YEAR-END CLOSE
+    Base URL: /year-end-close
+    Permission: finance > year_end_close (admin only)
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /year-end-close/preview
+  Query: financial_year (e.g., "24-25")
+  Response: { status, data: { accounts_to_close, opening_entries_to_create } }
+  USE: Show preview before committing the close
+
+GET    /year-end-close/opening-balances
+  Query: financial_year
+  Response: { status, data[] }  — opening balances for new FY
+
+GET    /year-end-close/list
+  Response: { status, data[] }  — all FY close records
+
+POST   /year-end-close/close
+  Body: { financial_year: "24-25" }
+  Response: 200 { status, message: "Year-end close completed", data }
+  Error 400: if already closed, or open transactions exist
+  Error 409: if close already in progress
+  NOTE: Irreversible in normal flow. Use /reopen only if absolutely necessary.
+
+POST   /year-end-close/reopen
+  Body: { financial_year: "24-25" }
+  Response: 200 { status, message: "Year reopened", data }
+
+GET    /year-end-close/:financial_year
+  Response: { status, data }
+
+────────────────────────────────────────────────────────────────────────────────
+41. FINANCE METRICS (Monitoring)
+    Base URL: /finance/metrics
+    Permission: finance > settings > read
+────────────────────────────────────────────────────────────────────────────────
+
+GET    /finance/metrics
+  Response: {
+    status: true,
+    data: {
+      "finance.bills.created": 142,
+      "finance.bills.approved": 138,
+      "finance.payments.posted": 95,
+      "finance.je.approved": 210,
+      "finance.approval.initiated": 12,
+      "finance.bulk.import.rows": 3400,
+      "finance.bulk.export.rows": 8900,
+      "finance.webhook.delivered": 450,
+      "finance.webhook.failed": 3,
+      "finance.idempotency.hit": 8
+    }
+  }
+  NOTE: In-memory counters — reset on server restart.
+  USE: Internal admin dashboard / monitoring panel.
+
+────────────────────────────────────────────────────────────────────────────────
+42. WEBHOOKS
+    Base URL: /finance/webhooks
+    Permission: finance > settings
+────────────────────────────────────────────────────────────────────────────────
+
+SUBSCRIBE / MANAGE
+
+POST   /finance/webhooks
+  Body: {
+    url: "https://your-system.com/romaa-hook",
+    events: ["finance.bill.approved", "finance.payment.created"],
+    secret: "your-hmac-secret"
+  }
+  Response: 201 { status, data: { subscription_id } }
+
+Available Events:
+  finance.bill.created        finance.bill.approved
+  finance.payment.created     finance.je.approved
+  finance.approval.approved   finance.approval.rejected
+  finance.credit_note.created finance.debit_note.created
+  finance.asset.disposed      finance.year_end.closed
+
+GET    /finance/webhooks
+  Response: { status, data[] }  — list all subscriptions
+
+DELETE /finance/webhooks/:id
+  Response: 200
+
+INBOUND RECEIVER (for external systems sending to Romaa)
+
+POST   /finance/webhooks/receive
+  Headers: X-Romaa-Signature: <hmac-sha256-hex>  (required)
+  Body: any JSON payload
+  Response: 200 { status: true, message: "Webhook received" }
+  NOTE: Verifies HMAC-SHA256 against process.env.WEBHOOK_SECRET.
+        Returns 401 if signature is missing or invalid.
+
+RECEIVING WEBHOOKS (your server)
+  Every delivery includes:
+    Header: X-Romaa-Signature: <hmac-sha256 hex>
+  Verify:
+    expected = HMAC-SHA256(your_secret, JSON.stringify(req.body))
+    if (expected !== req.headers["x-romaa-signature"]) → reject 401
+
+  Payload shape:
+    {
+      event: "finance.bill.approved",
+      timestamp: "2025-04-10T10:30:00Z",
+      data: { ... event-specific data ... }
+    }
+
+  Auto-disable: After 10 consecutive delivery failures, the subscription
+    is disabled. Re-enable by deleting and re-subscribing.
+
+================================================================================
+7. WORKFLOW GUIDES (End-to-End Sequences)
+================================================================================
+
+────────────────────────────────────────────────────────────────
+WORKFLOW A: Vendor Invoice → Payment
+────────────────────────────────────────────────────────────────
+1. GET /purchasebill/next-id?tender_id=TND-001
+   → bill_id for display
+
+2. POST /purchasebill/create
+   Body: vendor, invoice_no, line_items, tax_mode, etc.
+   → Returns draft bill
+
+3. (Optional) POST /finance/attachments/upload-one
+   Source_type: "PurchaseBill", source_ref: bill._id
+   → Attach vendor invoice scan
+
+4. PATCH /purchasebill/approve/:id
+   IF 400 APPROVAL_REQUIRED → redirect to approval flow:
+     a. The server auto-initiated an ApprovalRequest
+     b. GET /approvals/requests/pending-for-me  → approver sees it
+     c. POST /approvals/requests/:id/approve
+     d. Server auto-approves the bill after all approvers sign off
+
+5. GET /finance-dropdown/payable-bills?supplier_id=VND-001
+   → Select bills to pay
+
+6. GET /paymentvoucher/next-no
+
+7. POST /paymentvoucher/create
+   Body: supplier_id, payment_mode, bill_refs[], amount, ...
+
+8. PATCH /paymentvoucher/approve/:id
+   → Bill paid_status updates to "paid" or "partial"
+
+────────────────────────────────────────────────────────────────
+WORKFLOW B: Journal Entry (Manual Adjustment)
+────────────────────────────────────────────────────────────────
+1. GET /journalentry/next-no
+
+2. POST /journalentry/create
+   lines: [{ account_code, dr_cr, debit_amt, credit_amt }]
+   MUST: sum(debit_amt) == sum(credit_amt)
+
+3. PATCH /journalentry/approve/:id
+   → Lines posted to ledger
+
+4. (Optional) POST /journalentry/reverse/:id
+   → Creates a mirror entry with Dr/Cr swapped
+
+────────────────────────────────────────────────────────────────
+WORKFLOW C: Client Billing → Receipt
+────────────────────────────────────────────────────────────────
+1. POST /clientbilling/upload-csv  (with CSV file + tender_id)
+
+2. PATCH /clientbilling/api/approve/:id
+   → Posts receivable JE, updates client ledger
+
+3. (When client pays) GET /receiptvoucher/next-no
+
+4. POST /receiptvoucher/create
+   supplier_type: "Client", against_ref: <clientBillingId>
+
+5. PATCH /receiptvoucher/approve/:id
+   → Clears receivable, posts receipt JE
+
+────────────────────────────────────────────────────────────────
+WORKFLOW D: Fixed Asset → Depreciation
+────────────────────────────────────────────────────────────────
+1. POST /fixedasset/create  (with acquisition details)
+
+2. GET /fixedasset/:id/schedule  → view full depreciation schedule
+
+3. Monthly: POST /fixedasset/post-depreciation
+   Body: { period_date: "2025-04-30" }
+   → Posts depreciation JE for all assets
+
+4. (On disposal) POST /fixedasset/:id/dispose
+
+────────────────────────────────────────────────────────────────
+WORKFLOW E: Year-End Close
+────────────────────────────────────────────────────────────────
+1. GET /ledger-seal/status  → check pending unsealed JEs
+
+2. POST /ledger-seal/seal-approved
+   Body: { financial_year: "24-25" }
+   → Commit hash chain
+
+3. GET /year-end-close/preview?financial_year=24-25
+   → Confirm which accounts will be closed
+
+4. POST /finance/archival/start
+   Body: { fin_year: "24-25" }
+   → Archive approved transactions (202 async)
+   Poll: GET /finance/archival/jobs until completed
+
+5. POST /year-end-close/close
+   Body: { financial_year: "24-25" }
+   → Close the year, create opening balances for 25-26
+
+────────────────────────────────────────────────────────────────
+WORKFLOW F: Bulk Import
+────────────────────────────────────────────────────────────────
+1. GET /finance/bulk/purchasebill/template  → download CSV template
+
+2. Fill in data per template column headers
+
+3. POST /finance/bulk/purchasebill/import   (multipart, file)
+   → 202 { job_id }
+
+4. Poll GET /finance/bulk/jobs/:jobId every 2s
+   Until status = "completed" or "failed"
+   Show progress: success / failed / total
+
+5. If failed rows exist, errors[] lists row numbers and reasons
+   Fix and re-import only failed rows
+
+================================================================================
+8. ZOD SCHEMA QUICK REFERENCE
+================================================================================
+
+All fields are optional unless marked REQUIRED.
+Numeric fields default to 0 unless marked otherwise.
+
+── PURCHASE BILL ──────────────────────────────────────────────
+vendor_id             string   REQUIRED
+invoice_no            string
+invoice_date          date
+doc_date              date
+credit_days           number
+narration             string
+tender_id             string
+place_of_supply       "InState" | "OutState"
+currency              string   (ISO code, default "INR")
+exchange_rate         number   (default 1)
+status                "pending" | "draft" | "approved"
+rcm_applicable        boolean
+rcm_rate              number   0-28
+line_items            array    REQUIRED min 1
+  .description        string
+  .hsn_code           string
+  .quantity           number
+  .unit               string
+  .rate               number
+  .taxable_amount     number
+  .gst_rate           number
+  .cgst_pct           number
+  .sgst_pct           number
+  .igst_pct           number
+  .cgst_amt           number
+  .sgst_amt           number
+  .igst_amt           number
+  .total_amount       number
+  .tds_applicable     boolean
+  .tds_section        string
+  .tds_rate           number
+additional_charges    array
+  .description        string
+  .amount             number
+
+── PAYMENT VOUCHER ────────────────────────────────────────────
+supplier_id           string   REQUIRED
+supplier_type         "Vendor" | "Contractor"   REQUIRED
+pv_date               date
+document_year         string
+payment_mode          "Cash"|"Cheque"|"NEFT"|"RTGS"|"UPI"|"DD"
+bank_account_code     string
+bank_name             string
+bank_ref              string
+cheque_no             string
+cheque_date           date
+tender_id             string
+amount                number   REQUIRED >= 0
+gross_amount          number
+tds_section           string
+tds_pct               number
+entries               array    (GL lines)
+narration             string
+status                string
+bill_refs             array
+  .bill_id            ObjectId
+  .bill_no            string
+  .amount             number
+
+── JOURNAL ENTRY ──────────────────────────────────────────────
+je_no                 string   REQUIRED
+je_date               date
+document_year         string
+je_type               string
+narration             string   REQUIRED
+tender_id             string
+is_reversal           boolean
+reversal_of           ObjectId
+auto_reverse_date     date
+status                string
+allow_closed_fy       boolean
+lines                 array    REQUIRED min 2
+  .account_code       string   REQUIRED
+  .dr_cr              "Dr" | "Cr"
+  .debit_amt          number
+  .credit_amt         number
+  .narration          string
+  .tender_id          string
+  RULE: sum(debit_amt) == sum(credit_amt)
+
+── EXPENSE VOUCHER ────────────────────────────────────────────
+ev_date               date
+document_year         string
+payee_name            string
+payee_type            "Employee" | "External"
+employee_id           string
+paid_from_account_code string
+paid_from_account_name string
+payment_mode          string
+reference_no          string
+cheque_no             string
+cheque_date           date
+tender_id             string
+bill_photo_url        string
+bill_no               string
+tds_section           string
+tds_pct               number
+narration             string
+status                string
+lines                 array    REQUIRED min 1
+  .expense_account_code  string  REQUIRED
+  .description           string
+  .amount                number  REQUIRED > 0
+  .gst_pct               number
+  .cgst_amt              number
+  .sgst_amt              number
+  .igst_amt              number
+  .tender_id             string
+
+── CREDIT NOTE / DEBIT NOTE ───────────────────────────────────
+supplier_id           string   REQUIRED
+supplier_type         "Vendor" | "Contractor"
+cn_date / dn_date     date
+document_year         string
+reference_no          string
+reference_date        date
+location              string
+sales_type            "Local" | "Interstate"
+adj_type              "Against Bill" | "Standalone"
+tax_type              "GST" | "Non-GST"
+rev_charge            boolean
+bill_ref              ObjectId
+bill_no               string
+tender_id             string
+amount                number   REQUIRED >= 0
+round_off             number
+taxable_amount        number
+cgst_pct              number
+sgst_pct              number
+igst_pct              number
+gst_percent           number
+entries               array
+narration             string
+status                string
+[Debit Note only]
+service_amt           number
+raised_by             "Company" | "Vendor"
+
+── FIXED ASSET ────────────────────────────────────────────────
+asset_name                              string   REQUIRED
+category                                string
+acquisition_date                        date     REQUIRED
+acquisition_cost                        number   REQUIRED > 0
+salvage_value                           number   >= 0
+depreciation_method                     "SLM" | "WDV"
+useful_life_months                      number   (for SLM)
+wdv_rate_pct                            number   (for WDV)
+asset_account_code                      string   REQUIRED
+accumulated_depreciation_account_code   string   REQUIRED
+depreciation_expense_account_code       string   REQUIRED
+tender_id                               string
+linked_machinery_id                     string
+it_block                                string
+it_rate_pct                             number
+it_acquired_in_year_half                boolean
+narration                               string
+
+── BANK TRANSFER ──────────────────────────────────────────────
+transfer_no           string   REQUIRED
+transfer_date         date
+document_year         string
+from_account_code     string   REQUIRED
+from_account_name     string
+to_account_code       string   REQUIRED
+to_account_name       string
+amount                number   REQUIRED > 0
+transfer_mode         string
+reference_no          string
+cheque_no             string
+cheque_date           date
+tender_id             string
+narration             string
+status                string
+
+── BUDGET ─────────────────────────────────────────────────────
+tender_id             string   REQUIRED
+financial_year        string   REQUIRED (e.g., "25-26")
+narration             string
+lines                 array    REQUIRED min 1
+  .account_code       string   REQUIRED
+  .account_name       string
+  .account_type       string
+  .period             "annual" | "quarterly" | "monthly"
+  .period_label       string
+  .budget_amount      number   >= 0
+  .notes              string
+
+================================================================================
+END OF GUIDE
+================================================================================

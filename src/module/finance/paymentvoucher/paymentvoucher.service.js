@@ -10,6 +10,25 @@ import AccountTreeService from "../accounttree/accounttree.service.js";
 import JournalEntryService from "../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
 import { GL } from "../gl.constants.js";
+import { BILL_STATUS, PAID_STATUS } from "../finance.constants.js";
+import { emitFinanceEvent, FINANCE_EVENTS } from "../events/financeEvents.js";
+
+// ── Status state machine ──────────────────────────────────────────────────────
+const PV_TRANSITIONS = {
+  draft:    ["pending", "approved"],
+  pending:  ["approved", "draft"],
+  approved: [],  // terminal — approved PVs cannot be edited; create a reversal JE instead
+};
+
+function assertPVTransition(currentStatus, nextStatus, pvNo) {
+  const allowed = PV_TRANSITIONS[currentStatus] || [];
+  if (!allowed.includes(nextStatus)) {
+    throw new Error(
+      `Invalid status transition for ${pvNo}: '${currentStatus}' → '${nextStatus}'. ` +
+      `Allowed transitions: ${allowed.join(", ") || "none (terminal state)"}`
+    );
+  }
+}
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -111,7 +130,7 @@ function buildDoc(payload, pv_no) {
     })),
 
     narration: payload.narration || "",
-    status:    payload.status    || "pending",
+    status:    payload.status    || BILL_STATUS.PENDING,
   };
 }
 
@@ -180,11 +199,11 @@ async function markBillsSettled(pv) {
     ) / 100;
 
     if (totalSettled >= billTotal) {
-      bill.paid_status = "paid";
+      bill.paid_status = PAID_STATUS.PAID;
     } else if (totalSettled > 0) {
-      bill.paid_status = "partial";
+      bill.paid_status = PAID_STATUS.PARTIAL;
     } else {
-      bill.paid_status = "unpaid";
+      bill.paid_status = PAID_STATUS.UNPAID;
     }
 
     await bill.save();
@@ -216,8 +235,9 @@ class PaymentVoucherService {
   }
 
   // GET /paymentvoucher/list
-  static async getList(filters = {}) {
-    const query = { is_deleted: { $ne: true } };
+  // rlsFilter is produced by getRLSFilter(userId) from rowLevelSecurity.js — pass {} for admin.
+  static async getList(filters = {}, rlsFilter = {}) {
+    const query = { ...rlsFilter, is_deleted: { $ne: true } };
     if (filters.supplier_type) query.supplier_type = filters.supplier_type;
     if (filters.supplier_id)   query.supplier_id   = filters.supplier_id;
     if (filters.tender_id)     query.tender_id     = filters.tender_id;
@@ -308,7 +328,7 @@ class PaymentVoucherService {
   }
 
   // POST /paymentvoucher/create
-  static async create(payload) {
+  static async create(payload, { correlationId, ipAddress } = {}) {
     if (!payload.supplier_id)   throw new Error("Supplier ID is required to create a payment voucher");
     if (!payload.supplier_type) throw new Error("Supplier type is required to create a payment voucher");
 
@@ -322,14 +342,14 @@ class PaymentVoucherService {
     const doc   = buildDoc(payload, pv_no);
 
     // If creating directly as approved, bank_account_code must be present
-    if (doc.status === "approved" && !doc.bank_account_code) {
+    if (doc.status === BILL_STATUS.APPROVED && !doc.bank_account_code) {
       throw new Error("Bank account code is required when creating an approved payment voucher");
     }
 
     const saved = await PaymentVoucherModel.create(doc);
 
     // If approved, use a session to atomically post ledger + mark bills + post JE
-    if (saved.status === "approved") {
+    if (saved.status === BILL_STATUS.APPROVED) {
       let session = null;
       try {
         session = await mongoose.startSession();
@@ -358,7 +378,13 @@ class PaymentVoucherService {
   static async update(id, payload) {
     const pv = await PaymentVoucherModel.findById(id);
     if (!pv) throw new Error("Payment voucher not found. Please verify the voucher ID and try again");
-    if (pv.status === "approved") throw new Error("Cannot edit an approved payment voucher. Create a reversal entry instead");
+
+    // State machine: validate any explicit status change before touching any data
+    if (payload.status && payload.status !== pv.status) {
+      assertPVTransition(pv.status, payload.status, pv.pv_no);
+    }
+
+    if (pv.status === BILL_STATUS.APPROVED) throw new Error("Cannot edit an approved payment voucher. Create a reversal entry instead");
 
     // Optimistic locking: reject stale updates
     if (payload._version !== undefined && pv._version !== payload._version) {
@@ -381,7 +407,7 @@ class PaymentVoucherService {
   static async deleteDraft(id) {
     const pv = await PaymentVoucherModel.findById(id);
     if (!pv) throw new Error("Payment voucher not found. Please verify the voucher ID and try again");
-    if (pv.status === "approved") throw new Error("Cannot delete an approved payment voucher. Create a reversal entry instead");
+    if (pv.status === BILL_STATUS.APPROVED) throw new Error("Cannot delete an approved payment voucher. Create a reversal entry instead");
     await pv.deleteOne();
     return { deleted: true, pv_no: pv.pv_no };
   }
@@ -433,8 +459,9 @@ class PaymentVoucherService {
   // body may include { bank_account_code } to set it at approval time
   static async approve(id, body = {}) {
     const pv = await PaymentVoucherModel.findById(id);
-    if (!pv)                      throw new Error("Payment voucher not found. Please verify the voucher ID and try again");
-    if (pv.status === "approved") throw new Error("Payment voucher has already been approved");
+    if (!pv) throw new Error("Payment voucher not found. Please verify the voucher ID and try again");
+    // State machine: validate transition before any writes
+    assertPVTransition(pv.status, "approved", pv.pv_no);
 
     // Allow setting bank_account_code at approval time (for existing PVs that lack it)
     if (body.bank_account_code) {
@@ -446,20 +473,41 @@ class PaymentVoucherService {
       throw new Error("Bank account code is required to approve this payment voucher. Please provide it in the request or update the voucher first");
     }
 
-    pv.status = "approved";
-    await pv.save();
+    // Attempt to use a MongoDB session for atomicity (requires replica set).
+    // Falls back gracefully to no-session mode on standalone MongoDB.
+    let session = null;
+    try {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    } catch {
+      session = null;
+    }
 
-    // 1. Post to supplier sub-ledger (Dr entry — clears payable)
-    await postToLedger(pv);
+    try {
+      pv.status = BILL_STATUS.APPROVED;
+      await pv.save(session ? { session } : {});
 
-    // 2. Update every referenced bill with this PV's payment details
-    await markBillsSettled(pv);
+      // 1. Post to supplier sub-ledger (Dr entry — clears payable)
+      await postToLedger(pv);
 
-    // 3. Post double-entry JE: Dr supplier payable / Cr bank + TDS
-    //    (JE service also updates AccountTree available_balance for both sides)
-    await PaymentVoucherService.#postJE(pv);
+      // 2. Update every referenced bill with this PV's payment details
+      await markBillsSettled(pv);
 
-    return pv;
+      // 3. Post double-entry JE: Dr supplier payable / Cr bank + TDS
+      //    (JE service also updates AccountTree available_balance for both sides)
+      await PaymentVoucherService.#postJE(pv);
+
+      if (session) await session.commitTransaction();
+
+      emitFinanceEvent(FINANCE_EVENTS.PAYMENT_CREATED, { pv_no: pv.pv_no, supplier_id: pv.supplier_id, amount: pv.amount });
+
+      return pv;
+    } catch (err) {
+      if (session) await session.abortTransaction();
+      throw err;
+    } finally {
+      if (session) session.endSession();
+    }
   }
 }
 

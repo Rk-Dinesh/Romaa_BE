@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import ExpenseVoucherModel from "./expensevoucher.model.js";
 import AccountTreeModel from "../accounttree/accounttree.model.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
@@ -155,8 +156,9 @@ class ExpenseVoucherService {
   }
 
   // GET /expensevoucher/list
-  static async getList(filters = {}) {
-    const query = { is_deleted: { $ne: true } };
+  // rlsFilter is produced by getRLSFilter(userId) from rowLevelSecurity.js — pass {} for admin.
+  static async getList(filters = {}, rlsFilter = {}) {
+    const query = { ...rlsFilter, is_deleted: { $ne: true } };
     if (filters.status)        query.status        = filters.status;
     if (filters.payment_mode)  query.payment_mode  = filters.payment_mode;
     if (filters.payee_type)    query.payee_type    = filters.payee_type;
@@ -326,14 +328,33 @@ class ExpenseVoucherService {
     // Re-validate on approval in case chart of accounts changed
     await validatePayingAccount(ev.paid_from_account_code);
 
-    ev.status      = "approved";
-    ev.approved_by = approvedBy;
-    ev.approved_at = new Date();
-    await ev.save();
+    // Attempt to use a MongoDB session for atomicity (requires replica set).
+    // Falls back gracefully to no-session mode on standalone MongoDB.
+    let session = null;
+    try {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    } catch {
+      session = null;
+    }
 
-    await ExpenseVoucherService.#postJE(ev);
+    try {
+      ev.status      = "approved";
+      ev.approved_by = approvedBy;
+      ev.approved_at = new Date();
+      await ev.save(session ? { session } : {});
 
-    return ev;
+      await ExpenseVoucherService.#postJE(ev);
+
+      if (session) await session.commitTransaction();
+
+      return ev;
+    } catch (err) {
+      if (session) await session.abortTransaction();
+      throw err;
+    } finally {
+      if (session) session.endSession();
+    }
   }
 
   // ── Build and post the double-entry JE for an expense voucher ────────────

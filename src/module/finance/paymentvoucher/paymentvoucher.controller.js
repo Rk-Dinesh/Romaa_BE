@@ -1,6 +1,6 @@
 import PaymentVoucherService from "./paymentvoucher.service.js";
 import logger from "../../../config/logger.js";
-import { logError } from "../../../common/App.helperFunction.js";
+import { logError, paginatedResponse } from "../../../common/App.helperFunction.js";
 
 // GET /paymentvoucher/next-no
 export const getNextPvNo = async (_req, res) => {
@@ -18,15 +18,15 @@ export const getList = async (req, res) => {
     const { supplier_type, supplier_id, tender_id, status, payment_mode, pv_no, page, limit, search } = req.query;
     const from_date = req.query.fromdate || req.query.from_date;
     const to_date   = req.query.todate   || req.query.to_date;
+    const rlsFilter = await req.getRLSFilter();
     const result = await PaymentVoucherService.getList({
       supplier_type, supplier_id, tender_id, status, payment_mode, pv_no, from_date, to_date, page, limit, search,
-    });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
+    }, rlsFilter);
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -44,12 +44,11 @@ export const getListCash = async (req, res) => {
       supplier_type, supplier_id, tender_id, status, pv_no, from_date, to_date, page, limit, search,
       payment_mode: "Cash",
     });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -67,12 +66,11 @@ export const getListBank = async (req, res) => {
       supplier_type, supplier_id, tender_id, status, pv_no, from_date, to_date, page, limit, search,
       payment_mode: "bank",
     });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -121,7 +119,7 @@ export const getById = async (req, res) => {
 // POST /paymentvoucher/create
 export const create = async (req, res) => {
   try {
-    const data = await PaymentVoucherService.create(req.body);
+    const data = await PaymentVoucherService.create(req.body, { correlationId: req.correlationId, ipAddress: req.ip });
     res.status(201).json({ status: true, message: "Payment voucher created successfully", data });
   } catch (error) {
     logError(logger, req, error, "paymentvoucher.create");

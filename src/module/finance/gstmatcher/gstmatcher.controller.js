@@ -1,4 +1,5 @@
 import GstMatcherService from "./gstmatcher.service.js";
+import { paginatedResponse } from "../../../common/App.helperFunction.js";
 
 export const upload = async (req, res) => {
   try {
@@ -18,8 +19,13 @@ export const upload = async (req, res) => {
 
 export const list = async (req, res) => {
   try {
-    const data = await GstMatcherService.list(req.query);
-    res.status(200).json({ status: true, ...data });
+    const result = await GstMatcherService.list(req.query);
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
+    });
   } catch (err) {
     res.status(500).json({ status: false, message: err.message });
   }

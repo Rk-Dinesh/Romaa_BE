@@ -178,6 +178,44 @@ class LedgerSealService {
     };
   }
 
+  // Verify chain integrity by sequence range (no JE content re-check — pure chain walk).
+  // Checks that each seal's chain_hash == H(prev_chain_hash || content_hash).
+  // Returns { verified, seals_checked, broken[] }.
+  static async verifyBySequence(fromSeq = 1, toSeq = null) {
+    const query = toSeq
+      ? { sequence: { $gte: fromSeq, $lte: toSeq } }
+      : { sequence: { $gte: fromSeq } };
+    const seals = await LedgerSealModel.find(query).sort({ sequence: 1 }).lean();
+    const broken = [];
+
+    // If range doesn't start at seq 1 we need the hash of the seal just before the range
+    let prevHashForRange = "";
+    if (seals.length > 0 && seals[0].sequence > 1) {
+      const preceding = await LedgerSealModel.findOne({ sequence: seals[0].sequence - 1 }).lean();
+      prevHashForRange = preceding?.chain_hash || "";
+    }
+
+    for (let i = 0; i < seals.length; i++) {
+      const seal = seals[i];
+      const prevHash = i === 0 ? prevHashForRange : seals[i - 1].chain_hash;
+      const expected = crypto.createHash("sha256")
+        .update(prevHash + seal.content_hash)
+        .digest("hex");
+      if (expected !== seal.chain_hash) {
+        broken.push({ sequence: seal.sequence, je_no: seal.je_no, reason: "chain_hash mismatch" });
+      }
+    }
+
+    return { verified: broken.length === 0, seals_checked: seals.length, broken };
+  }
+
+  // Retrieve a single seal by sequence number.
+  static async getBySequence(sequence) {
+    const seal = await LedgerSealModel.findOne({ sequence: Number(sequence) }).lean();
+    if (!seal) throw new Error(`No seal found for sequence ${sequence}`);
+    return seal;
+  }
+
   static async list({ page = 1, limit = 50, from_date, to_date } = {}) {
     const q = {};
     if (from_date || to_date) {

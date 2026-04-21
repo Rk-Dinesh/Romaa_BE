@@ -1,6 +1,6 @@
 import JournalEntryService from "./journalentry.service.js";
 import logger from "../../../config/logger.js";
-import { logError } from "../../../common/App.helperFunction.js";
+import { logError, paginatedResponse } from "../../../common/App.helperFunction.js";
 
 // GET /journalentry/next-no
 export const getNextJeNo = async (_req, res) => {
@@ -22,16 +22,16 @@ export const getList = async (req, res) => {
     } = req.query;
     const from_date = req.query.fromdate || req.query.from_date;
     const to_date   = req.query.todate   || req.query.to_date;
+    const rlsFilter = await req.getRLSFilter();
     const result = await JournalEntryService.getList({
       je_type, status, tender_id, financial_year,
       is_reversal, je_no, account_code, from_date, to_date, page, limit, search,
-    });
-    res.status(200).json({
-      status: true,
-      currentPage: result.pagination.page,
-      totalPages: result.pagination.pages,
-      totalCount: result.pagination.total,
-      data: result.data,
+    }, rlsFilter);
+    return paginatedResponse(res, {
+      data:  result.data,
+      page:  result.pagination.page,
+      limit: result.pagination.limit,
+      total: result.pagination.total,
     });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
@@ -52,7 +52,8 @@ export const getById = async (req, res) => {
 // POST /journalentry/create
 export const create = async (req, res) => {
   try {
-    const data = await JournalEntryService.create(req.body);
+    const payload = { ...req.body, created_by: req.user?._id || req.body.created_by };
+    const data = await JournalEntryService.create(payload, { correlationId: req.correlationId });
     res.status(201).json({ status: true, message: "Journal entry created successfully", data });
   } catch (error) {
     logError(logger, req, error, "journalentry.create");
@@ -70,7 +71,7 @@ export const create = async (req, res) => {
 export const approve = async (req, res) => {
   try {
     const approvedBy = req.user?._id || null;
-    const data = await JournalEntryService.approve(req.params.id, approvedBy);
+    const data = await JournalEntryService.approve(req.params.id, approvedBy, { correlationId: req.correlationId });
     res.status(200).json({ status: true, message: "Journal entry approved and posted to ledger successfully", data });
   } catch (error) {
     logError(logger, req, error, "journalentry.approve");

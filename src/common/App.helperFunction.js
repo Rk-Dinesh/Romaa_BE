@@ -2,6 +2,20 @@ export const generateOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+// Standard paginated response builder
+export const paginatedResponse = (res, { data, page, limit, total }) => {
+  return res.status(200).json({
+    status: true,
+    data,
+    pagination: {
+      current_page:  Number(page),
+      page_size:     Number(limit),
+      total_items:   Number(total),
+      total_pages:   Math.ceil(total / limit),
+    },
+  });
+};
+
 // Structured error logger — includes correlationId when set by upstream middleware
 export const logError = (logger, req, err, context = "") => {
   logger.error({

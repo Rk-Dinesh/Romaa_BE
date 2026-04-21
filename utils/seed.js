@@ -3,6 +3,7 @@ import EmployeeService from "../src/module/hr/employee/employee.service.js";
 import RoleModel from "../src/module/role/role.model.js";
 import RoleService from "../src/module/role/role.service.js";
 import CurrencyModel from "../src/module/finance/currency/currency.model.js";
+import FinanceSettingsModel from "../src/module/finance/settings/financesettings.model.js";
 
 // --- 1. Smart Permission Generator ---
 const getFullPermissions = () => {
@@ -99,6 +100,9 @@ export const seedDatabase = async () => {
     // --- C. Seed default currencies ---
     await seedCurrencies();
 
+    // --- D. Seed default finance settings ---
+    await seedFinanceSettings();
+
   } catch (error) {
     console.error("❌ Seeding Failed:", error.message);
   }
@@ -115,6 +119,26 @@ const DEFAULT_CURRENCIES = [
   { code: "AED", name: "UAE Dirham",            symbol: "د.إ",decimals: 2, is_base: false, is_active: true },
   { code: "SGD", name: "Singapore Dollar",      symbol: "S$", decimals: 2, is_base: false, is_active: true },
 ];
+
+// ── Finance settings seed ─────────────────────────────────────────────────────
+// Uses upsert — safe to run on every startup; won't overwrite existing values.
+const seedFinanceSettings = async () => {
+  try {
+    const defaults = [
+      { key: "approval.purchasebill.threshold",  value: 50000,   description: "Min bill amount (INR) that requires approval workflow" },
+      { key: "approval.paymentvoucher.threshold", value: 100000,  description: "Min PV amount (INR) that requires approval" },
+      { key: "finance.default_fin_year",          value: "25-26", description: "Default financial year for queries" },
+      { key: "tds.default_section",               value: "194C",  description: "Default TDS section for contractor payments" },
+      { key: "bulk.import.max_rows",              value: 5000,    description: "Maximum rows allowed per bulk import" },
+    ];
+    for (const s of defaults) {
+      await FinanceSettingsModel.findOneAndUpdate({ key: s.key }, s, { upsert: true });
+    }
+    console.log("✅ Finance settings seeded.");
+  } catch (error) {
+    console.error("❌ Finance settings seeding failed:", error.message);
+  }
+};
 
 const seedCurrencies = async () => {
   try {

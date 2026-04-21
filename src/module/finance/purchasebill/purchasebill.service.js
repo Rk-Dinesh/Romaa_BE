@@ -9,8 +9,34 @@ import JournalEntryService from "../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
 import { GL } from "../gl.constants.js";
 import ApprovalRequestModel from "../approval/approvalrequest.model.js";
+import ApprovalService from "../approval/approval.service.js";
+import AuditLogService from "../audit/auditlog.service.js";
 import logger from "../../../config/logger.js";
 import CurrencyService from "../currency/currency.service.js";
+import FinanceSettingsService from "../settings/financesettings.service.js";
+import { BILL_STATUS, APPROVAL_STATUS, AUDIT_ACTION } from "../finance.constants.js";
+import { emitFinanceEvent, FINANCE_EVENTS } from "../events/financeEvents.js";
+import { increment, METRIC_KEYS } from "../metrics/financeMetrics.js";
+
+// ── Status state machine ──────────────────────────────────────────────────────
+// Defines which status transitions are allowed per document lifecycle.
+// 'cancelled' is a terminal state — no transitions out.
+const PURCHASE_BILL_TRANSITIONS = {
+  draft:     ["pending", "cancelled"],
+  pending:   ["approved", "cancelled"],
+  approved:  ["cancelled"],   // approved can only be cancelled — cannot revert to draft/pending
+  cancelled: [],              // terminal state
+};
+
+function assertPBTransition(currentStatus, nextStatus, docId) {
+  const allowed = PURCHASE_BILL_TRANSITIONS[currentStatus] || [];
+  if (!allowed.includes(nextStatus)) {
+    throw new Error(
+      `Invalid status transition for ${docId}: '${currentStatus}' → '${nextStatus}'. ` +
+      `Allowed transitions: ${allowed.join(", ") || "none (terminal state)"}`
+    );
+  }
+}
 
 // ── Build document from payload ───────────────────────────────────────────────
 // Only source fields are mapped here.
@@ -63,7 +89,11 @@ function buildDoc(payload, doc_id) {
       is_deduction: Boolean(c.is_deduction),
     })),
 
-    status: payload.status || "pending",
+    status: payload.status || BILL_STATUS.PENDING,
+
+    // RCM fields — passed through so pre-save hook can validate and compute rcm_amount
+    rcm_applicable: Boolean(payload.rcm_applicable),
+    rcm_rate:       Number(payload.rcm_rate) || 18,
   };
 }
 
@@ -177,9 +207,10 @@ class PurchaseBillService {
 
   // GET /purchasebill/list
   // All filters are optional and combinable.
+  // rlsFilter is produced by getRLSFilter(userId) from rowLevelSecurity.js — pass {} for admin.
   // Returns summary fields only — line_items / tax_groups excluded.
-  static async getBills(filters = {}) {
-    const query = { is_deleted: { $ne: true } };
+  static async getBills(filters = {}, rlsFilter = {}) {
+    const query = { ...rlsFilter, is_deleted: { $ne: true } };
 
     if (filters.doc_id)    query.doc_id    = filters.doc_id;
     if (filters.tender_id) query.tender_id = filters.tender_id;
@@ -368,61 +399,7 @@ class PurchaseBillService {
     return bill;
   }
 
-  // PATCH /purchasebill/update/:id
-  static async updatePurchaseBill(id, payload) {
-    const bill = await PurchaseBillModel.findById(id);
-    if (!bill) throw new Error("Purchase bill record not found. Please verify the bill ID and try again");
-    if (bill.status === "approved") throw new Error("Cannot edit an approved purchase bill. Approved bills are locked for audit integrity");
-
-    // Optimistic locking: reject stale updates
-    if (payload._version !== undefined && bill._version !== payload._version) {
-      throw new Error("Document was modified by another user. Please refresh and try again.");
-    }
-
-    const allowed = ["doc_date", "invoice_no", "invoice_date", "credit_days", "narration", "line_items", "additional_charges", "place_of_supply"];
-    for (const field of allowed) {
-      if (payload[field] !== undefined) bill[field] = payload[field];
-    }
-    // Always derive tax_mode from place_of_supply — never accept it from the client directly
-    bill.tax_mode = bill.place_of_supply === "InState" ? "instate" : "otherstate";
-
-    await bill.save(); // triggers pre-save hook — recomputes all tax/total fields
-    return bill;
-  }
-
-  // DELETE /purchasebill/delete/:id  (soft-delete)
-  static async deletePurchaseBill(id) {
-    const bill = await PurchaseBillModel.findById(id);
-    if (!bill) throw new Error("Purchase bill not found");
-    if (bill.status === "approved") throw new Error("Cannot delete an approved purchase bill");
-
-    // Release GRN locks so they can be picked by a new bill
-    await unmarkGRNsBilled(bill.line_items);
-
-    // Soft-delete (Task 5 cascade)
-    bill.is_deleted = true;
-    await bill.save();
-
-    // Task 5 cascade — Warn if a JE was posted (approved bills are blocked above,
-    // but just in case status is stale or a future flow allows it)
-    if (bill.je_ref) {
-      logger.warn(`[PurchaseBill] Deleted bill ${bill.doc_id} had a je_ref ${bill.je_ref} — JE reversal may be required`);
-    }
-
-    // Task 5 — Clean orphaned payment refs in PaymentVoucher
-    try {
-      await PaymentVoucherModel.updateMany(
-        { "bill_refs.bill_ref": bill._id },
-        { $pull: { bill_refs: { bill_ref: bill._id } } }
-      );
-    } catch (e) {
-      logger.warn(`[PurchaseBill] Could not clean PV bill_refs for deleted bill ${bill.doc_id}: ${e.message}`);
-    }
-
-    return { deleted: true, doc_id: bill.doc_id };
-  }
-
-  static async createPurchaseBill(payload) {
+  static async createPurchaseBill(payload, { correlationId, ipAddress } = {}) {
     if (!payload.vendor_id) throw new Error("vendor_id is required");
 
     if (payload.invoice_no) {
@@ -467,11 +444,59 @@ class PurchaseBillService {
     // create() triggers the pre-save hook which computes all derived fields
     const saved = await PurchaseBillModel.create(buildDoc(payload, doc_id));
 
-    // Auto-approve flow if created directly as approved
-    if (saved.status === "approved") {
-      await postToLedger(saved);
-      await markGRNsBilled(saved);
-      await PurchaseBillService.#postJE(saved);
+    // Auto-approve flow if created directly as approved — wrap in a session for atomicity
+    if (saved.status === BILL_STATUS.APPROVED) {
+      let session = null;
+      try {
+        session = await mongoose.startSession();
+        session.startTransaction();
+      } catch {
+        session = null;
+      }
+      try {
+        await postToLedger(saved);
+        await markGRNsBilled(saved);
+        await PurchaseBillService.#postJE(saved);
+        if (session) await session.commitTransaction();
+      } catch (err) {
+        if (session) await session.abortTransaction();
+        throw err;
+      } finally {
+        if (session) session.endSession();
+      }
+    }
+
+    increment(METRIC_KEYS.BILLS_CREATED);
+    emitFinanceEvent(FINANCE_EVENTS.BILL_CREATED, { bill_no: saved.doc_id, vendor_id: saved.vendor_id, amount: saved.net_amount });
+
+    // Audit log — create action
+    await AuditLogService.log({
+      entity_type:    "PurchaseBill",
+      entity_id:      saved._id,
+      entity_no:      saved.doc_id,
+      action:         AUDIT_ACTION.CREATE,
+      actor_id:       payload.created_by,
+      meta:           { vendor_id: saved.vendor_id, amount: saved.net_amount, fin_year: saved.fin_year },
+      correlation_id: correlationId,
+      ip_address:     ipAddress,
+    });
+
+    // Approval gate — initiate if bill is above configurable threshold (default ₹50,000)
+    const APPROVAL_THRESHOLD = await FinanceSettingsService.get("approval.purchasebill.threshold", 50_000);
+    if (saved.net_amount >= APPROVAL_THRESHOLD) {
+      try {
+        await ApprovalService.initiate({
+          source_type:  "PurchaseBill",
+          source_ref:   saved._id,
+          source_no:    saved.doc_id,
+          amount:       saved.net_amount,
+          initiator_id: payload.created_by,
+          fin_year:     saved.fin_year,
+        });
+      } catch (initErr) {
+        // Approval initiation failure should NOT fail bill creation — just log
+        logger.warn({ context: "createPurchaseBill.initApproval", message: initErr.message, bill: saved.doc_id });
+      }
     }
 
     return saved;
@@ -525,7 +550,7 @@ class PurchaseBillService {
   }
 
   // PATCH /purchasebill/approve/:id
-  static async approvePurchaseBill(id) {
+  static async approvePurchaseBill(id, approvedBy = null, { correlationId } = {}) {
     // Attempt to use a MongoDB session for atomicity (requires replica set).
     // Falls back gracefully to no-session mode on standalone MongoDB.
     let session = null;
@@ -540,8 +565,9 @@ class PurchaseBillService {
       const sessionOpt = session ? { session } : {};
 
       const bill = await PurchaseBillModel.findById(id).session(session || null);
-      if (!bill)                        throw new Error("Purchase bill not found");
-      if (bill.status === "approved")   throw new Error("Already approved");
+      if (!bill) throw new Error("Purchase bill not found");
+      // State machine: only pending → approved is allowed
+      assertPBTransition(bill.status, "approved", bill.doc_id);
 
       // Task 4 — Approval workflow gate
       // Check if there is a pending ApprovalRequest for this bill
@@ -549,14 +575,14 @@ class PurchaseBillService {
         source_type: "PurchaseBill",
         source_ref:  bill._id,
       }).lean();
-      if (approvalReq && approvalReq.status === "pending") {
+      if (approvalReq && approvalReq.status === APPROVAL_STATUS.PENDING) {
         throw new Error(`Approval pending — bill cannot be approved until the ApprovalRequest is cleared`);
       }
-      if (approvalReq && approvalReq.status === "rejected") {
+      if (approvalReq && approvalReq.status === APPROVAL_STATUS.REJECTED) {
         throw new Error(`Approval rejected — bill cannot be approved. Please revise and re-initiate approval`);
       }
 
-      bill.status = "approved";
+      bill.status = BILL_STATUS.APPROVED;
       await bill.save(sessionOpt);
 
       // 1. Post Cr entry to vendor sub-ledger (liability created — payable to vendor)
@@ -599,6 +625,20 @@ class PurchaseBillService {
         }
       }
 
+      increment(METRIC_KEYS.BILLS_APPROVED);
+      emitFinanceEvent(FINANCE_EVENTS.BILL_APPROVED, { bill_no: bill.doc_id, amount: bill.net_amount, approved_by: approvedBy });
+
+      // Audit log — approve action
+      await AuditLogService.log({
+        entity_type:    "PurchaseBill",
+        entity_id:      bill._id,
+        entity_no:      bill.doc_id,
+        action:         AUDIT_ACTION.APPROVE,
+        actor_id:       approvedBy,
+        meta:           { amount: bill.net_amount, vendor_id: bill.vendor_id },
+        correlation_id: correlationId,
+      });
+
       if (session) await session.commitTransaction();
       return bill;
     } catch (err) {
@@ -607,6 +647,94 @@ class PurchaseBillService {
     } finally {
       if (session) session.endSession();
     }
+  }
+
+  // PATCH /purchasebill/update/:id  (already accepts payload)
+  static async updatePurchaseBill(id, payload, { correlationId, actorId } = {}) {
+    const bill = await PurchaseBillModel.findById(id);
+    if (!bill) throw new Error("Purchase bill record not found. Please verify the bill ID and try again");
+
+    // State machine: validate any explicit status change before touching any data
+    if (payload.status && payload.status !== bill.status) {
+      assertPBTransition(bill.status, payload.status, bill.doc_id);
+    }
+
+    if (bill.status === BILL_STATUS.APPROVED) throw new Error("Cannot edit an approved purchase bill. Approved bills are locked for audit integrity");
+
+    // Optimistic locking: reject stale updates
+    if (payload._version !== undefined && bill._version !== payload._version) {
+      throw new Error("Document was modified by another user. Please refresh and try again.");
+    }
+
+    // Track which fields changed for audit
+    const changed = {};
+    const allowed = ["doc_date", "invoice_no", "invoice_date", "credit_days", "narration", "line_items", "additional_charges", "place_of_supply"];
+    for (const field of allowed) {
+      if (payload[field] !== undefined) {
+        changed[field] = { before: bill[field], after: payload[field] };
+        bill[field] = payload[field];
+      }
+    }
+    // Always derive tax_mode from place_of_supply — never accept it from the client directly
+    bill.tax_mode = bill.place_of_supply === "InState" ? "instate" : "otherstate";
+
+    await bill.save(); // triggers pre-save hook — recomputes all tax/total fields
+
+    // Audit log — update action
+    await AuditLogService.log({
+      entity_type:    "PurchaseBill",
+      entity_id:      bill._id,
+      entity_no:      bill.doc_id,
+      action:         AUDIT_ACTION.UPDATE,
+      actor_id:       actorId || payload.updated_by,
+      changes:        changed,
+      correlation_id: correlationId,
+    });
+
+    return bill;
+  }
+
+  // DELETE /purchasebill/delete/:id  (soft-delete)
+  static async deletePurchaseBill(id, { correlationId, actorId } = {}) {
+    const bill = await PurchaseBillModel.findById(id);
+    if (!bill) throw new Error("Purchase bill not found");
+    if (bill.status === BILL_STATUS.APPROVED) throw new Error("Cannot delete an approved purchase bill");
+
+    // Release GRN locks so they can be picked by a new bill
+    await unmarkGRNsBilled(bill.line_items);
+
+    // Soft-delete (Task 5 cascade)
+    bill.is_deleted = true;
+    await bill.save();
+
+    // Task 5 cascade — Warn if a JE was posted (approved bills are blocked above,
+    // but just in case status is stale or a future flow allows it)
+    if (bill.je_ref) {
+      logger.warn(`[PurchaseBill] Deleted bill ${bill.doc_id} had a je_ref ${bill.je_ref} — JE reversal may be required`);
+    }
+
+    // Task 5 — Clean orphaned payment refs in PaymentVoucher
+    try {
+      await PaymentVoucherModel.updateMany(
+        { "bill_refs.bill_ref": bill._id },
+        { $pull: { bill_refs: { bill_ref: bill._id } } }
+      );
+    } catch (e) {
+      logger.warn(`[PurchaseBill] Could not clean PV bill_refs for deleted bill ${bill.doc_id}: ${e.message}`);
+    }
+
+    // Audit log — delete action
+    await AuditLogService.log({
+      entity_type:    "PurchaseBill",
+      entity_id:      bill._id,
+      entity_no:      bill.doc_id,
+      action:         AUDIT_ACTION.DELETE,
+      actor_id:       actorId,
+      meta:           { vendor_id: bill.vendor_id, amount: bill.net_amount },
+      correlation_id: correlationId,
+    });
+
+    return { deleted: true, doc_id: bill.doc_id };
   }
 }
 

@@ -81,6 +81,10 @@ export const CreatePurchaseBillSchema = z.object({
   line_items:         z.array(PurchaseBillLineItem).default([]),
   additional_charges: z.array(AdditionalCharge).default([]),
   status:             DraftStatus,
+  // RCM (Reverse Charge Mechanism): when true, line items must have 0 GST;
+  // rcm_amount is computed by the pre-save hook as taxable_value × rcm_rate / 100.
+  rcm_applicable:     z.boolean().default(false),
+  rcm_rate:           z.number().min(0).max(28).default(18),
 });
 
 export const UpdatePurchaseBillSchema = z.object({

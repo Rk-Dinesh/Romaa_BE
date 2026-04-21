@@ -6,6 +6,25 @@ import LedgerService from "../ledger/ledger.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
 import logger from "../../../config/logger.js";
 import CurrencyService from "../currency/currency.service.js";
+import { BILL_STATUS, APPROVAL_STATUS } from "../finance.constants.js";
+import { emitFinanceEvent, FINANCE_EVENTS } from "../events/financeEvents.js";
+
+// ── Status state machine ──────────────────────────────────────────────────────
+const JE_TRANSITIONS = {
+  draft:    ["pending", "approved"],
+  pending:  ["approved", "draft"],
+  approved: [],  // terminal — approved JEs cannot be edited; use reverse() instead
+};
+
+function assertJETransition(currentStatus, nextStatus, jeNo) {
+  const allowed = JE_TRANSITIONS[currentStatus] || [];
+  if (!allowed.includes(nextStatus)) {
+    throw new Error(
+      `Invalid status transition for ${jeNo}: '${currentStatus}' → '${nextStatus}'. ` +
+      `Allowed transitions: ${allowed.join(", ") || "none (terminal state — use reverse() instead)"}`
+    );
+  }
+}
 
 // ── Supplier AP account lookup ────────────────────────────────────────────────
 // Returns the personal ledger account code for a supplier (e.g. "2010-VND-001").
@@ -187,8 +206,9 @@ class JournalEntryService {
   }
 
   // GET /journalentry/list
-  static async getList(filters = {}) {
-    const query = { is_deleted: { $ne: true } };
+  // rlsFilter is produced by getRLSFilter(userId) from rowLevelSecurity.js — pass {} for admin.
+  static async getList(filters = {}, rlsFilter = {}) {
+    const query = { ...rlsFilter, is_deleted: { $ne: true } };
     if (filters.je_type)       query.je_type       = filters.je_type;
     if (filters.status)        query.status        = filters.status;
     if (filters.tender_id)     query.tender_id     = filters.tender_id;
@@ -241,7 +261,7 @@ class JournalEntryService {
   }
 
   // POST /journalentry/create
-  static async create(payload) {
+  static async create(payload, { correlationId } = {}) {
     if (!payload.je_no)   throw new Error("Journal entry number is required");
     if (!payload.narration || !payload.narration.trim()) {
       throw new Error("Narration is required — please explain the purpose of this journal entry");
@@ -286,14 +306,14 @@ class JournalEntryService {
       reversal_of:     payload.reversal_of     || null,
       reversal_of_no:  payload.reversal_of_no  || "",
       auto_reverse_date: payload.auto_reverse_date ? new Date(payload.auto_reverse_date) : null,
-      status:          payload.status          || "pending",
+      status:          payload.status          || BILL_STATUS.PENDING,
       created_by:      payload.created_by      || null,
     };
 
     const saved = await JournalEntryModel.create(doc);
 
     // Auto-post if created directly as approved
-    if (saved.status === "approved") {
+    if (saved.status === BILL_STATUS.APPROVED) {
       saved.is_posted = true;
       saved.approved_at = new Date();
       await saved.save();
@@ -305,7 +325,7 @@ class JournalEntryService {
   }
 
   // PATCH /journalentry/approve/:id
-  static async approve(id, approvedBy = null) {
+  static async approve(id, approvedBy = null, { correlationId } = {}) {
     // Attempt to use a MongoDB session for atomicity (requires replica set).
     // Falls back gracefully to no-session mode on standalone MongoDB.
     let session = null;
@@ -318,8 +338,9 @@ class JournalEntryService {
 
     try {
       const je = await JournalEntryModel.findById(id).session(session || null);
-      if (!je)                       throw new Error("Journal entry not found. Please verify the entry ID and try again");
-      if (je.status === "approved")  throw new Error("Journal entry has already been approved");
+      if (!je) throw new Error("Journal entry not found. Please verify the entry ID and try again");
+      // State machine: validate transition before any writes
+      assertJETransition(je.status, "approved", je.je_no);
       if (!je.narration || !je.narration.trim()) {
         throw new Error("Cannot approve a journal entry without a narration. Please add a description first");
       }
@@ -351,14 +372,14 @@ class JournalEntryService {
                 `(POST /approvals/requests) before approving this JE.`,
               );
             }
-            if (st.status !== "approved") {
+            if (st.status !== APPROVAL_STATUS.APPROVED) {
               throw new Error(`Linked ApprovalRequest is currently '${st.status}' — all approvers must sign off before this JE can be approved.`);
             }
           }
         }
       }
 
-      je.status      = "approved";
+      je.status      = BILL_STATUS.APPROVED;
       je.is_posted   = true;
       je.approved_by = approvedBy;
       je.approved_at = new Date();
@@ -368,6 +389,8 @@ class JournalEntryService {
       await AccountTreeService.applyBalanceLines(je.lines);
 
       if (session) await session.commitTransaction();
+
+      emitFinanceEvent(FINANCE_EVENTS.JE_APPROVED, { je_no: je.je_no, approved_by: approvedBy });
 
       // Gap 6: extend the tamper-evident hash chain with this approval. Lazy
       // import avoids a static cycle since ledgerseal → journalentry model.
@@ -393,7 +416,7 @@ class JournalEntryService {
   static async reverse(id, payload = {}) {
     const original = await JournalEntryModel.findById(id);
     if (!original)                       throw new Error("Journal entry not found. Please verify the entry ID and try again");
-    if (original.status !== "approved")  throw new Error("Only approved journal entries can be reversed. Current status: " + original.status);
+    if (original.status !== BILL_STATUS.APPROVED)  throw new Error("Only approved journal entries can be reversed. Current status: " + original.status);
     if (original.is_reversal)            throw new Error("A reversal entry cannot itself be reversed. Please reverse the original entry instead");
 
     // Check if already reversed
@@ -436,7 +459,7 @@ class JournalEntryService {
       is_reversal:    true,
       reversal_of:    original._id,
       reversal_of_no: original.je_no,
-      status:         "approved",
+      status:         BILL_STATUS.APPROVED,
       is_posted:      true,
       approved_at:    new Date(),
     };
@@ -485,7 +508,13 @@ class JournalEntryService {
   static async update(id, payload) {
     const je = await JournalEntryModel.findById(id);
     if (!je) throw new Error("Journal entry not found. Please verify the entry ID and try again");
-    if (je.status === "approved") throw new Error("Cannot edit an approved journal entry. Please create a reversal entry instead");
+
+    // State machine: validate any explicit status change before touching any data
+    if (payload.status && payload.status !== je.status) {
+      assertJETransition(je.status, payload.status, je.je_no);
+    }
+
+    if (je.status === BILL_STATUS.APPROVED) throw new Error("Cannot edit an approved journal entry. Please create a reversal entry instead");
 
     // Optimistic locking: reject stale updates
     if (payload._version !== undefined && je._version !== payload._version) {
@@ -514,7 +543,7 @@ class JournalEntryService {
   static async deleteDraft(id) {
     const je = await JournalEntryModel.findById(id);
     if (!je) throw new Error("Journal entry not found. Please verify the entry ID and try again");
-    if (je.status === "approved") throw new Error("Cannot delete an approved journal entry. Please create a reversal entry instead");
+    if (je.status === BILL_STATUS.APPROVED) throw new Error("Cannot delete an approved journal entry. Please create a reversal entry instead");
     await je.deleteOne();
     return { deleted: true, je_no: je.je_no };
   }
@@ -570,7 +599,7 @@ class JournalEntryService {
         source_ref:     meta.source_ref  || null,
         source_type:    meta.source_type || "",
         source_no:      meta.source_no   || "",
-        status:         "approved",
+        status:         BILL_STATUS.APPROVED,
         is_posted:      true,
         approved_at:    new Date(),
         created_by:     meta.created_by  || null,

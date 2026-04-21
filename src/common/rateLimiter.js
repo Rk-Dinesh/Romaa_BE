@@ -16,6 +16,8 @@ export function createRateLimiter({ windowMs = 15 * 60 * 1000, max = 10, message
 
     record.count++;
     if (record.count > max) {
+      const retryAfterSec = Math.ceil((record.resetAt - now) / 1000);
+      res.set("Retry-After", String(retryAfterSec));
       return res.status(429).json({ status: false, message });
     }
 

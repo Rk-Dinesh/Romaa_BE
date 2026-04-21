@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import CreditNoteModel from "./creditnote.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
@@ -423,17 +424,35 @@ class CreditNoteService {
 
   // PATCH /creditnote/approve/:id
   static async approve(id) {
-    const cn = await CreditNoteModel.findById(id);
-    if (!cn)                        throw new Error("Credit note not found");
-    if (cn.status === "approved")   throw new Error("Already approved");
+    // Attempt MongoDB session for atomicity (requires replica set).
+    // Falls back gracefully to no-session mode on standalone MongoDB.
+    let session = null;
+    try {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    } catch {
+      session = null;
+    }
 
-    cn.status = "approved";
-    await cn.save();
+    try {
+      const cn = await CreditNoteModel.findById(id).session(session || null);
+      if (!cn)                      throw new Error("Credit note not found");
+      if (cn.status === "approved") throw new Error("Already approved");
 
-    // Full approval flow: supplier ledger + GL + bill adjustment
-    await approveCN(cn);
+      cn.status = "approved";
+      await cn.save(session ? { session } : {});
 
-    return cn;
+      // Full approval flow: supplier ledger + GL + bill adjustment
+      await approveCN(cn);
+
+      if (session) await session.commitTransaction();
+      return cn;
+    } catch (err) {
+      if (session) await session.abortTransaction();
+      throw err;
+    } finally {
+      if (session) session.endSession();
+    }
   }
 }
 

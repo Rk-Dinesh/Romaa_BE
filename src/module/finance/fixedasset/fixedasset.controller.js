@@ -1,4 +1,5 @@
 import FixedAssetService from "./fixedasset.service.js";
+import { paginatedResponse } from "../../../common/App.helperFunction.js";
 
 export const create = async (req, res) => {
   try {
@@ -12,8 +13,13 @@ export const create = async (req, res) => {
 export const getList = async (req, res) => {
   try {
     const { page, limit, status, category, tender_id, q } = req.query;
-    const data = await FixedAssetService.getList({ page, limit, status, category, tender_id, q });
-    res.status(200).json({ status: true, data });
+    const result = await FixedAssetService.getList({ page, limit, status, category, tender_id, q });
+    return paginatedResponse(res, {
+      data:  result.rows,
+      page:  result.page,
+      limit: result.limit,
+      total: result.total,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
