@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { verifyJWT } from "../../../common/Auth.middlware.js";
+import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 import {
   create, getList, getById, update, approve, archive, remove,
   variance, varianceByTender,
@@ -7,16 +7,16 @@ import {
 
 const router = Router();
 
-router.get   ("/list",                 verifyJWT, getList);
-router.post  ("/create",               verifyJWT, create);
-router.get   ("/variance/by-tender",   verifyJWT, varianceByTender);
-router.get   ("/variance/:id",         verifyJWT, variance);
+router.get   ("/list",                 verifyJWT, verifyPermission("finance", "budgets", "read"),   getList);
+router.post  ("/create",               verifyJWT, verifyPermission("finance", "budgets", "create"), create);
+router.get   ("/variance/by-tender",   verifyJWT, verifyPermission("finance", "budgets", "read"),   varianceByTender);
+router.get   ("/variance/:id",         verifyJWT, verifyPermission("finance", "budgets", "read"),   variance);
 
-router.patch ("/update/:id",           verifyJWT, update);
-router.patch ("/:id/approve",          verifyJWT, approve);
-router.patch ("/:id/archive",          verifyJWT, archive);
+router.patch ("/update/:id",           verifyJWT, verifyPermission("finance", "budgets", "edit"),   update);
+router.patch ("/:id/approve",          verifyJWT, verifyPermission("finance", "budgets", "edit"),   approve);
+router.patch ("/:id/archive",          verifyJWT, verifyPermission("finance", "budgets", "edit"),   archive);
 
-router.delete("/:id",                  verifyJWT, remove);
-router.get   ("/:id",                  verifyJWT, getById);
+router.delete("/:id",                  verifyJWT, verifyPermission("finance", "budgets", "delete"), remove);
+router.get   ("/:id",                  verifyJWT, verifyPermission("finance", "budgets", "read"),   getById);
 
 export default router;

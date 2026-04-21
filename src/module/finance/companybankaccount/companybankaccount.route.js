@@ -15,7 +15,7 @@ const companyBankAccountRouter = Router();
 companyBankAccountRouter.get(
   "/list",
   verifyJWT,
-  // verifyPermission("finance", "companybankaccount", "read"),
+  verifyPermission("finance", "company_bank_details", "read"),
   getAll
 );
 
@@ -23,7 +23,7 @@ companyBankAccountRouter.get(
 companyBankAccountRouter.get(
   "/by-code/:code",
   verifyJWT,
-  // verifyPermission("finance", "companybankaccount", "read"),
+  verifyPermission("finance", "company_bank_details", "read"),
   getByCode
 );
 
@@ -31,7 +31,7 @@ companyBankAccountRouter.get(
 companyBankAccountRouter.post(
   "/create",
   verifyJWT,
-  // verifyPermission("finance", "companybankaccount", "create"),
+  verifyPermission("finance", "company_bank_details", "create"),
   create
 );
 
@@ -39,7 +39,7 @@ companyBankAccountRouter.post(
 companyBankAccountRouter.patch(
   "/update/:id",
   verifyJWT,
-  // verifyPermission("finance", "companybankaccount", "edit"),
+  verifyPermission("finance", "company_bank_details", "edit"),
   update
 );
 
@@ -47,7 +47,7 @@ companyBankAccountRouter.patch(
 companyBankAccountRouter.delete(
   "/delete/:id",
   verifyJWT,
-  // verifyPermission("finance", "companybankaccount", "delete"),
+  verifyPermission("finance", "company_bank_details", "delete"),
   softDelete
 );
 
@@ -55,7 +55,7 @@ companyBankAccountRouter.delete(
 companyBankAccountRouter.get(
   "/:id",
   verifyJWT,
-  // verifyPermission("finance", "companybankaccount", "read"),
+  verifyPermission("finance", "company_bank_details", "read"),
   getById
 );
 

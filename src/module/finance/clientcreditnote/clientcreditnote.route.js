@@ -13,10 +13,10 @@ import {
 const clientCNRouter = Router();
 
 const auth   = verifyJWT;
-const read   = verifyPermission("finance", "clientbilling", "read");
-const create = verifyPermission("finance", "clientbilling", "create");
-const edit   = verifyPermission("finance", "clientbilling", "edit");
-const del    = verifyPermission("finance", "clientbilling", "delete");
+const read   = verifyPermission("finance", "debit_credit_note", "read");
+const create = verifyPermission("finance", "debit_credit_note", "create");
+const edit   = verifyPermission("finance", "debit_credit_note", "edit");
+const del    = verifyPermission("finance", "debit_credit_note", "delete");
 
 clientCNRouter.get("/list",          auth, read,   getList);
 clientCNRouter.get("/:id",           auth, read,   getById);

@@ -37,6 +37,9 @@ const weeklyBillingTransactionSchema = new mongoose.Schema(
       enum: ["Generated", "Pending", "Approved", "Cancelled"],
       default: "Generated",
     },
+    is_deleted: { type: Boolean, default: false },
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
   },
   { timestamps: true }
 );

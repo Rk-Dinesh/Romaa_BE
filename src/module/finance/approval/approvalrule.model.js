@@ -24,8 +24,9 @@ const ApprovalRuleSchema = new mongoose.Schema(
     source_type:  { type: String, required: true, index: true },
     thresholds:   { type: [ThresholdSchema], default: [] },
     is_active:    { type: Boolean, default: true },
-    created_by:   { type: String, default: "" },
-    updated_by:   { type: String, default: "" },
+    created_by:   { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by:   { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    is_deleted:   { type: Boolean, default: false },
   },
   { timestamps: true },
 );

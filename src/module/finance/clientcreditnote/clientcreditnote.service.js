@@ -50,7 +50,7 @@ class ClientCNService {
 
   // GET /clientcreditnote/list
   static async getList(filters = {}) {
-    const query = {};
+    const query = { is_deleted: { $ne: true } };
     if (filters.tender_id)  query.tender_id  = filters.tender_id;
     if (filters.client_id)  query.client_id  = filters.client_id;
     if (filters.bill_id)    query.bill_id    = filters.bill_id;

@@ -72,6 +72,11 @@ const ClientCNSchema = new mongoose.Schema(
     // ── Journal Entry link (set on approval) ─────────────────────────────────
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
+
+    // ── Audit fields ──────────────────────────────────────────────────────────
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    is_deleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

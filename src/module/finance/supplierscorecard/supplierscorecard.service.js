@@ -61,7 +61,7 @@ class SupplierScorecardService {
 
   // GET /supplier-scorecard/vendors?from=&to=
   static async vendors({ from_date, to_date } = {}) {
-    const q = { status: "approved" };
+    const q = { status: "approved", is_deleted: { $ne: true } };
     if (from_date || to_date) {
       q.doc_date = {};
       if (from_date) q.doc_date.$gte = new Date(from_date);
@@ -177,7 +177,7 @@ class SupplierScorecardService {
 
   // GET /supplier-scorecard/contractors?from=&to=
   static async contractors({ from_date, to_date } = {}) {
-    const q = { status: "Approved" };
+    const q = { status: "Approved", is_deleted: { $ne: true } };
     if (from_date || to_date) {
       q.bill_date = {};
       if (from_date) q.bill_date.$gte = new Date(from_date);
@@ -251,7 +251,7 @@ class SupplierScorecardService {
 
     const { rows } = await this.vendors({ from_date, to_date });
     const row = rows.find((r) => r.vendor_id === vendor_id);
-    const q = { vendor_id, status: "approved" };
+    const q = { vendor_id, status: "approved", is_deleted: { $ne: true } };
     if (from_date || to_date) {
       q.doc_date = {};
       if (from_date) q.doc_date.$gte = new Date(from_date);
@@ -275,7 +275,7 @@ class SupplierScorecardService {
 
     const { rows } = await this.contractors({ from_date, to_date });
     const row = rows.find((r) => r.contractor_id === contractor_id);
-    const q = { contractor_id, status: "Approved" };
+    const q = { contractor_id, status: "Approved", is_deleted: { $ne: true } };
     if (from_date || to_date) {
       q.bill_date = {};
       if (from_date) q.bill_date.$gte = new Date(from_date);

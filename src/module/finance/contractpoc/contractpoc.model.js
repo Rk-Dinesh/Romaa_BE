@@ -52,8 +52,9 @@ const ContractPOCSchema = new mongoose.Schema(
       _id: false,
     }],
 
-    created_by: { type: String, default: "" },
-    updated_by: { type: String, default: "" },
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    is_deleted: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

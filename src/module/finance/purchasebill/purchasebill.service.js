@@ -173,7 +173,7 @@ class PurchaseBillService {
   // All filters are optional and combinable.
   // Returns summary fields only — line_items / tax_groups excluded.
   static async getBills(filters = {}) {
-    const query = {};
+    const query = { is_deleted: { $ne: true } };
 
     if (filters.doc_id)    query.doc_id    = filters.doc_id;
     if (filters.tender_id) query.tender_id = filters.tender_id;
@@ -229,7 +229,7 @@ class PurchaseBillService {
   // GET /purchasebill/by-tender/:tenderId?status=&vendor_id=&from_date=&to_date=&invoice_no=
   // All bills for a tender with full details.
   static async getBillsByTender(tenderId, filters = {}) {
-    const query = { tender_id: tenderId };
+    const query = { tender_id: tenderId, is_deleted: { $ne: true } };
 
     if (filters.status)     query.status     = filters.status;
     if (filters.vendor_id)  query.vendor_id  = filters.vendor_id;
@@ -271,7 +271,7 @@ class PurchaseBillService {
   // Aggregate totals + status breakdown for a single tender.
   static async getTenderSummary(tenderId) {
     const [agg] = await PurchaseBillModel.aggregate([
-      { $match: { tender_id: tenderId } },
+      { $match: { tender_id: tenderId, is_deleted: { $ne: true } } },
       {
         $facet: {
           totals: [
@@ -319,7 +319,7 @@ class PurchaseBillService {
   static async getAllTendersSummary() {
     return await PurchaseBillModel.aggregate([
       // Only non-draft bills contribute to financials
-      { $match: { status: { $ne: "draft" } } },
+      { $match: { status: { $ne: "draft" }, is_deleted: { $ne: true } } },
       {
         $group: {
           _id:               "$tender_id",

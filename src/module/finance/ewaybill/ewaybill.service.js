@@ -245,7 +245,7 @@ class EwayBillService {
   }
 
   static async list({ page = 1, limit = 50, status, source_type, supplier_gstin, from_date, to_date, q } = {}) {
-    const filter = {};
+    const filter = { is_deleted: { $ne: true } };
     if (status)          filter.status          = status;
     if (source_type)     filter.source_type     = source_type;
     if (supplier_gstin)  filter.supplier_gstin  = supplier_gstin;

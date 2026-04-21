@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { verifyJWT } from "../../../common/Auth.middlware.js";
+import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 import {
   getPayableOutstanding,
   getReceivableOutstanding,
@@ -15,18 +15,18 @@ import {
 const router = Router();
 
 // ── Outstanding / summary ───────────────────────────────────────────────────
-router.get ("/payable/outstanding",    verifyJWT, getPayableOutstanding);
-router.get ("/receivable/outstanding", verifyJWT, getReceivableOutstanding);
-router.get ("/summary",                verifyJWT, getSummary);
+router.get ("/payable/outstanding",    verifyJWT, verifyPermission("finance", "retention", "read"),   getPayableOutstanding);
+router.get ("/receivable/outstanding", verifyJWT, verifyPermission("finance", "retention", "read"),   getReceivableOutstanding);
+router.get ("/summary",                verifyJWT, verifyPermission("finance", "retention", "read"),   getSummary);
 
 // ── Releases ────────────────────────────────────────────────────────────────
-router.post("/release",               verifyJWT, createRelease);
-router.get ("/release/list",          verifyJWT, listReleases);
-router.get ("/release/:id",           verifyJWT, getReleaseById);
-router.post("/release/:id/approve",   verifyJWT, approveRelease);
-router.post("/release/:id/cancel",    verifyJWT, cancelRelease);
+router.post("/release",               verifyJWT, verifyPermission("finance", "retention", "create"), createRelease);
+router.get ("/release/list",          verifyJWT, verifyPermission("finance", "retention", "read"),   listReleases);
+router.get ("/release/:id",           verifyJWT, verifyPermission("finance", "retention", "read"),   getReleaseById);
+router.post("/release/:id/approve",   verifyJWT, verifyPermission("finance", "retention", "edit"),   approveRelease);
+router.post("/release/:id/cancel",    verifyJWT, verifyPermission("finance", "retention", "edit"),   cancelRelease);
 
 // ── Releases tied to a specific bill ────────────────────────────────────────
-router.get ("/bill/:id",              verifyJWT, getReleasesForBill);
+router.get ("/bill/:id",              verifyJWT, verifyPermission("finance", "retention", "read"),   getReleasesForBill);
 
 export default router;

@@ -48,7 +48,7 @@ class BankTransferService {
 
   // GET /banktransfer/list
   static async getList(filters = {}) {
-    const query = {};
+    const query = { is_deleted: { $ne: true } };
     if (filters.status)            query.status            = filters.status;
     if (filters.from_account_code) query.from_account_code = filters.from_account_code;
     if (filters.to_account_code)   query.to_account_code   = filters.to_account_code;

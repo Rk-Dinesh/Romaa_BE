@@ -798,6 +798,7 @@ class ReportsService {
     const arBills = await ClientBillingModel.find({
       balance_due: { $gt: 0 },
       status:      { $in: ["Approved", "Pending"] },
+      is_deleted:  { $ne: true },
     })
       .select("bill_no bill_date client_id client_name balance_due")
       .lean();
@@ -845,6 +846,7 @@ class ReportsService {
     const apBills = await PurchaseBillModel.find({
       balance_due: { $gt: 0 },
       status:      { $in: ["Approved", "Pending"] },
+      is_deleted:  { $ne: true },
     })
       .select("bill_no doc_date due_date vendor_id vendor_name balance_due")
       .lean();
@@ -867,6 +869,7 @@ class ReportsService {
     const wbBills = await WeeklyBillingModel.find({
       balance_due: { $gt: 0 },
       status:      { $in: ["Approved", "Pending"] },
+      is_deleted:  { $ne: true },
     })
       .select("bill_no bill_date contractor_id contractor_name balance_due")
       .lean();
@@ -1608,10 +1611,12 @@ class ReportsService {
       ClientBillingModel.find({
         status: "Approved",
         bill_date: { $gte: from, $lte: to },
+        is_deleted: { $ne: true },
       }).lean(),
       ClientCNModel.find({
         status: "Approved",
         ccn_date: { $gte: from, $lte: to },
+        is_deleted: { $ne: true },
       }).lean(),
     ]);
 
@@ -1761,14 +1766,17 @@ class ReportsService {
       PurchaseBillModel.find({
         status: "approved",
         doc_date: { $gte: from, $lte: to },
+        is_deleted: { $ne: true },
       }).lean(),
       DebitNoteModel.find({
         status: "approved",
         dn_date: { $gte: from, $lte: to },
+        is_deleted: { $ne: true },
       }).lean(),
       ExpenseVoucherModel.find({
         status:  "approved",
         ev_date: { $gte: from, $lte: to },
+        is_deleted: { $ne: true },
       }).lean(),
     ]);
 

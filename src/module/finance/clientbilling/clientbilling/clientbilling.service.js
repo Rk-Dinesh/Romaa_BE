@@ -458,7 +458,7 @@ class BillingService {
 
   // --- Get History (Timeline View) ---
   static async getBillHistory(tender_id) {
-    return await BillingModel.find({ tender_id })
+    return await BillingModel.find({ tender_id, is_deleted: { $ne: true } })
       .sort({ createdAt: 1 })
       .select(
         "bill_id bill_date tender_id tender_name client_id client_name " +

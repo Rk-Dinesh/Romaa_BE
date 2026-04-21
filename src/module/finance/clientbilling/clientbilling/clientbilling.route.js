@@ -27,7 +27,7 @@ billingRouter.get('/api/bill', getBillById);
 billingRouter.delete(
   '/api/delete',
   verifyJWT,
-//  verifyPermission("finance", "clientbilling", "delete"),
+  verifyPermission("finance", "client_billing", "delete"),
   deleteBill
 );
 
@@ -35,7 +35,7 @@ billingRouter.delete(
 billingRouter.patch(
   '/api/approve/:id',
   verifyJWT,
-//  verifyPermission("finance", "clientbilling", "edit"),
+  verifyPermission("finance", "client_billing", "edit"),
   approveBill
 );
 

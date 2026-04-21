@@ -132,8 +132,10 @@ const ExpenseVoucherSchema = new mongoose.Schema(
 
     // ── Audit ─────────────────────────────────────────────────────────────
     created_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
+    updated_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
     approved_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
     approved_at: { type: Date, default: null },
+    is_deleted:  { type: Boolean, default: false },
   },
   { timestamps: true }
 );

@@ -212,6 +212,7 @@ function bucketize(items, asOf) {
 async function loadFilingIndex(fys) {
   const rows = await StatutoryDeadlineFilingModel.find({
     financial_year: { $in: fys },
+    is_deleted: { $ne: true },
   }).lean();
   const map = {};
   for (const r of rows) {
@@ -312,7 +313,7 @@ class StatutoryDeadlineService {
   }
 
   static async listFilings({ financial_year, category, form_name } = {}) {
-    const q = {};
+    const q = { is_deleted: { $ne: true } };
     if (financial_year) q.financial_year = financial_year;
     if (category)       q.category       = category;
     if (form_name)      q.form_name      = form_name;

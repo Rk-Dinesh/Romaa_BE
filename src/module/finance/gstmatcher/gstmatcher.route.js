@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { verifyJWT } from "../../../common/Auth.middlware.js";
+import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 import {
   upload,
   list,
@@ -13,16 +13,16 @@ import {
 const router = Router();
 
 // ── Uploads ─────────────────────────────────────────────────────────────────
-router.post  ("/upload",        verifyJWT, upload);
-router.get   ("/list",          verifyJWT, list);
-router.get   ("/:id",           verifyJWT, getById);
-router.delete("/:id",           verifyJWT, deleteUpload);
+router.post  ("/upload",        verifyJWT, verifyPermission("finance", "gst_matcher", "create"), upload);
+router.get   ("/list",          verifyJWT, verifyPermission("finance", "gst_matcher", "read"),   list);
+router.get   ("/:id",           verifyJWT, verifyPermission("finance", "gst_matcher", "read"),   getById);
+router.delete("/:id",           verifyJWT, verifyPermission("finance", "gst_matcher", "delete"), deleteUpload);
 
 // ── Match runner ────────────────────────────────────────────────────────────
-router.post  ("/match",         verifyJWT, runMatch);
+router.post  ("/match",         verifyJWT, verifyPermission("finance", "gst_matcher", "edit"),   runMatch);
 
 // ── Manual link/unlink ──────────────────────────────────────────────────────
-router.post  ("/:id/link",      verifyJWT, manualLink);
-router.post  ("/:id/unlink",    verifyJWT, manualUnlink);
+router.post  ("/:id/link",      verifyJWT, verifyPermission("finance", "gst_matcher", "edit"),   manualLink);
+router.post  ("/:id/unlink",    verifyJWT, verifyPermission("finance", "gst_matcher", "edit"),   manualUnlink);
 
 export default router;

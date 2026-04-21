@@ -22,6 +22,11 @@ const StatutoryDeadlineFilingSchema = new mongoose.Schema(
     remarks:        { type: String, default: "" },
 
     filed_by:       { type: String, default: "" },
+
+    // ── Audit fields ──────────────────────────────────────────────────────
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    is_deleted: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

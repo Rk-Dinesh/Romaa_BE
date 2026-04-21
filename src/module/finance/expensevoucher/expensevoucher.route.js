@@ -18,7 +18,7 @@ const expenseVoucherRouter = Router();
 expenseVoucherRouter.get(
   "/next-no",
   verifyJWT,
- // verifyPermission("finance", "expensevoucher", "read"),
+  verifyPermission("finance", "expense_voucher", "read"),
   getNextEvNo,
 );
 
@@ -26,7 +26,7 @@ expenseVoucherRouter.get(
 expenseVoucherRouter.get(
   "/list",
   verifyJWT,
- // verifyPermission("finance", "expensevoucher", "read"),
+  verifyPermission("finance", "expense_voucher", "read"),
   getList,
 );
 
@@ -34,7 +34,7 @@ expenseVoucherRouter.get(
 expenseVoucherRouter.get(
   "/by-tender/:tenderId",
   verifyJWT,
- // verifyPermission("finance", "expensevoucher", "read"),
+  verifyPermission("finance", "expense_voucher", "read"),
   getByTender,
 );
 
@@ -42,7 +42,7 @@ expenseVoucherRouter.get(
 expenseVoucherRouter.get(
   "/by-employee/:employeeId",
   verifyJWT,
- // verifyPermission("finance", "expensevoucher", "read"),
+  verifyPermission("finance", "expense_voucher", "read"),
   getByEmployee,
 );
 
@@ -50,7 +50,7 @@ expenseVoucherRouter.get(
 expenseVoucherRouter.post(
   "/create",
   verifyJWT,
- // verifyPermission("finance", "expensevoucher", "create"),
+  verifyPermission("finance", "expense_voucher", "create"),
   create,
 );
 
@@ -58,7 +58,7 @@ expenseVoucherRouter.post(
 expenseVoucherRouter.patch(
   "/approve/:id",
   verifyJWT,
- // verifyPermission("finance", "expensevoucher", "edit"),
+  verifyPermission("finance", "expense_voucher", "edit"),
   approve,
 );
 
@@ -66,7 +66,7 @@ expenseVoucherRouter.patch(
 expenseVoucherRouter.patch(
   "/update/:id",
   verifyJWT,
- // verifyPermission("finance", "expensevoucher", "edit"),
+  verifyPermission("finance", "expense_voucher", "edit"),
   update,
 );
 
@@ -74,7 +74,7 @@ expenseVoucherRouter.patch(
 expenseVoucherRouter.delete(
   "/delete/:id",
   verifyJWT,
- // verifyPermission("finance", "expensevoucher", "delete"),
+  verifyPermission("finance", "expense_voucher", "delete"),
   deleteDraft,
 );
 
@@ -82,7 +82,7 @@ expenseVoucherRouter.delete(
 expenseVoucherRouter.get(
   "/:id",
   verifyJWT,
- // verifyPermission("finance", "expensevoucher", "read"),
+  verifyPermission("finance", "expense_voucher", "read"),
   getById,
 );
 

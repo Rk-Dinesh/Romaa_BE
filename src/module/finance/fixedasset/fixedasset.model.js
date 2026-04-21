@@ -141,7 +141,9 @@ const FixedAssetSchema = new mongoose.Schema(
     },
 
     narration:   { type: String, default: "" },
-    created_by:  { type: String, default: "" },
+    created_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    is_deleted:  { type: Boolean, default: false },
   },
   { timestamps: true }
 );

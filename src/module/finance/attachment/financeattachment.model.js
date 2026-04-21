@@ -47,9 +47,11 @@ const FinanceAttachmentSchema = new mongoose.Schema(
     tags:        { type: [String], default: [] },
 
     // ── Audit ───────────────────────────────────────────────────────────
-    uploaded_by:   { type: String, default: "" },     // employee _id
+    uploaded_by:   { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     uploaded_by_name: { type: String, default: "" },
     uploaded_at:   { type: Date,   default: Date.now },
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
 
     // Soft delete — never physically remove (audit trail requirement)
     is_deleted:    { type: Boolean, default: false },

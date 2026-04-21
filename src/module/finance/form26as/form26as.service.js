@@ -122,7 +122,7 @@ class Form26ASService {
   }
 
   static async list({ financial_year, quarter, deductor_tan } = {}) {
-    const q = {};
+    const q = { is_deleted: { $ne: true } };
     if (financial_year) q.financial_year = financial_year;
     if (quarter)        q.quarter = quarter;
     if (deductor_tan)   q.deductor_tan = deductor_tan.trim().toUpperCase();

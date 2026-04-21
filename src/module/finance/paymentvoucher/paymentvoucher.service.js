@@ -216,7 +216,7 @@ class PaymentVoucherService {
 
   // GET /paymentvoucher/list
   static async getList(filters = {}) {
-    const query = {};
+    const query = { is_deleted: { $ne: true } };
     if (filters.supplier_type) query.supplier_type = filters.supplier_type;
     if (filters.supplier_id)   query.supplier_id   = filters.supplier_id;
     if (filters.tender_id)     query.tender_id     = filters.tender_id;
@@ -265,7 +265,7 @@ class PaymentVoucherService {
 
   // GET /paymentvoucher/by-supplier/:supplierId
   static async getBySupplier(supplierId, filters = {}) {
-    const query = { supplier_id: supplierId };
+    const query = { supplier_id: supplierId, is_deleted: { $ne: true } };
     if (filters.supplier_type) query.supplier_type = filters.supplier_type;
     if (filters.status)        query.status        = filters.status;
     if (filters.from_date || filters.to_date) {
@@ -292,7 +292,7 @@ class PaymentVoucherService {
 
   // GET /paymentvoucher/by-tender/:tenderId
   static async getByTender(tenderId, filters = {}) {
-    const query = { tender_id: tenderId };
+    const query = { tender_id: tenderId, is_deleted: { $ne: true } };
     if (filters.supplier_id)   query.supplier_id   = filters.supplier_id;
     if (filters.supplier_type) query.supplier_type = filters.supplier_type;
     if (filters.status)        query.status        = filters.status;

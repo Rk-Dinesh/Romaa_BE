@@ -39,43 +39,43 @@ const weeklyBillingRouter = Router();
 weeklyBillingRouter.get(
   "/api/list/:tenderId",
   verifyJWT,
- // verifyPermission("finance", "weeklybilling", "read"),
+  verifyPermission("finance", "contractor_bill", "read"),
   getBillingList,
 );
 weeklyBillingRouter.get(
   "/api/detail/:billNo",
   verifyJWT,
-//  verifyPermission("finance", "weeklybilling", "read"),
+  verifyPermission("finance", "contractor_bill", "read"),
   getBillDetail,
 );
 weeklyBillingRouter.get(
   "/api/sub-bill/:subBillNo",
   verifyJWT,
-//  verifyPermission("finance", "weeklybilling", "read"),
+  verifyPermission("finance", "contractor_bill", "read"),
   getSubBillTransactions,
 );
 weeklyBillingRouter.get(
   "/api/contractor-summary/:tenderId",
   verifyJWT,
- // verifyPermission("finance", "weeklybilling", "read"),
+  verifyPermission("finance", "contractor_bill", "read"),
   getContractorSummary,
 );
 weeklyBillingRouter.post(
   "/api/generate",
   verifyJWT,
- // verifyPermission("finance", "weeklybilling", "create"),
+  verifyPermission("finance", "contractor_bill", "create"),
   generateBill,
 );
 weeklyBillingRouter.patch(
   "/api/approve/:billId",
   verifyJWT,
-// verifyPermission("finance", "weeklybilling", "edit"),
+  verifyPermission("finance", "contractor_bill", "edit"),
   approveBill,
 );
 weeklyBillingRouter.patch(
   "/api/status/:billId",
   verifyJWT,
-//  verifyPermission("finance", "weeklybilling", "edit"),
+  verifyPermission("finance", "contractor_bill", "edit"),
   updateStatus,
 );
 

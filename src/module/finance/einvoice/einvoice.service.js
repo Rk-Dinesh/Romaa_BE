@@ -352,7 +352,7 @@ class EInvoiceService {
   }
 
   static async list({ page = 1, limit = 50, status, doc_type, source_no, from_date, to_date, supplier_gstin } = {}) {
-    const filter = {};
+    const filter = { is_deleted: { $ne: true } };
     if (status)          filter.status = status;
     if (doc_type)        filter.doc_type = doc_type;
     if (source_no)       filter.source_no = source_no;

@@ -113,7 +113,7 @@ class BankReconciliationService {
 
   // GET /bankreconciliation/list
   static async getList(filters = {}) {
-    const query = {};
+    const query = { is_deleted: { $ne: true } };
     if (filters.status)            query.status            = filters.status;
     if (filters.bank_account_code) query.bank_account_code = filters.bank_account_code;
     if (filters.statement_no)      query.statement_no      = filters.statement_no;

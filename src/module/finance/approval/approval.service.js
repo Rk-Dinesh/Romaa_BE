@@ -169,7 +169,7 @@ class ApprovalService {
   }
 
   static async list({ source_type, status, page = 1, limit = 20 } = {}) {
-    const q = {};
+    const q = { is_deleted: { $ne: true } };
     if (source_type) q.source_type = source_type;
     if (status)      q.status      = status;
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * Math.max(1, parseInt(limit, 10));

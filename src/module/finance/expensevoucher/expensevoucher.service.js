@@ -156,7 +156,7 @@ class ExpenseVoucherService {
 
   // GET /expensevoucher/list
   static async getList(filters = {}) {
-    const query = {};
+    const query = { is_deleted: { $ne: true } };
     if (filters.status)        query.status        = filters.status;
     if (filters.payment_mode)  query.payment_mode  = filters.payment_mode;
     if (filters.payee_type)    query.payee_type    = filters.payee_type;
@@ -202,6 +202,7 @@ class ExpenseVoucherService {
   // GET /expensevoucher/by-tender/:tenderId
   static async getByTender(tenderId, filters = {}) {
     const query = {
+      is_deleted: { $ne: true },
       $or: [{ tender_id: tenderId }, { "lines.tender_id": tenderId }],
     };
     if (filters.status) query.status = filters.status;
@@ -210,7 +211,7 @@ class ExpenseVoucherService {
 
   // GET /expensevoucher/by-employee/:employeeId
   static async getByEmployee(employeeId, filters = {}) {
-    const query = { employee_id: employeeId };
+    const query = { employee_id: employeeId, is_deleted: { $ne: true } };
     if (filters.status) query.status = filters.status;
     if (filters.from_date || filters.to_date) {
       query.ev_date = {};

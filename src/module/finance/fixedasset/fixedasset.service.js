@@ -158,7 +158,7 @@ class FixedAssetService {
   }
 
   static async getList({ page = 1, limit = 50, status, category, tender_id, q } = {}) {
-    const filter = {};
+    const filter = { is_deleted: { $ne: true } };
     if (status)    filter.status   = status;
     if (category)  filter.category = category;
     if (tender_id) filter.tender_id = tender_id;
@@ -309,7 +309,7 @@ class FixedAssetService {
   static async postMonthlyDepreciation({ period_date } = {}) {
     const targetDate = period_date ? new Date(period_date) : new Date();
 
-    const assets = await FixedAssetModel.find({ status: "active" }).lean();
+    const assets = await FixedAssetModel.find({ status: "active", is_deleted: { $ne: true } }).lean();
     let posted = 0, skipped = 0, failed = 0;
     const details = [];
 
@@ -423,7 +423,7 @@ class FixedAssetService {
   static async postItDepreciationForAllAssets({ financial_year } = {}) {
     if (!financial_year) throw new Error("financial_year is required (e.g. '25-26')");
 
-    const assets = await FixedAssetModel.find({ status: { $ne: "disposed" } }).lean();
+    const assets = await FixedAssetModel.find({ status: { $ne: "disposed" }, is_deleted: { $ne: true } }).lean();
     let posted = 0, skipped = 0, failed = 0;
     const details = [];
 
@@ -450,7 +450,7 @@ class FixedAssetService {
   static async getDualDepreciationReport({ financial_year, as_of_date, category, status } = {}) {
     const asOf = as_of_date ? new Date(as_of_date) : new Date();
 
-    const filter = {};
+    const filter = { is_deleted: { $ne: true } };
     if (status)   filter.status   = status;
     if (category) filter.category = category;
 
@@ -629,7 +629,7 @@ class FixedAssetService {
   static async getRegister({ as_of_date, category, status = "active" } = {}) {
     const asOf = as_of_date ? new Date(as_of_date) : new Date();
 
-    const filter = {};
+    const filter = { is_deleted: { $ne: true } };
     if (status)   filter.status   = status;
     if (category) filter.category = category;
 

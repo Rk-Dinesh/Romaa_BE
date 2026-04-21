@@ -61,9 +61,11 @@ const BudgetSchema = new mongoose.Schema(
     },
 
     narration:   { type: String, default: "" },
-    created_by:  { type: String, default: "" },
+    created_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     approved_by: { type: String, default: "" },
     approved_at: { type: Date,   default: null },
+    is_deleted:  { type: Boolean, default: false },
   },
   { timestamps: true }
 );

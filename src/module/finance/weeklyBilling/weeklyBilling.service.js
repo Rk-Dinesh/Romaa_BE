@@ -50,7 +50,7 @@ class WeeklyBillingService {
     const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
     const skip  = (page - 1) * limit;
 
-    const query = { tender_id: tenderId };
+    const query = { tender_id: tenderId, is_deleted: { $ne: true } };
 
     if (filters.search) {
       const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

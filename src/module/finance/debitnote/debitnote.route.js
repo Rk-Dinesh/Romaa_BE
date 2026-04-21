@@ -8,7 +8,7 @@ const debitNoteRouter = Router();
 debitNoteRouter.get(
   "/next-no",
   verifyJWT,
- // verifyPermission("finance", "debitnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getNextDnNo
 );
 
@@ -16,7 +16,7 @@ debitNoteRouter.get(
 debitNoteRouter.get(
   "/list",
   verifyJWT,
- // verifyPermission("finance", "debitnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getList
 );
 
@@ -24,7 +24,7 @@ debitNoteRouter.get(
 debitNoteRouter.get(
   "/by-supplier/:supplierId",
   verifyJWT,
- // verifyPermission("finance", "debitnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getBySupplier
 );
 
@@ -32,7 +32,7 @@ debitNoteRouter.get(
 debitNoteRouter.get(
   "/by-tender/:tenderId",
   verifyJWT,
- // verifyPermission("finance", "debitnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getByTender
 );
 
@@ -40,7 +40,7 @@ debitNoteRouter.get(
 debitNoteRouter.post(
   "/create",
   verifyJWT,
- // verifyPermission("finance", "debitnote", "create"),
+  verifyPermission("finance", "debit_credit_note", "create"),
   create
 );
 
@@ -48,7 +48,7 @@ debitNoteRouter.post(
 debitNoteRouter.patch(
   "/approve/:id",
   verifyJWT,
-//  verifyPermission("finance", "debitnote", "edit"),
+  verifyPermission("finance", "debit_credit_note", "edit"),
   approve
 );
 
@@ -56,7 +56,7 @@ debitNoteRouter.patch(
 debitNoteRouter.patch(
   "/update/:id",
   verifyJWT,
-//  verifyPermission("finance", "debitnote", "edit"),
+  verifyPermission("finance", "debit_credit_note", "edit"),
   update
 );
 
@@ -64,7 +64,7 @@ debitNoteRouter.patch(
 debitNoteRouter.delete(
   "/delete/:id",
   verifyJWT,
-//  verifyPermission("finance", "debitnote", "delete"),
+  verifyPermission("finance", "debit_credit_note", "delete"),
   deleteDraft
 );
 
@@ -72,7 +72,7 @@ debitNoteRouter.delete(
 debitNoteRouter.get(
   "/:id",
   verifyJWT,
-//  verifyPermission("finance", "debitnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getById
 );
 

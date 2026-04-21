@@ -18,7 +18,7 @@ const journalEntryRouter = Router();
 journalEntryRouter.get(
   "/next-no",
   verifyJWT,
-//  verifyPermission("finance", "journalentry", "read"),
+  verifyPermission("finance", "journal_entry", "read"),
   getNextJeNo
 );
 
@@ -26,7 +26,7 @@ journalEntryRouter.get(
 journalEntryRouter.get(
   "/list",
   verifyJWT,
-//  verifyPermission("finance", "journalentry", "read"),
+  verifyPermission("finance", "journal_entry", "read"),
   getList
 );
 
@@ -34,7 +34,7 @@ journalEntryRouter.get(
 journalEntryRouter.post(
   "/process-auto-reversals",
   verifyJWT,
-//  verifyPermission("finance", "journalentry", "edit"),
+  verifyPermission("finance", "journal_entry", "edit"),
   processAutoReversals
 );
 
@@ -42,7 +42,7 @@ journalEntryRouter.post(
 journalEntryRouter.get(
   "/:id",
   verifyJWT,
-//  verifyPermission("finance", "journalentry", "read"),
+  verifyPermission("finance", "journal_entry", "read"),
   getById
 );
 
@@ -50,7 +50,7 @@ journalEntryRouter.get(
 journalEntryRouter.post(
   "/create",
   verifyJWT,
-//  verifyPermission("finance", "journalentry", "create"),
+  verifyPermission("finance", "journal_entry", "create"),
   create
 );
 
@@ -58,7 +58,7 @@ journalEntryRouter.post(
 journalEntryRouter.patch(
   "/approve/:id",
   verifyJWT,
-//  verifyPermission("finance", "journalentry", "edit"),
+  verifyPermission("finance", "journal_entry", "edit"),
   approve
 );
 
@@ -66,7 +66,7 @@ journalEntryRouter.patch(
 journalEntryRouter.post(
   "/reverse/:id",
   verifyJWT,
-//  verifyPermission("finance", "journalentry", "edit"),
+  verifyPermission("finance", "journal_entry", "edit"),
   reverse
 );
 
@@ -74,7 +74,7 @@ journalEntryRouter.post(
 journalEntryRouter.patch(
   "/update/:id",
   verifyJWT,
-//  verifyPermission("finance", "journalentry", "edit"),
+  verifyPermission("finance", "journal_entry", "edit"),
   update
 );
 
@@ -82,7 +82,7 @@ journalEntryRouter.patch(
 journalEntryRouter.delete(
   "/delete/:id",
   verifyJWT,
-//  verifyPermission("finance", "journalentry", "delete"),
+  verifyPermission("finance", "journal_entry", "delete"),
   deleteDraft
 );
 

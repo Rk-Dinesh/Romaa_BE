@@ -65,7 +65,8 @@ const WeeklyBillingSchema = new mongoose.Schema(
       default: "Generated",
     },
 
-    created_by:  { type: String, default: "Site Engineer" },
+    created_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     approved_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
     approved_at: { type: Date, default: null },
 
@@ -106,6 +107,9 @@ const WeeklyBillingSchema = new mongoose.Schema(
     // Set on approval — points to the auto-created double-entry JournalEntry.
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
+
+    // ── Soft delete ───────────────────────────────────────────────────────────
+    is_deleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

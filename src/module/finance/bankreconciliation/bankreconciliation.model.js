@@ -89,9 +89,11 @@ const BankReconciliationSchema = new mongoose.Schema(
     },
 
     narration:  { type: String, default: "" },
-    created_by: { type: String, default: "" },
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     closed_by:  { type: String, default: "" },
     closed_at:  { type: Date,   default: null },
+    is_deleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

@@ -115,7 +115,7 @@ class GstMatcherService {
 
   // ── List uploads ─────────────────────────────────────────────────────────
   static async list(filters = {}) {
-    const q = {};
+    const q = { is_deleted: { $ne: true } };
     if (filters.return_period) q.return_period = filters.return_period;
     if (filters.source)        q.source        = filters.source;
     if (filters.is_active !== undefined) {
@@ -172,6 +172,7 @@ class GstMatcherService {
     const bills = await PurchaseBillModel.find({
       status: "approved",
       doc_date: { $gte: from, $lte: to },
+      is_deleted: { $ne: true },
     }).lean();
 
     // Build index over bills: gstin → invNo → [bills]  (multiple matches possible

@@ -96,6 +96,11 @@ const Gstr2bUploadSchema = new mongoose.Schema(
     notes:       { type: String, default: "" },
 
     uploaded_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
+
+    // ── Audit fields ──────────────────────────────────────────────────────
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    is_deleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

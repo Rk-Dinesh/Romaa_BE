@@ -49,6 +49,11 @@ const ApprovalRequestSchema = new mongoose.Schema(
     rule_snapshot:      {
       min_amount: Number, max_amount: Number, label: String,
     },
+
+    // ── Audit fields ──────────────────────────────────────────────────────
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    is_deleted: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

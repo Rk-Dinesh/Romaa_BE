@@ -26,6 +26,10 @@ const LedgerSealSchema = new mongoose.Schema(
     chain_hash:    { type: String, required: true },   // H(prev_hash + content_hash)
 
     sealed_at:     { type: Date, default: Date.now },
+
+    // ── Audit fields ──────────────────────────────────────────────────────
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
   },
   { timestamps: true },
 );

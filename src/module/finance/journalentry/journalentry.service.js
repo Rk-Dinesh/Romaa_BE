@@ -186,7 +186,7 @@ class JournalEntryService {
 
   // GET /journalentry/list
   static async getList(filters = {}) {
-    const query = {};
+    const query = { is_deleted: { $ne: true } };
     if (filters.je_type)       query.je_type       = filters.je_type;
     if (filters.status)        query.status        = filters.status;
     if (filters.tender_id)     query.tender_id     = filters.tender_id;
@@ -501,7 +501,7 @@ class JournalEntryService {
       const totalDr = round2(rawLines.reduce((s, l) => s + (Number(l.debit_amt)  || 0), 0));
       const totalCr = round2(rawLines.reduce((s, l) => s + (Number(l.credit_amt) || 0), 0));
       if (totalDr !== totalCr) {
-        console.warn(`[JE] Auto-JE skipped for ${meta.source_no}: Dr ₹${totalDr} ≠ Cr ₹${totalCr}`);
+        logger.warn(`[JE] Auto-JE skipped for ${meta.source_no}: Dr ₹${totalDr} ≠ Cr ₹${totalCr}`);
         return null;
       }
 

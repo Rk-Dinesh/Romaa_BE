@@ -72,6 +72,11 @@ const LedgerEntrySchema = new mongoose.Schema(
     debit_amt:  { type: Number, default: 0 },
     credit_amt: { type: Number, default: 0 },
     // balance is NOT stored — computed at query time via running $sum
+
+    // ── Audit fields ──────────────────────────────────────────────────────
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    is_deleted: { type: Boolean, default: false },
   },
   { timestamps: true }
 );

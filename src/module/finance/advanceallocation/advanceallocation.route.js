@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { verifyJWT } from "../../../common/Auth.middlware.js";
+import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 import {
   getOutstandingPaid,
   getOutstandingReceived,
@@ -12,14 +12,14 @@ import {
 
 const router = Router();
 
-router.get ("/outstanding/paid",     verifyJWT, getOutstandingPaid);
-router.get ("/outstanding/received", verifyJWT, getOutstandingReceived);
-router.get ("/summary",              verifyJWT, getSummary);
+router.get ("/outstanding/paid",     verifyJWT, verifyPermission("finance", "advance_allocation", "read"),   getOutstandingPaid);
+router.get ("/outstanding/received", verifyJWT, verifyPermission("finance", "advance_allocation", "read"),   getOutstandingReceived);
+router.get ("/summary",              verifyJWT, verifyPermission("finance", "advance_allocation", "read"),   getSummary);
 
-router.post("/allocate",             verifyJWT, allocate);
-router.post("/unallocate",           verifyJWT, unallocate);
+router.post("/allocate",             verifyJWT, verifyPermission("finance", "advance_allocation", "create"), allocate);
+router.post("/unallocate",           verifyJWT, verifyPermission("finance", "advance_allocation", "edit"),   unallocate);
 
-router.get ("/voucher/:id",          verifyJWT, getVoucherAllocations);
-router.get ("/bill/:id",             verifyJWT, getBillSettlements);
+router.get ("/voucher/:id",          verifyJWT, verifyPermission("finance", "advance_allocation", "read"),   getVoucherAllocations);
+router.get ("/bill/:id",             verifyJWT, verifyPermission("finance", "advance_allocation", "read"),   getBillSettlements);
 
 export default router;

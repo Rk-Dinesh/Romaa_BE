@@ -144,7 +144,7 @@ class BudgetService {
 
   // GET /budget/list
   static async getList(filters = {}) {
-    const query = {};
+    const query = { is_deleted: { $ne: true } };
     if (filters.tender_id)      query.tender_id      = filters.tender_id;
     if (filters.financial_year) query.financial_year = filters.financial_year;
     if (filters.status)         query.status         = filters.status;

@@ -1,5 +1,6 @@
 import { parseFileToJson } from "../../../../../utils/parseFileToJson.js";
 import BillingService from "./clientbilling.service.js";
+import logger from "../../../../../config/logger.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';
@@ -70,7 +71,7 @@ export const uploadBillingCSV = async (req, res, next) => {
       try {
         fs.unlinkSync(filePath);
       } catch (cleanupErr) {
-        console.error("Error deleting file:", cleanupErr);
+        logger.error("Error deleting file:", cleanupErr);
       }
     }
   }
@@ -143,7 +144,7 @@ export const updateBillingCSV = async (req, res) => {
     res.status(code).json({ status: false, message: error.message });
   } finally {
     if (filePath && fs.existsSync(filePath)) {
-      try { fs.unlinkSync(filePath); } catch (e) { console.error("Cleanup error:", e); }
+      try { fs.unlinkSync(filePath); } catch (e) { logger.error("Cleanup error:", e); }
     }
   }
 };

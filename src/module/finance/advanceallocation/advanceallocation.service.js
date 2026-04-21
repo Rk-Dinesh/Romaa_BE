@@ -68,7 +68,7 @@ class AdvanceAllocationService {
   // Returns approved PVs where (amount − Σ bill_refs.settled_amt) > 0.
   // Filters: party_type, party_id, tender_id.
   static async getOutstandingPaid({ party_type, party_id, tender_id } = {}) {
-    const filter = { status: "approved" };
+    const filter = { status: "approved", is_deleted: { $ne: true } };
     if (party_type) filter.supplier_type = party_type;
     if (party_id)   filter.supplier_id   = party_id;
     if (tender_id)  filter.tender_id     = tender_id;
@@ -112,7 +112,7 @@ class AdvanceAllocationService {
 
   // ── Outstanding advances RECEIVED (RV unallocated balance) ───────────────
   static async getOutstandingReceived({ party_type = "Client", party_id, tender_id } = {}) {
-    const filter = { status: "approved", supplier_type: party_type };
+    const filter = { status: "approved", supplier_type: party_type, is_deleted: { $ne: true } };
     if (party_id)  filter.supplier_id = party_id;
     if (tender_id) filter.tender_id   = tender_id;
 

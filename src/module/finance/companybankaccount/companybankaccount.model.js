@@ -52,7 +52,8 @@ const CompanyBankAccountSchema = new mongoose.Schema(
     is_active:  { type: Boolean, default: true },
     is_deleted: { type: Boolean, default: false },
 
-    created_by: { type: String, default: "" },
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
   },
   { timestamps: true }
 );

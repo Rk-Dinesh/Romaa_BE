@@ -34,7 +34,7 @@ const reportsRouter = Router();
 reportsRouter.get(
   "/trial-balance",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "trial_balance", "read"),
   getTrialBalance,
 );
 
@@ -42,7 +42,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/profit-loss",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "profit_loss", "read"),
   getProfitLoss,
 );
 
@@ -50,7 +50,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/balance-sheet",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "balance_sheet", "read"),
   getBalanceSheet,
 );
 
@@ -58,7 +58,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/general-ledger",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "general_ledger", "read"),
   getGeneralLedger,
 );
 
@@ -66,7 +66,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/cash-flow",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "cash_flow", "read"),
   getCashFlow,
 );
 
@@ -74,7 +74,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/cash-flow-forecast",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "cash_flow", "read"),
   getCashFlowForecast,
 );
 
@@ -82,7 +82,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/fund-flow",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "cash_flow", "read"),
   getFundFlow,
 );
 
@@ -90,7 +90,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/ratio-analysis",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "trial_balance", "read"),
   getRatioAnalysis,
 );
 
@@ -98,7 +98,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/tender-profitability",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "profit_loss", "read"),
   getTenderProfitability,
 );
 
@@ -107,7 +107,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/gstr-1",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "gstr1", "read"),
   getGstr1,
 );
 
@@ -115,7 +115,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/gstr-2b",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "gstr2b", "read"),
   getGstr2b,
 );
 
@@ -123,7 +123,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/gstr-3b",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "gstr3b", "read"),
   getGstr3b,
 );
 
@@ -131,7 +131,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/itc-reversal",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "itc_reversal", "read"),
   getItcReversalRegister,
 );
 
@@ -140,7 +140,7 @@ reportsRouter.get(
 reportsRouter.get(
   "/tds-register",
   verifyJWT,
- // verifyPermission("finance", "reports", "read"),
+  verifyPermission("finance", "tds_register", "read"),
   getTdsRegister,
 );
 

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { verifyJWT } from "../../../common/Auth.middlware.js";
+import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 import {
   upload,
   listForSource,
@@ -26,19 +26,19 @@ const router = Router();
 // Form fields:
 //   files (multiple) or file (single)
 //   source_type, source_ref, source_no, tender_id, category, description, tags
-router.post("/upload",       verifyJWT, uploader.array("files"), upload);
-router.post("/upload-one",   verifyJWT, uploader.single("file"),  upload);
+router.post("/upload",       verifyJWT, verifyPermission("finance", "finance_attachment", "create"), uploader.array("files"), upload);
+router.post("/upload-one",   verifyJWT, verifyPermission("finance", "finance_attachment", "create"), uploader.single("file"),  upload);
 
 // ── Listing ─────────────────────────────────────────────────────────────────
-router.get ("/for-source",   verifyJWT, listForSource);     // ?source_type=PurchaseBill&source_ref=...
-router.get ("/list",         verifyJWT, list);              // paginated, filterable
-router.get ("/stats",        verifyJWT, stats);
+router.get ("/for-source",   verifyJWT, verifyPermission("finance", "finance_attachment", "read"),   listForSource);     // ?source_type=PurchaseBill&source_ref=...
+router.get ("/list",         verifyJWT, verifyPermission("finance", "finance_attachment", "read"),   list);              // paginated, filterable
+router.get ("/stats",        verifyJWT, verifyPermission("finance", "finance_attachment", "read"),   stats);
 
 // ── Single attachment ──────────────────────────────────────────────────────
-router.get   ("/:id/download", verifyJWT, getDownloadUrl);  // returns presigned URL
-router.patch ("/:id",          verifyJWT, updateMeta);
-router.post  ("/:id/restore",  verifyJWT, restore);
-router.delete("/:id",          verifyJWT, deleteOne);       // ?hard_delete=true for permanent
-router.get   ("/:id",          verifyJWT, getById);
+router.get   ("/:id/download", verifyJWT, verifyPermission("finance", "finance_attachment", "read"),   getDownloadUrl);  // returns presigned URL
+router.patch ("/:id",          verifyJWT, verifyPermission("finance", "finance_attachment", "edit"),   updateMeta);
+router.post  ("/:id/restore",  verifyJWT, verifyPermission("finance", "finance_attachment", "edit"),   restore);
+router.delete("/:id",          verifyJWT, verifyPermission("finance", "finance_attachment", "delete"), deleteOne);       // ?hard_delete=true for permanent
+router.get   ("/:id",          verifyJWT, verifyPermission("finance", "finance_attachment", "read"),   getById);
 
 export default router;

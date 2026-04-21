@@ -83,7 +83,7 @@ class YearEndCloseService {
   }
 
   static async list() {
-    return YearEndCloseModel.find({}).sort({ financial_year: -1 }).lean();
+    return YearEndCloseModel.find({ is_deleted: { $ne: true } }).sort({ financial_year: -1 }).lean();
   }
 
   // ── Opening balance rollforward (Gap 7) ─────────────────────────────────────

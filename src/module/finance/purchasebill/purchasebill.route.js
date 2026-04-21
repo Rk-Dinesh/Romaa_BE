@@ -8,7 +8,7 @@ const purchaseBillRouter = Router();
 purchaseBillRouter.get(
   "/list",
   verifyJWT,
-  //verifyPermission("finance", "purchasebill", "read"),
+  verifyPermission("finance", "purchase_bill", "read"),
   getBills
 );
 
@@ -16,7 +16,7 @@ purchaseBillRouter.get(
 purchaseBillRouter.get(
   "/by-tender/:tenderId",
   verifyJWT,
-  //verifyPermission("finance", "purchasebill", "read"),
+  verifyPermission("finance", "purchase_bill", "read"),
   getBillsByTender
 );
 
@@ -24,7 +24,7 @@ purchaseBillRouter.get(
 purchaseBillRouter.get(
   "/summary-all",
   verifyJWT,
- // verifyPermission("finance", "purchasebill", "read"),
+  verifyPermission("finance", "purchase_bill", "read"),
   getAllTendersSummary
 );
 
@@ -32,7 +32,7 @@ purchaseBillRouter.get(
 purchaseBillRouter.get(
   "/summary/:tenderId",
   verifyJWT,
- // verifyPermission("finance", "purchasebill", "read"),
+  verifyPermission("finance", "purchase_bill", "read"),
   getTenderSummary
 );
 
@@ -40,7 +40,7 @@ purchaseBillRouter.get(
 purchaseBillRouter.get(
   "/next-id",
   verifyJWT,
- // verifyPermission("finance", "purchasebill", "read"),
+  verifyPermission("finance", "purchase_bill", "read"),
   getNextDocId
 );
 
@@ -48,7 +48,7 @@ purchaseBillRouter.get(
 purchaseBillRouter.post(
   "/create",
   verifyJWT,
- // verifyPermission("finance", "purchasebill", "create"),
+  verifyPermission("finance", "purchase_bill", "create"),
   createPurchaseBill
 );
 
@@ -56,7 +56,7 @@ purchaseBillRouter.post(
 purchaseBillRouter.patch(
   "/approve/:id",
   verifyJWT,
-//  verifyPermission("finance", "purchasebill", "edit"),
+  verifyPermission("finance", "purchase_bill", "edit"),
   approvePurchaseBill
 );
 
@@ -64,7 +64,7 @@ purchaseBillRouter.patch(
 purchaseBillRouter.patch(
   "/update/:id",
   verifyJWT,
- // verifyPermission("finance", "purchasebill", "edit"),
+  verifyPermission("finance", "purchase_bill", "edit"),
   updatePurchaseBill
 );
 
@@ -72,7 +72,7 @@ purchaseBillRouter.patch(
 purchaseBillRouter.delete(
   "/delete/:id",
   verifyJWT,
- // verifyPermission("finance", "purchasebill", "delete"),
+  verifyPermission("finance", "purchase_bill", "delete"),
   deletePurchaseBill
 );
 
@@ -80,7 +80,7 @@ purchaseBillRouter.delete(
 purchaseBillRouter.get(
   "/:id",
   verifyJWT,
- // verifyPermission("finance", "purchasebill", "read"),
+  verifyPermission("finance", "purchase_bill", "read"),
   getPurchaseBillById
 );
 

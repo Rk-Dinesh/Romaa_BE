@@ -20,7 +20,7 @@ const ledgerRouter = Router();
 ledgerRouter.get(
   "/summary",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getAllSupplierBalances
 );
 
@@ -29,7 +29,7 @@ ledgerRouter.get(
 ledgerRouter.get(
   "/tender-balance/:tenderId",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getTenderBalance
 );
 
@@ -38,7 +38,7 @@ ledgerRouter.get(
 ledgerRouter.get(
   "/tender/:tenderId",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getTenderLedger
 );
 
@@ -47,7 +47,7 @@ ledgerRouter.get(
 ledgerRouter.get(
   "/balance/:supplierId",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getSupplierBalance
 );
 
@@ -56,7 +56,7 @@ ledgerRouter.get(
 ledgerRouter.get(
   "/statement/:supplierId",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getSupplierStatement
 );
 
@@ -65,7 +65,7 @@ ledgerRouter.get(
 ledgerRouter.get(
   "/supplier/:supplierId",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getSupplierLedger
 );
 
@@ -73,7 +73,7 @@ ledgerRouter.get(
 ledgerRouter.get(
   "/trial-balance",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getTrialBalance
 );
 
@@ -81,7 +81,7 @@ ledgerRouter.get(
 ledgerRouter.get(
   "/cash-book",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getCashBook
 );
 
@@ -89,7 +89,7 @@ ledgerRouter.get(
 ledgerRouter.get(
   "/itc-register",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getITCRegister
 );
 
@@ -97,7 +97,7 @@ ledgerRouter.get(
 ledgerRouter.get(
   "/account/:accountCode",
   verifyJWT,
-//  verifyPermission("finance", "ledger", "read"),
+  verifyPermission("finance", "ledger_entry", "read"),
   getAccountLedger
 );
 

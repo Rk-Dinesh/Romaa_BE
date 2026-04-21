@@ -41,19 +41,24 @@ class ConsolidationService {
 
   // GET /consolidation/entities
   static async entities() {
-    const tenders = await TenderModel.find({})
-      .select("tender_id tender_name status")
-      .sort({ tender_id: 1 })
-      .lean();
-    return [
-      ...tenders.map((t) => ({ id: t.tender_id, name: t.tender_name, status: t.status, type: "Tender" })),
-      { id: CORP, name: "Corporate / Un-tagged", type: "Synthetic" },
-    ];
+    try {
+      const tenders = await TenderModel.find({})
+        .select("tender_id tender_name status")
+        .sort({ tender_id: 1 })
+        .lean();
+      return [
+        ...tenders.map((t) => ({ id: t.tender_id, name: t.tender_name, status: t.status, type: "Tender" })),
+        { id: CORP, name: "Corporate / Un-tagged", type: "Synthetic" },
+      ];
+    } catch (error) {
+      throw error;
+    }
   }
 
   // GET /consolidation/trial-balance?as_of_date=
   // Returns per-entity column + grand total in one matrix.
   static async trialBalance({ as_of_date }) {
+    try {
     const asOf = as_of_date ? new Date(as_of_date) : new Date();
     asOf.setHours(23, 59, 59, 999);
 
@@ -128,6 +133,9 @@ class ConsolidationService {
     }).filter((r) => r.consolidated !== 0 || Object.keys(r.per_entity).length > 0);
 
     return { as_of_date: asOf, entities, rows: output };
+    } catch (error) {
+      throw error;
+    }
   }
 
   // GET /consolidation/pnl?financial_year=25-26
@@ -140,6 +148,7 @@ class ConsolidationService {
   // filters changed. Everything here now flows from a single result set and
   // one AccountTree fetch — entity rows, CORP, and the consolidated total.
   static async pnl({ financial_year, from_date, to_date }) {
+    try {
     const fy    = financial_year || getFY(new Date());
     const start = from_date ? new Date(from_date) : fyStart(fy);
     const end   = to_date   ? new Date(to_date)   : new Date();
@@ -255,6 +264,9 @@ class ConsolidationService {
       entities,
       consolidated,
     };
+    } catch (error) {
+      throw error;
+    }
   }
 
   // GET /consolidation/balance-sheet?as_of_date=
@@ -262,6 +274,7 @@ class ConsolidationService {
   // receivables/payables so the consolidated column doesn't double-count
   // internal settlements.
   static async balanceSheet({ as_of_date }) {
+    try {
     const asOf = as_of_date ? new Date(as_of_date) : new Date();
     asOf.setHours(23, 59, 59, 999);
 
@@ -304,6 +317,9 @@ class ConsolidationService {
       totals,
       balance_check: check,   // should be ~0 if books are in balance
     };
+    } catch (error) {
+      throw error;
+    }
   }
 
   // GET /consolidation/inter-entity?financial_year=25-26
@@ -312,6 +328,7 @@ class ConsolidationService {
   // (Asset/Liability — the settlement side) so downstream reports can subtract
   // the right amounts.
   static async interEntity({ financial_year, from_date, to_date }) {
+    try {
     const fy = financial_year || getFY(new Date());
     const start = from_date ? new Date(from_date) : fyStart(fy);
     const end   = to_date   ? new Date(to_date)   : new Date();
@@ -374,11 +391,15 @@ class ConsolidationService {
       total_to_eliminate,
       hits,
     };
+    } catch (error) {
+      throw error;
+    }
   }
 
   // Internal: build elimination maps keyed by account_code (one pass).
   // Used by pnl() and balanceSheet() to subtract inter-entity amounts.
   static async _elimMap({ from_date, to_date }) {
+    try {
     const q = { status: "approved" };
     if (from_date || to_date) {
       q.je_date = {};
@@ -421,6 +442,9 @@ class ConsolidationService {
       }
     }
     return { pnlByAccount, bsByAccount, pnlTotal: r2(pnlTotal), bsTotal: r2(bsTotal) };
+    } catch (error) {
+      throw error;
+    }
   }
 }
 

@@ -23,7 +23,7 @@ const accountTreeRouter = Router();
 accountTreeRouter.get(
   "/list",
   verifyJWT,
- // verifyPermission("finance", "accounttree", "read"),
+  verifyPermission("finance", "general_ledger", "read"),
   getAll
 );
 
@@ -31,7 +31,7 @@ accountTreeRouter.get(
 accountTreeRouter.get(
   "/posting-accounts",
   verifyJWT,
- // verifyPermission("finance", "accounttree", "read"),
+  verifyPermission("finance", "general_ledger", "read"),
   getPostingAccounts
 );
 
@@ -39,7 +39,7 @@ accountTreeRouter.get(
 accountTreeRouter.get(
   "/tree",
   verifyJWT,
- // verifyPermission("finance", "accounttree", "read"),
+  verifyPermission("finance", "general_ledger", "read"),
   getTree
 );
 
@@ -47,7 +47,7 @@ accountTreeRouter.get(
 accountTreeRouter.get(
   "/search",
   verifyJWT,
-  //verifyPermission("finance", "accounttree", "read"),
+  verifyPermission("finance", "general_ledger", "read"),
   search
 );
 
@@ -55,7 +55,7 @@ accountTreeRouter.get(
 accountTreeRouter.get(
   "/by-code/:code",
   verifyJWT,
- // verifyPermission("finance", "accounttree", "read"),
+  verifyPermission("finance", "general_ledger", "read"),
   getByCode
 );
 
@@ -63,7 +63,7 @@ accountTreeRouter.get(
 accountTreeRouter.get(
   "/by-supplier/:supplierId",
   verifyJWT,
-//  verifyPermission("finance", "accounttree", "read"),
+  verifyPermission("finance", "general_ledger", "read"),
   getBySupplier
 );
 
@@ -73,7 +73,7 @@ accountTreeRouter.get(
 accountTreeRouter.post(
   "/create",
   verifyJWT,
- // verifyPermission("finance", "accounttree", "create"),
+  verifyPermission("finance", "general_ledger", "create"),
   create
 );
 
@@ -81,7 +81,7 @@ accountTreeRouter.post(
 accountTreeRouter.post(
   "/seed",
   verifyJWT,
- // verifyPermission("finance", "accounttree", "create"),
+  verifyPermission("finance", "general_ledger", "create"),
   seedAccounts
 );
 
@@ -96,7 +96,7 @@ accountTreeRouter.post(
 accountTreeRouter.patch(
   "/update/:id",
   verifyJWT,
- // verifyPermission("finance", "accounttree", "edit"),
+  verifyPermission("finance", "general_ledger", "edit"),
   update
 );
 
@@ -104,7 +104,7 @@ accountTreeRouter.patch(
 accountTreeRouter.delete(
   "/delete/:id",
   verifyJWT,
- // verifyPermission("finance", "accounttree", "delete"),
+  verifyPermission("finance", "general_ledger", "delete"),
   softDelete
 );
 
@@ -112,7 +112,7 @@ accountTreeRouter.delete(
 accountTreeRouter.get(
   "/:id",
   verifyJWT,
- // verifyPermission("finance", "accounttree", "read"),
+  verifyPermission("finance", "general_ledger", "read"),
   getById
 );
 

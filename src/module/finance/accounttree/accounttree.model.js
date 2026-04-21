@@ -171,6 +171,10 @@ const AccountTreeSchema = new mongoose.Schema(
     // Physical bank account details are stored in the CompanyBankAccount
     // collection (linked by account_code). The is_bank_cash flag here
     // identifies this as a bank/cash account for voucher dropdowns.
+
+    // ── Audit fields ──────────────────────────────────────────────────────
+    created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
+    updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
   },
   { timestamps: true }
 );

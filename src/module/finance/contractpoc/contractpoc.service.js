@@ -45,7 +45,7 @@ class ContractPOCService {
   }
 
   static async list({ status, page = 1, limit = 20 } = {}) {
-    const q = {};
+    const q = { is_deleted: { $ne: true } };
     if (status) q.status = status;
     const skip = (Math.max(1, parseInt(page, 10)) - 1) * Math.max(1, parseInt(limit, 10));
     const [rows, total] = await Promise.all([

@@ -107,7 +107,7 @@ class RecurringVoucherService {
 
   // GET /recurringvoucher/list
   static async getList(filters = {}) {
-    const query = {};
+    const query = { is_deleted: { $ne: true } };
     if (filters.status)        query.status        = filters.status;
     if (filters.voucher_type)  query.voucher_type  = filters.voucher_type;
     if (filters.template_no)   query.template_no   = filters.template_no;
@@ -223,6 +223,7 @@ class RecurringVoucherService {
     const due = await RecurringVoucherModel.find({
       status: "active",
       next_run_date: { $lte: asOf },
+      is_deleted: { $ne: true },
     });
 
     const results = [];

@@ -8,7 +8,7 @@ const creditNoteRouter = Router();
 creditNoteRouter.get(
   "/next-no",
   verifyJWT,
-  // verifyPermission("finance", "creditnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getNextCnNo
 );
 
@@ -16,7 +16,7 @@ creditNoteRouter.get(
 creditNoteRouter.get(
   "/list",
   verifyJWT,
-  // verifyPermission("finance", "creditnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getList
 );
 
@@ -24,7 +24,7 @@ creditNoteRouter.get(
 creditNoteRouter.get(
   "/by-supplier/:supplierId",
   verifyJWT,
- //  verifyPermission("finance", "creditnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getBySupplier
 );
 
@@ -32,7 +32,7 @@ creditNoteRouter.get(
 creditNoteRouter.get(
   "/by-tender/:tenderId",
   verifyJWT,
- //  verifyPermission("finance", "creditnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getByTender
 );
 
@@ -40,7 +40,7 @@ creditNoteRouter.get(
 creditNoteRouter.post(
   "/create",
   verifyJWT,
-  // verifyPermission("finance", "creditnote", "create"),
+  verifyPermission("finance", "debit_credit_note", "create"),
   create
 );
 
@@ -48,7 +48,7 @@ creditNoteRouter.post(
 creditNoteRouter.patch(
   "/approve/:id",
   verifyJWT,
- //  verifyPermission("finance", "creditnote", "edit"),
+  verifyPermission("finance", "debit_credit_note", "edit"),
   approve
 );
 
@@ -56,7 +56,7 @@ creditNoteRouter.patch(
 creditNoteRouter.patch(
   "/update/:id",
   verifyJWT,
- // verifyPermission("finance", "creditnote", "edit"),
+  verifyPermission("finance", "debit_credit_note", "edit"),
   update
 );
 
@@ -64,7 +64,7 @@ creditNoteRouter.patch(
 creditNoteRouter.delete(
   "/delete/:id",
   verifyJWT,
-  // verifyPermission("finance", "creditnote", "delete"),
+  verifyPermission("finance", "debit_credit_note", "delete"),
   deleteDraft
 );
 
@@ -72,7 +72,7 @@ creditNoteRouter.delete(
 creditNoteRouter.get(
   "/:id",
   verifyJWT,
- //  verifyPermission("finance", "creditnote", "read"),
+  verifyPermission("finance", "debit_credit_note", "read"),
   getById
 );
 

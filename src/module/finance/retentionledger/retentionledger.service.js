@@ -51,7 +51,7 @@ class RetentionLedgerService {
   // Picks up approved WeeklyBilling rows with retention_amt > 0 and surfaces
   // outstanding = retention_amt − retention_released for each.
   static async getPayableOutstanding({ party_id, tender_id } = {}) {
-    const filter = { status: "Approved", retention_amt: { $gt: 0 } };
+    const filter = { status: "Approved", retention_amt: { $gt: 0 }, is_deleted: { $ne: true } };
     if (party_id)  filter.contractor_id = party_id;
     if (tender_id) filter.tender_id     = tender_id;
 
@@ -95,7 +95,7 @@ class RetentionLedgerService {
 
   // ── Outstanding retention per client (receivable) ────────────────────────
   static async getReceivableOutstanding({ party_id, tender_id } = {}) {
-    const filter = { status: { $in: ["Approved", "Paid"] }, retention_amount: { $gt: 0 } };
+    const filter = { status: { $in: ["Approved", "Paid"] }, retention_amount: { $gt: 0 }, is_deleted: { $ne: true } };
     if (party_id)  filter.client_id = party_id;
     if (tender_id) filter.tender_id = tender_id;
 
@@ -423,7 +423,7 @@ class RetentionLedgerService {
 
   // ── List releases with filters ───────────────────────────────────────────
   static async list(filters = {}) {
-    const q = {};
+    const q = { is_deleted: { $ne: true } };
     if (filters.release_type) q.release_type = filters.release_type;
     if (filters.status)       q.status       = filters.status;
     if (filters.party_id)     q.party_id     = filters.party_id;
@@ -472,6 +472,7 @@ class RetentionLedgerService {
     }
     const rows = await RetentionReleaseModel.find({
       "bill_refs.bill_ref": bill_id,
+      is_deleted: { $ne: true },
     }).sort({ release_date: -1 }).lean();
 
     return rows.map(r => {
