@@ -8,6 +8,7 @@ import ClientModel from "../../clients/client.model.js";
 import AccountTreeService from "../accounttree/accounttree.service.js";
 import JournalEntryService from "../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
+import { GL } from "../gl.constants.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -378,7 +379,7 @@ class PaymentVoucherService {
     }
     jeLines.push({ account_code: pv.bank_account_code, dr_cr: "Cr", debit_amt: 0, credit_amt: pv.amount, narration: "Payment out" });
     if (tdsAmt > 0) {
-      jeLines.push({ account_code: "2140", dr_cr: "Cr", debit_amt: 0, credit_amt: tdsAmt, narration: "TDS withheld" });
+      jeLines.push({ account_code: GL.TDS_PAYABLE, dr_cr: "Cr", debit_amt: 0, credit_amt: tdsAmt, narration: "TDS withheld" });
     }
 
     const je = await JournalEntryService.createFromVoucher(jeLines, {

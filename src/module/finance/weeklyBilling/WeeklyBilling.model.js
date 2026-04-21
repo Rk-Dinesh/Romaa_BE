@@ -55,6 +55,9 @@ const WeeklyBillingSchema = new mongoose.Schema(
     retention_pct: { type: Number, default: 0 }, // % withheld from contractor
     retention_amt: { type: Number, default: 0 }, // computed: total_amount × retention_pct/100
     net_payable:   { type: Number, default: 0 }, // computed: total_amount − retention_amt
+    // Cumulative retention paid back to contractor (via RetentionRelease).
+    // retention_outstanding = retention_amt − retention_released
+    retention_released: { type: Number, default: 0 },
 
     status: {
       type: String,

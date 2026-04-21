@@ -1,0 +1,391 @@
+════════════════════════════════════════════════════════════════════════════
+  ROMAA BACKEND — TIER 3 FRONTEND INTEGRATION GUIDE
+  Statutory compliance: E-Invoice, E-Way Bill, GSTR-2A/2B matcher,
+  Advance allocation, Retention ledger, Finance attachments, Dual
+  depreciation, Form 24Q/16/16A, GSTR-9, Audit trail
+════════════════════════════════════════════════════════════════════════════
+
+All endpoints require a valid access token (JWT) — send via:
+  • HTTP-only cookie `accessToken`  (preferred), OR
+  • Header `Authorization: Bearer <token>`
+
+All responses follow the standard shape:
+  { "status": true,  "data": ... }
+  { "status": false, "message": "..." }
+
+Tier 3 is code-complete and read-validated 19/19. Every endpoint below is
+live. Where the backend returns paginated collections the payload is:
+  { status, currentPage, totalPages, totalCount, data: [...] }
+
+
+════════════════════════════════════════════════════════════════════════════
+  1. E-INVOICE                                       base: /einvoice
+════════════════════════════════════════════════════════════════════════════
+
+Generate GSTN-compliant IRN + signed QR for any approved client bill /
+credit note / debit note. The service is a stub that mirrors the IRP
+contract — swap in the real IRP adapter by changing one module.
+
+FLOW (UI):
+  1. Open an approved ClientBilling / ClientCreditNote / DebitNote
+  2. Click "Generate E-Invoice"                 → POST /einvoice/generate
+  3. Display returned IRN + ack_no + QR          (show QR via /qr endpoint)
+  4. "Cancel E-Invoice" within 24 hrs of gen    → POST /einvoice/:id/cancel
+  5. "Download QR" or "View on IRP"              use the signed_qr_code field
+
+──────────────────────────────────────────────────────────────────
+POST /einvoice/generate
+     Body:
+       {
+         source_type: "ClientBilling" | "ClientCreditNote" | "DebitNote",
+         source_ref:  "<object_id>",
+         source_no:   "BILL-25-26-0042",
+         supplier: {                  // optional, else reads env fallbacks
+           gstin, legal_name, state_code, state, address1, location, pin
+         }
+       }
+     Response: { irn, ack_no, ack_dt, signed_qr_code, status:"ACTIVE", ... }
+     Idempotent — regenerating on the same source returns the existing IRN
+     with `already_generated: true`.
+
+GET  /einvoice/list?source_type=&status=&from=&to=&page=&limit=
+GET  /einvoice/:id
+GET  /einvoice/by-irn/:irn
+GET  /einvoice/:id/qr          → { irn, signed_qr_code, png_base64? }
+POST /einvoice/:id/cancel      Body: { reason: "Data error" }
+                                Only allowed inside the 24-hr window.
+
+
+════════════════════════════════════════════════════════════════════════════
+  2. E-WAY BILL                                      base: /ewaybill
+════════════════════════════════════════════════════════════════════════════
+
+Generate EWB (min ₹50k invoice) with vehicle details. Part A is created
+when the invoice is approved; Part B is filled in when the vehicle
+leaves site. Distance and validity auto-compute on the service side.
+
+FLOW (UI):
+  1. Approved invoice / stock-transfer → "Generate E-Way Bill"
+                                               → POST /ewaybill/generate
+  2. Keep "pending-part-b" badge on the list until vehicle rolls
+  3. Driver dispatch → "Update Part B (Vehicle)"
+                                               → POST /ewaybill/:id/part-b
+  4. Cron or admin mark-expired                → POST /ewaybill/mark-expired
+  5. Cancel within 24 hrs                      → POST /ewaybill/:id/cancel
+
+──────────────────────────────────────────────────────────────────
+POST /ewaybill/generate
+     Body:
+       {
+         source_type:    "ClientBilling" | "PurchaseBill" | "StockTransfer",
+         source_ref:     "<object_id>",
+         source_no:      "BILL-25-26-0042",
+         from_gstin, from_pin, from_state_code, from_place,
+         to_gstin,   to_pin,   to_state_code,   to_place,
+         distance_km:    120,
+         transport_mode: "Road" | "Rail" | "Air" | "Ship",
+         transporter_id, transporter_name,
+         vehicle_no:     "TN01AB1234",     // optional for Part A-only
+         doc_type:       "INV" | "CRN" | "DBN",
+         supplier: { gstin, legal_name, state_code }     // optional
+       }
+     Response: { ewb_no, ewb_date, valid_upto, status, distance_km, ... }
+
+POST /ewaybill/:id/part-b      Body: { vehicle_no, from_place?, reason? }
+POST /ewaybill/:id/cancel      Body: { reason }
+POST /ewaybill/mark-expired    (cron sweep — finds EWBs with
+                                valid_upto < now and status='ACTIVE')
+GET  /ewaybill/list            ?status=&from=&to=&source_type=&page=&limit=
+GET  /ewaybill/:id
+GET  /ewaybill/by-ewb-no/:ewb_no
+
+
+════════════════════════════════════════════════════════════════════════════
+  3. GST 2A / 2B MATCHER                             base: /gst-matcher
+════════════════════════════════════════════════════════════════════════════
+
+Upload GSTR-2A or GSTR-2B (from GST portal) and auto-match vendor
+invoices against our PurchaseBill register. Flags mismatches, missing-in-
+books, and missing-on-portal so the ITC claim is defensible.
+
+FLOW (UI):
+  1. Downloads screen → "Upload 2A/2B file"    → POST /gst-matcher/upload
+     (entries are parsed client-side OR server-side depending on format)
+  2. Run the matcher                           → POST /gst-matcher/match
+  3. Review results — three tabs:
+       • Matched       (auto-linked to PurchaseBill)
+       • Ambiguous     (user picks the right bill)
+       • Unmatched     (either create the bill or dispute)
+  4. "Link manually"                           → POST /gst-matcher/:id/link
+  5. "Unlink"                                  → POST /gst-matcher/:id/unlink
+
+──────────────────────────────────────────────────────────────────
+POST /gst-matcher/upload
+     Body:
+       {
+         source: "GSTR-2A" | "GSTR-2B",
+         return_period: "04-2025",            // MM-YYYY
+         entries: [
+           { vendor_gstin, vendor_name, invoice_no, invoice_date,
+             taxable_value, cgst, sgst, igst, cess, total,
+             invoice_type, place_of_supply }
+         ]
+       }
+     Response: { upload_id, summary: { entry_count, total_tax, ... } }
+
+POST /gst-matcher/match
+     Body: { return_period: "04-2025", source: "GSTR-2B" }
+     Triggers the matcher across ALL open uploads for that period.
+     Response: { matched, ambiguous, missing_in_books, missing_on_portal }
+
+POST /gst-matcher/:id/link     Body: { entry_index: 3, bill_id: "<oid>" }
+POST /gst-matcher/:id/unlink   Body: { entry_index: 3 }
+GET  /gst-matcher/list         ?source=&return_period=&page=&limit=
+GET  /gst-matcher/:id          → full upload doc with entries[]
+DEL  /gst-matcher/:id
+
+
+════════════════════════════════════════════════════════════════════════════
+  4. ADVANCE ALLOCATION                              base: /advance
+════════════════════════════════════════════════════════════════════════════
+
+Tracks outstanding advances (Paid = PaymentVoucher with is_advance:true;
+Received = ReceiptVoucher with is_advance:true) and lets the user settle
+them against specific bills. A single advance can be split across multiple
+bills; over-allocation is blocked at the service layer.
+
+FLOW (UI):
+  1. "Outstanding Advances" dashboard card:
+       • Paid (unused) to vendors/contractors  → /advance/outstanding/paid
+       • Received (unused) from clients        → /advance/outstanding/received
+  2. Open a Purchase Bill / Client Bill
+  3. "Allocate advance" modal → lists available advances for that party
+  4. Enter amount → Submit                     → POST /advance/allocate
+  5. "View allocations on this voucher"        → GET /advance/voucher/:id
+  6. "View advances on this bill"              → GET /advance/bill/:id
+  7. "Unallocate" if entered by mistake        → POST /advance/unallocate
+
+──────────────────────────────────────────────────────────────────
+GET  /advance/outstanding/paid
+     ?supplier_type=Vendor&supplier_id=&tender_id=
+     Response rows include: voucher_id, voucher_no, voucher_date,
+     supplier_type, supplier_id, supplier_name, total_amount,
+     allocated_amount, balance_amount.
+
+GET  /advance/outstanding/received
+     Same shape for client-received advances.
+
+GET  /advance/summary?tender_id=    → totals across both sides.
+
+POST /advance/allocate
+     Body:
+       {
+         voucher_type: "PaymentVoucher" | "ReceiptVoucher",
+         voucher_ref:  "<object_id>",
+         bill_type:    "PurchaseBill" | "WeeklyBilling" | "ClientBilling",
+         bill_ref:     "<object_id>",
+         amount:       25000,
+         narration:    "Settling mob. advance against bill 0042"
+       }
+
+POST /advance/unallocate       Body: { allocation_id }
+GET  /advance/voucher/:id      → all allocations on that voucher
+GET  /advance/bill/:id         → all advances applied to that bill
+
+
+════════════════════════════════════════════════════════════════════════════
+  5. RETENTION LEDGER                                base: /retention
+════════════════════════════════════════════════════════════════════════════
+
+Separate sub-ledger for retention held by clients (receivable, 1060) and
+retention withheld from contractors (payable, 2040). Supports scheduled /
+on-demand releases with JE auto-posting.
+
+FLOW (UI):
+  1. Dashboard: "Retention at a glance"
+       • Payable outstanding     → /retention/payable/outstanding
+       • Receivable outstanding  → /retention/receivable/outstanding
+       • Party-wise summary      → /retention/summary
+  2. Release page → choose bill/contractor → new release
+                                               → POST /retention/release
+  3. Release passes through approval → Approve → POST /retention/release/:id/approve
+  4. Cancel a draft release                   → POST /retention/release/:id/cancel
+  5. Drill-down from a bill                   → GET /retention/bill/:id
+
+──────────────────────────────────────────────────────────────────
+GET  /retention/payable/outstanding?contractor_id=&tender_id=
+GET  /retention/receivable/outstanding?client_id=&tender_id=
+GET  /retention/summary?tender_id=
+
+POST /retention/release
+     Body:
+       {
+         side: "Payable" | "Receivable",
+         party_type: "Contractor" | "Client",
+         party_id, party_name, tender_id,
+         source_type: "WeeklyBilling" | "ClientBilling",
+         source_ref,  source_no,
+         amount: 45000,
+         release_date, narration
+       }
+     Returns { rr_no: "RR/25-26/0007", ... status:"draft" }
+
+GET  /retention/release/list   ?side=&status=&from=&to=&page=&limit=
+GET  /retention/release/:id
+POST /retention/release/:id/approve     → posts JE (2040 Dr / Bank Cr)
+POST /retention/release/:id/cancel      Body: { reason }
+GET  /retention/bill/:id                → all releases for a specific bill
+
+
+════════════════════════════════════════════════════════════════════════════
+  6. FINANCE ATTACHMENTS                             base: /finance/attachments
+════════════════════════════════════════════════════════════════════════════
+
+Generic S3-backed file store addressable by (source_type, source_ref).
+Every finance document (PO, bill, voucher, JE, credit note, ...) can
+host one or more attachments with soft-delete + restore.
+
+FLOW (UI):
+  1. In any finance document detail page, show an Attachments panel:
+       → GET /finance/attachments/for-source?source_type=X&source_ref=Y
+  2. Drop zone / pick files → upload (multipart):
+       → POST /finance/attachments/upload           (files[])
+       → POST /finance/attachments/upload-one       (file)
+     Form fields: source_type, source_ref, source_no, tender_id,
+                  category, description, tags (comma-separated)
+  3. "Download" link                         → GET /:id/download (pre-signed)
+  4. Rename / re-tag                         → PATCH /:id
+  5. Soft delete                             → DELETE /:id
+  6. Restore                                 → POST /:id/restore
+  7. Hard delete (admin)                     → DELETE /:id?hard_delete=true
+  8. Archive stats (module dashboard)        → GET /stats
+
+Limits: 25 MB per file (multer + S3 stream). Mime-type is captured but
+not enforced — UI should block obvious binaries.
+
+
+════════════════════════════════════════════════════════════════════════════
+  7. DUAL DEPRECIATION (Book + IT Act)               base: /fixedasset
+════════════════════════════════════════════════════════════════════════════
+
+Companies Act books vs. Income-Tax Act computation differ (useful life
+vs. WDV-block). We run both in parallel. The BOOK ledger posts real
+JEs; the IT-ACT ledger is a shadow register used only for ITR workings
+and the deferred-tax reconciliation.
+
+FLOW (UI):
+  1. Fixed Asset Register                    → GET /fixedasset/register
+  2. Monthly book-depreciation (cron-driven, also manual)
+                                             → POST /fixedasset/post-depreciation
+                                               Body: { period_date: "2025-04-30" }
+  3. Monthly IT-Act depreciation (shadow, no JE)
+                                             → POST /fixedasset/post-it-depreciation
+  4. Per-asset override
+                                             → POST /fixedasset/:id/depreciate
+                                             → POST /fixedasset/:id/it-depreciate
+  5. Reconciliation report
+                                             → GET /fixedasset/dual-depreciation-report
+                                               ?as_of=&asset_id=
+     Returns per-asset: book_cost, book_acc_dep, book_nbv,
+                        it_cost, it_acc_dep, it_nbv,
+                        timing_diff (book - it) for deferred-tax working.
+
+The cron `0 3 1 * *` posts book-side depreciation for the previous
+month automatically (app.js). IT-side is NOT auto-cronned yet — call
+/post-it-depreciation nightly from the finance-ops task.
+
+
+════════════════════════════════════════════════════════════════════════════
+  8. TDS CERTIFICATES — FORM 24Q / 16 / 16A          base: /reports
+════════════════════════════════════════════════════════════════════════════
+
+26Q (non-salary, ships in Tier 2) is here for context. Tier 3 adds 24Q
+for salary, 16 (annual salary) and 16A (quarterly non-salary).
+
+──────────────────────────────────────────────────────────────────
+GET /reports/form-24q
+    ?financial_year=25-26&quarter=Q1
+    &tan=XYZA12345B&deductor_name=&deductor_pan=&deductor_address=
+    → JSON preview of the 24Q filing (all deductees × challans)
+
+GET /reports/form-24q/csv
+    ?financial_year=25-26&quarter=Q1   (downloads a CSV)
+    → TRACES-compatible CSV, can be fed directly into RPU/FVU
+
+GET /reports/form-16
+    ?financial_year=25-26&employee_id=<oid>
+    &tan=&deductor_name=&deductor_pan=&deductor_address=
+    → Per-employee annual salary TDS certificate (Part A + B data).
+    UI renders a printable HTML / PDF from this JSON.
+
+GET /reports/form-16a
+    ?financial_year=25-26&quarter=Q1&deductee_id=&section=
+    → Quarterly non-salary TDS certificate per deductee × section.
+    One row per (deductee × section) in the window.
+
+UI pattern: "Statutory returns" page with tabs (24Q / 26Q / 16 / 16A),
+filters on the left (FY, quarter, deductor), table on the right, and a
+"Download CSV" button that hits the /csv variant.
+
+
+════════════════════════════════════════════════════════════════════════════
+  9. GSTR-9 (ANNUAL GST RETURN)                      base: /reports
+════════════════════════════════════════════════════════════════════════════
+
+Consolidated annual return, pulls from every client bill + credit/debit
+note + purchase bill in the FY, and reconciles against the monthly
+GSTR-1 + 3B totals.
+
+GET /reports/gstr-9?financial_year=25-26
+    Response sections (keys):
+      • pt2_outward         — table 4: outward supplies
+      • pt3_itc             — table 6: ITC availed
+      • pt4_tax_paid        — table 9: tax paid vs. payable
+      • pt5_prev_fy         — amendments to prior FY
+      • pt6_other           — refunds, demands, late fees
+      • reconciliation      — Sum(GSTR-1 monthly)  vs.  GSTR-9 Pt.2
+                               Sum(GSTR-3B monthly) vs.  GSTR-9 Pt.4
+                               flags any delta with { field, expected, actual }
+UI: single scrolling page broken by section headers, a "Reconciliation
+warnings" strip at the top, "Export JSON" for the CA.
+
+
+════════════════════════════════════════════════════════════════════════════
+  10. AUDIT TRAIL (Companies Act 2013 Rule 11(g))    base: /reports
+════════════════════════════════════════════════════════════════════════════
+
+Every mutation on approved finance documents and journal entries is
+captured in an append-only audit stream. This is the report required by
+auditors to certify the "edit log" clause.
+
+GET /reports/audit-trail
+    ?from_date=&to_date=&doc_type=&je_type=&user_id=
+    &source_no=&je_no=&tender_id=&page=&limit=
+    → Paginated list. Each row:
+      { timestamp, user_id, user_name, action:"create|update|approve|reverse|..",
+        doc_type, source_no, je_no, field_changes:[{field,before,after}] }
+
+GET /reports/audit-trail/document
+    ?source_type=PaymentVoucher&source_no=PV/25-26/0001
+    → Complete history for a single document (document-detail drawer).
+
+UI: top-level "Audit Trail" page with filters + grouped rows per document.
+Document-detail pages should surface a "History" tab that calls
+/document with the current doc's type + no.
+
+
+════════════════════════════════════════════════════════════════════════════
+  INTEGRATION CHECKLIST
+════════════════════════════════════════════════════════════════════════════
+  [ ] E-Invoice button on approved ClientBilling / CN / DN
+  [ ] E-Way Bill generator with Part B follow-up queue
+  [ ] "Upload 2A/2B" + match runner + Ambiguous/Unmatched tabs
+  [ ] Outstanding-advances dashboard card
+  [ ] Retention release workflow (draft → approve) on billing screens
+  [ ] Attachments panel mounted in every finance document detail view
+  [ ] Dual-depreciation reconciliation page for CA/auditor
+  [ ] Statutory-returns page: 24Q / 26Q / 16 / 16A / GSTR-9 download
+  [ ] Audit-trail drawer on every voucher/JE detail page
+
+Questions → the finance backend team. The shape of each response is
+also documented inline in the controllers (src/module/finance/*.controller.js).

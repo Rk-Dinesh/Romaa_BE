@@ -92,3 +92,34 @@ export const getSchedule = async (req, res) => {
     res.status(400).json({ status: false, message: error.message });
   }
 };
+
+// ── IT-Act parallel book (Section 32 block-of-assets) ──────────────────
+export const postItDepreciation = async (req, res) => {
+  try {
+    const { financial_year } = { ...req.body, ...req.query };
+    const data = await FixedAssetService.postItDepreciationForAllAssets({ financial_year });
+    res.status(200).json({ status: true, message: "IT-Act depreciation run completed", data });
+  } catch (error) {
+    res.status(400).json({ status: false, message: error.message });
+  }
+};
+
+export const postItDepreciationOne = async (req, res) => {
+  try {
+    const asset = await FixedAssetService.getById(req.params.id);
+    const data = await FixedAssetService.postItDepreciationForAsset(asset, req.body?.financial_year || req.query?.financial_year);
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(400).json({ status: false, message: error.message });
+  }
+};
+
+export const getDualDepreciationReport = async (req, res) => {
+  try {
+    const { financial_year, as_of_date, category, status } = req.query;
+    const data = await FixedAssetService.getDualDepreciationReport({ financial_year, as_of_date, category, status });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};

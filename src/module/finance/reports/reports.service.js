@@ -11,11 +11,13 @@ import ContractorModel from "../../hr/contractors/contractor.model.js";
 import EmployeeModel from "../../hr/employee/employee.model.js";
 import ClientModel from "../../clients/client.model.js";
 import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
+import { PayrollModel } from "../../hr/payroll/payroll.model.js";
+import MaterialModel from "../../tender/materials/material.model.js";
+import TenderModel from "../../tender/tender/tender.model.js";
+import { GL, GST_INPUT_CODES, GST_OUTPUT_CODES } from "../gl.constants.js";
 
-// ── GST account codes (constant — set in accounttree.seed.js) ────────────────
-const GST_INPUT_CODES   = ["1080-CGST", "1080-SGST", "1080-IGST"];
-const GST_OUTPUT_CODES  = ["2110", "2120", "2130"]; // CGST/SGST/IGST Payable
-const TDS_PAYABLE_CODE  = "2140";
+// ── GST account codes (sourced from ../gl.constants.js) ──────────────────────
+const TDS_PAYABLE_CODE = GL.TDS_PAYABLE;
 
 // ── Financial Reports Service ─────────────────────────────────────────────────
 //
@@ -43,6 +45,27 @@ function signedOpening(opening_balance, opening_balance_type) {
   if (!ob) return 0;
   // Dr-positive convention: Dr means +, Cr means −
   return opening_balance_type === "Dr" ? ob : -ob;
+}
+
+// ── TDS quarter calendar helper ──────────────────────────────────────────────
+// Used by Form 24Q, 26Q, 16, 16A. FY-aligned quarters:
+//   Q1 Apr-Jun (due 31 Jul)   Q2 Jul-Sep (due 31 Oct)
+//   Q3 Oct-Dec (due 31 Jan)   Q4 Jan-Mar (due 31 May)
+function tdsQuarterRange(financial_year, quarter) {
+  const fyStartYear = 2000 + parseInt(financial_year.split("-")[0], 10);
+  const QMAP = {
+    Q1: { fromM: 3,  toM: 5,  fromY: fyStartYear,     toY: fyStartYear,     dueDate: `${fyStartYear}-07-31`     },
+    Q2: { fromM: 6,  toM: 8,  fromY: fyStartYear,     toY: fyStartYear,     dueDate: `${fyStartYear}-10-31`     },
+    Q3: { fromM: 9,  toM: 11, fromY: fyStartYear,     toY: fyStartYear,     dueDate: `${fyStartYear + 1}-01-31` },
+    Q4: { fromM: 0,  toM: 2,  fromY: fyStartYear + 1, toY: fyStartYear + 1, dueDate: `${fyStartYear + 1}-05-31` },
+  };
+  const q = QMAP[quarter];
+  if (!q) throw new Error(`Invalid quarter '${quarter}' (expected Q1|Q2|Q3|Q4)`);
+  return {
+    from:    new Date(q.fromY, q.fromM, 1, 0, 0, 0, 0),
+    to:      new Date(q.toY,   q.toM + 1, 0, 23, 59, 59, 999),
+    dueDate: q.dueDate,
+  };
 }
 
 // FY helper — returns "YY-YY" for a given date
@@ -712,6 +735,855 @@ class ReportsService {
     };
   }
 
+  // ── GET /reports/cash-flow-forecast?as_of=&horizon_days=&client_credit_days=&contractor_credit_days= ──
+  //
+  // Forward-looking liquidity projection (Tier 4.3). Projects expected inflows/
+  // outflows over the next N days from committed but unsettled documents:
+  //
+  //   INFLOWS
+  //   - Client bills with balance_due > 0 → expected on bill_date + client_credit_days
+  //     (or overdue bucket if already past)
+  //   - Scheduled retention releases from RetentionLedger (if scheduled_release_date set)
+  //
+  //   OUTFLOWS
+  //   - Vendor bills with balance_due > 0 → expected on due_date
+  //   - Contractor weekly bills with balance_due > 0 → bill_date + contractor_credit_days
+  //   - Approved POs not yet billed → expected on purchaseOrder.expectedCompletionDate
+  //   - Recurring vouchers → next_run_date within horizon
+  //
+  // Opening cash = sum of Dr balance on all AccountTree rows where is_bank_cash=true.
+  // Buckets: overdue, 0-30, 31-60, 61-90, beyond-horizon.
+  static async cashFlowForecast({
+    as_of,
+    horizon_days = 90,
+    client_credit_days = 30,
+    contractor_credit_days = 15,
+  } = {}) {
+    const asOf = as_of ? new Date(as_of) : new Date();
+    asOf.setHours(0, 0, 0, 0);
+    const horizonDays = Math.min(365, Math.max(7, parseInt(horizon_days, 10) || 90));
+    const clientDays  = Math.max(0, parseInt(client_credit_days, 10) || 30);
+    const contrDays   = Math.max(0, parseInt(contractor_credit_days, 10) || 15);
+    const horizonEnd  = new Date(asOf);
+    horizonEnd.setDate(horizonEnd.getDate() + horizonDays);
+
+    const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+    const daysBetween = (a, b) => Math.floor((a.getTime() - b.getTime()) / 86400000);
+
+    // Bucket assignment — days offset from asOf; negative = overdue
+    const bucketOf = (expectedDate) => {
+      const diff = daysBetween(expectedDate, asOf);
+      if (diff < 0)   return "overdue";
+      if (diff <= 30) return "0-30";
+      if (diff <= 60) return "31-60";
+      if (diff <= 90) return "61-90";
+      if (diff <= horizonDays) return "beyond-90";
+      return "beyond-horizon";
+    };
+
+    // ── 1. Opening cash = Σ Dr balance on bank/cash leaves ────────────────────
+    const bcRows = await AccountTreeModel.find({
+      is_deleted:   false,
+      is_bank_cash: true,
+    })
+      .select("account_code account_name available_balance available_balance_type")
+      .lean();
+
+    const opening_cash = bcRows.reduce((sum, r) => {
+      const bal = Number(r.available_balance) || 0;
+      return sum + (r.available_balance_type === "Dr" ? bal : -bal);
+    }, 0);
+
+    // ── 2. Receivables — ClientBilling with balance_due > 0 ───────────────────
+    const arBills = await ClientBillingModel.find({
+      balance_due: { $gt: 0 },
+      status:      { $in: ["Approved", "Pending"] },
+    })
+      .select("bill_no bill_date client_id client_name balance_due")
+      .lean();
+
+    const inflow_client_bills = arBills.map((b) => {
+      const expected = addDays(b.bill_date, clientDays);
+      return {
+        source_type: "ClientBilling",
+        source_no:   b.bill_no,
+        party:       b.client_name,
+        party_id:    b.client_id,
+        doc_date:    b.bill_date,
+        expected_date: expected,
+        amount:      r2(b.balance_due),
+        bucket:      bucketOf(expected),
+      };
+    });
+
+    // ── 3. Retention releases (scheduled) — optional, only if model has date ──
+    let inflow_retention = [];
+    try {
+      const RetentionLedgerModel = (
+        await import("../retentionledger/retentionledger.model.js")
+      ).default;
+      const retRows = await RetentionLedgerModel.find({
+        status:                 "held",
+        retention_type:         "receivable",
+        scheduled_release_date: { $ne: null, $lte: horizonEnd },
+      })
+        .select("doc_no party_name outstanding_amount scheduled_release_date")
+        .lean()
+        .catch(() => []);
+      inflow_retention = (retRows || []).map((r) => ({
+        source_type:   "RetentionLedger",
+        source_no:     r.doc_no,
+        party:         r.party_name,
+        doc_date:      r.scheduled_release_date,
+        expected_date: r.scheduled_release_date,
+        amount:        r2(r.outstanding_amount),
+        bucket:        bucketOf(r.scheduled_release_date),
+      }));
+    } catch (_) { /* module optional */ }
+
+    // ── 4. Payables — PurchaseBill (vendor invoices) ──────────────────────────
+    const apBills = await PurchaseBillModel.find({
+      balance_due: { $gt: 0 },
+      status:      { $in: ["Approved", "Pending"] },
+    })
+      .select("bill_no doc_date due_date vendor_id vendor_name balance_due")
+      .lean();
+
+    const outflow_vendor_bills = apBills.map((b) => {
+      const expected = b.due_date ? new Date(b.due_date) : addDays(b.doc_date, 30);
+      return {
+        source_type: "PurchaseBill",
+        source_no:   b.bill_no,
+        party:       b.vendor_name,
+        party_id:    b.vendor_id,
+        doc_date:    b.doc_date,
+        expected_date: expected,
+        amount:      r2(b.balance_due),
+        bucket:      bucketOf(expected),
+      };
+    });
+
+    // ── 5. Payables — WeeklyBilling (contractor bills) ────────────────────────
+    const wbBills = await WeeklyBillingModel.find({
+      balance_due: { $gt: 0 },
+      status:      { $in: ["Approved", "Pending"] },
+    })
+      .select("bill_no bill_date contractor_id contractor_name balance_due")
+      .lean();
+
+    const outflow_contractor_bills = wbBills.map((b) => {
+      const expected = addDays(b.bill_date, contrDays);
+      return {
+        source_type: "WeeklyBilling",
+        source_no:   b.bill_no,
+        party:       b.contractor_name,
+        party_id:    b.contractor_id,
+        doc_date:    b.bill_date,
+        expected_date: expected,
+        amount:      r2(b.balance_due),
+        bucket:      bucketOf(expected),
+      };
+    });
+
+    // ── 6. Payables — Approved POs not yet billed ─────────────────────────────
+    // A PO becomes a committed outflow when status = "Purchase Order Issued".
+    // Expected date = expectedCompletionDate (service uses purchaseOrder sub-doc).
+    let outflow_open_pos = [];
+    try {
+      const PurchaseReqModel = (
+        await import("../../purchase/purchaseorderReqIssue/purchaseReqIssue.model.js")
+      ).default;
+      const openPOs = await PurchaseReqModel.find({
+        status: "Purchase Order Issued",
+        "purchaseOrder.progressStatus": { $in: ["Not Started", "In Progress", "On Hold"] },
+      })
+        .select("requestId selectedVendor purchaseOrder projectId")
+        .lean()
+        .catch(() => []);
+      outflow_open_pos = (openPOs || []).map((p) => {
+        const expected = p.purchaseOrder?.expectedCompletionDate
+          ? new Date(p.purchaseOrder.expectedCompletionDate)
+          : addDays(asOf, 30);
+        return {
+          source_type: "PurchaseOrder",
+          source_no:   p.requestId,
+          party:       p.selectedVendor?.vendorName || "",
+          party_id:    p.selectedVendor?.vendorId || "",
+          doc_date:    p.purchaseOrder?.issueDate || p.purchaseOrder?.startDate || null,
+          expected_date: expected,
+          amount:      r2(p.purchaseOrder?.approvedAmount || 0),
+          bucket:      bucketOf(expected),
+        };
+      }).filter((x) => x.amount > 0);
+    } catch (_) { /* optional */ }
+
+    // ── 7. Recurring vouchers — next_run_date within horizon ──────────────────
+    let outflow_recurring = [];
+    try {
+      const RecurringVoucherModel = (
+        await import("../recurringvoucher/recurringvoucher.model.js")
+      ).default;
+      const recurs = await RecurringVoucherModel.find({
+        status:        "active",
+        next_run_date: { $gte: asOf, $lte: horizonEnd },
+      })
+        .select("template_name voucher_type next_run_date template_payload")
+        .lean()
+        .catch(() => []);
+      outflow_recurring = (recurs || []).map((r) => {
+        const amt = Number(r.template_payload?.total_amount
+                        ?? r.template_payload?.net_amount
+                        ?? r.template_payload?.amount
+                        ?? 0);
+        return {
+          source_type:   "RecurringVoucher",
+          source_no:     r.template_name || "",
+          party:         r.voucher_type || "",
+          doc_date:      null,
+          expected_date: r.next_run_date,
+          amount:        r2(amt),
+          bucket:        bucketOf(r.next_run_date),
+        };
+      }).filter((x) => x.amount > 0);
+    } catch (_) { /* optional */ }
+
+    // ── 8. Bucket totals & running projected balance ──────────────────────────
+    const BUCKETS = ["overdue", "0-30", "31-60", "61-90", "beyond-90", "beyond-horizon"];
+    const bucketTotals = Object.fromEntries(BUCKETS.map((b) => [b, { inflow: 0, outflow: 0, net: 0 }]));
+
+    const inflows  = [...inflow_client_bills, ...inflow_retention];
+    const outflows = [...outflow_vendor_bills, ...outflow_contractor_bills, ...outflow_open_pos, ...outflow_recurring];
+
+    for (const row of inflows)  bucketTotals[row.bucket].inflow  = r2(bucketTotals[row.bucket].inflow  + row.amount);
+    for (const row of outflows) bucketTotals[row.bucket].outflow = r2(bucketTotals[row.bucket].outflow + row.amount);
+    for (const b of BUCKETS)    bucketTotals[b].net = r2(bucketTotals[b].inflow - bucketTotals[b].outflow);
+
+    const total_inflow  = r2(inflows.reduce((s, r) => s + r.amount, 0));
+    const total_outflow = r2(outflows.reduce((s, r) => s + r.amount, 0));
+    const net_horizon   = r2(total_inflow - total_outflow);
+    const projected_closing_cash = r2(opening_cash + net_horizon);
+
+    // Running 30-day projections anchored to bucket order
+    const running = [];
+    let running_balance = opening_cash;
+    for (const b of ["overdue", "0-30", "31-60", "61-90"]) {
+      running_balance = r2(running_balance + bucketTotals[b].net);
+      running.push({ bucket: b, closing_balance: running_balance });
+    }
+
+    return {
+      as_of:       asOf,
+      horizon_days: horizonDays,
+      horizon_end:  horizonEnd,
+      params: { client_credit_days: clientDays, contractor_credit_days: contrDays },
+      opening_cash: {
+        total:    r2(opening_cash),
+        accounts: bcRows.map((r) => ({
+          account_code: r.account_code,
+          account_name: r.account_name,
+          balance:      r2((r.available_balance_type === "Dr" ? 1 : -1) * (Number(r.available_balance) || 0)),
+        })),
+      },
+      buckets: bucketTotals,
+      running_closing_balance: running,
+      projected_closing_cash,
+      totals: {
+        inflow:  total_inflow,
+        outflow: total_outflow,
+        net:     net_horizon,
+        alert_liquidity_shortfall: projected_closing_cash < 0 || running.some((r) => r.closing_balance < 0),
+      },
+      inflows:  inflows.sort((a, b) => a.expected_date - b.expected_date),
+      outflows: outflows.sort((a, b) => a.expected_date - b.expected_date),
+      notes: [
+        "Client receipts assume bill_date + client_credit_days (default 30) — override via query param.",
+        "Vendor outflows use PurchaseBill.due_date (pre-save: doc_date + credit_days).",
+        "Contractor outflows assume bill_date + contractor_credit_days (default 15).",
+        "Recurring vouchers read the next_run_date already computed by the recurring-voucher cron.",
+        "`overdue` bucket holds items already past their expected date as of `as_of`.",
+      ],
+    };
+  }
+
+  // ── GET /reports/fund-flow?opening_date=&closing_date= ──────────────────────
+  //
+  // Fund-Flow Statement (Tier 4.9). Compares balance sheet at two dates and
+  // classifies every movement as a Source or Use of long-term funds. Unlike
+  // Cash Flow (which is cash-only), Fund Flow uses the broader concept of
+  // "working capital funds" and surfaces non-cash movements like accruals.
+  //
+  //   SOURCES
+  //   - Net profit for the period (from P&L)
+  //   - + Depreciation (add-back non-cash)
+  //   - Increase in long-term liabilities (loans taken)
+  //   - Increase in equity capital (fresh infusion)
+  //   - Sale of fixed assets (decrease in gross FA)
+  //   - Decrease in working capital (net)
+  //
+  //   USES
+  //   - Purchase of fixed assets (increase in gross FA)
+  //   - Repayment of long-term liabilities
+  //   - Reduction in equity (buy-back, drawings)
+  //   - Increase in working capital (net)
+  //
+  // Balances are computed as signed Dr-positive internally then surfaced on
+  // the account's natural side (Asset/Expense = Dr+, rest = Cr+).
+  static async fundFlow({ opening_date, closing_date } = {}) {
+    const now = new Date();
+    const fyStr = getFY(closing_date ? new Date(closing_date) : now);
+    const opening = opening_date ? new Date(opening_date) : fyStart(fyStr);
+    opening.setHours(23, 59, 59, 999);
+    const closing = closing_date ? new Date(closing_date) : now;
+    closing.setHours(23, 59, 59, 999);
+    if (closing <= opening) {
+      throw new Error("closing_date must be after opening_date");
+    }
+    const periodFrom = new Date(opening.getTime() + 1);
+
+    const accounts = await AccountTreeModel.find({
+      is_deleted: false,
+      is_group: false,
+      is_posting_account: true,
+    })
+      .select("account_code account_name account_type account_subtype opening_balance opening_balance_type")
+      .sort({ account_code: 1 })
+      .lean();
+
+    // Movements up to opening and up to closing — signed Dr-positive
+    const [mvOpening, mvClosing] = await Promise.all([
+      aggregateMovements({ to_date: opening }),
+      aggregateMovements({ to_date: closing }),
+    ]);
+
+    const balanceAt = (acc, mvMap) => {
+      const mv = mvMap[acc.account_code] || { total_debit: 0, total_credit: 0 };
+      const ob = signedOpening(acc.opening_balance, acc.opening_balance_type);
+      return r2(ob + mv.total_debit - mv.total_credit); // Dr-positive
+    };
+
+    // Classification helper — returns natural-side amount (positive when account went UP on its own side)
+    const naturalDelta = (acc) => {
+      const open  = balanceAt(acc, mvOpening);
+      const close = balanceAt(acc, mvClosing);
+      const delta = r2(close - open);                            // Dr-positive delta
+      const natural = ["Asset", "Expense"].includes(acc.account_type) ? delta : -delta;
+      return { open, close, delta_signed: delta, delta: r2(natural) };
+    };
+
+    // ── P&L for the period → net profit & depreciation ────────────────────────
+    const periodMv = await aggregateMovements({ from_date: periodFrom, to_date: closing });
+    let periodIncome = 0, periodExpense = 0, periodDepreciation = 0;
+    for (const a of accounts) {
+      const mv = periodMv[a.account_code];
+      if (!mv) continue;
+      if (a.account_type === "Income")  periodIncome  += (mv.total_credit - mv.total_debit);
+      if (a.account_type === "Expense") {
+        const e = mv.total_debit - mv.total_credit;
+        periodExpense += e;
+        if (a.account_subtype === "Depreciation") periodDepreciation += e;
+      }
+    }
+    const netProfit = r2(periodIncome - periodExpense);
+
+    // ── Classify each non-current, non-P&L account ────────────────────────────
+    const sources = [];
+    const uses = [];
+    let wcCurrentAssetDelta = 0;      // natural-side (+ = CA grew = Use)
+    let wcCurrentLiabDelta = 0;       // natural-side (+ = CL grew = Source)
+
+    for (const a of accounts) {
+      const { delta, open, close } = naturalDelta(a);
+      if (delta === 0) continue;
+
+      const row = {
+        account_code: a.account_code,
+        account_name: a.account_name,
+        account_subtype: a.account_subtype,
+        opening_balance: ["Asset", "Expense"].includes(a.account_type) ? r2(open) : r2(-open),
+        closing_balance: ["Asset", "Expense"].includes(a.account_type) ? r2(close) : r2(-close),
+        movement: delta,
+      };
+
+      // Skip P&L accounts — captured via netProfit
+      if (["Income", "Expense"].includes(a.account_type)) continue;
+
+      // Current Asset / Current Liability → aggregated later into working capital line
+      if (a.account_subtype === "Current Asset") {
+        wcCurrentAssetDelta = r2(wcCurrentAssetDelta + delta);
+        continue;
+      }
+      if (a.account_subtype === "Current Liability" || a.account_subtype === "Tax Liability") {
+        wcCurrentLiabDelta = r2(wcCurrentLiabDelta + delta);
+        continue;
+      }
+
+      // Fixed Asset: + = purchase (Use); − = sale (Source)
+      if (a.account_subtype === "Fixed Asset" || a.account_subtype === "Contra Asset") {
+        if (delta > 0)  uses.push({ ...row, category: "Purchase of Fixed Asset" });
+        else            sources.push({ ...row, category: "Sale of Fixed Asset", movement: Math.abs(delta) });
+        continue;
+      }
+
+      // Long-term Liability: + = loan taken (Source); − = repayment (Use)
+      if (a.account_subtype === "Long-term Liability") {
+        if (delta > 0)  sources.push({ ...row, category: "Long-term Loan Taken" });
+        else            uses.push({ ...row, category: "Long-term Loan Repaid", movement: Math.abs(delta) });
+        continue;
+      }
+
+      // Equity (Capital / Reserves excluding retained earnings period profit): + = Source; − = Use
+      if (a.account_type === "Equity") {
+        if (delta > 0)  sources.push({ ...row, category: "Equity / Capital Infusion" });
+        else            uses.push({ ...row, category: "Equity Reduction / Drawings", movement: Math.abs(delta) });
+        continue;
+      }
+    }
+
+    // ── Net profit + depreciation add-back → Source ───────────────────────────
+    if (netProfit !== 0) {
+      sources.unshift({
+        account_code: "—",
+        account_name: "Funds from Operations (Net Profit)",
+        account_subtype: "Retained Earnings",
+        opening_balance: 0,
+        closing_balance: 0,
+        movement: netProfit,
+        category: "Funds from Operations",
+      });
+    }
+    if (periodDepreciation !== 0) {
+      sources.push({
+        account_code: "—",
+        account_name: "Add: Depreciation (non-cash)",
+        account_subtype: "Depreciation",
+        opening_balance: 0,
+        closing_balance: 0,
+        movement: r2(periodDepreciation),
+        category: "Funds from Operations",
+      });
+    }
+
+    // ── Working Capital reconciliation ────────────────────────────────────────
+    // ΔWC = ΔCurrent Assets − ΔCurrent Liabilities
+    const deltaWC = r2(wcCurrentAssetDelta - wcCurrentLiabDelta);
+    const workingCapital = {
+      delta_current_assets:      wcCurrentAssetDelta,
+      delta_current_liabilities: wcCurrentLiabDelta,
+      delta_working_capital:     deltaWC,                                  // + = WC grew = Use
+      classification:            deltaWC > 0 ? "Use" : deltaWC < 0 ? "Source" : "None",
+    };
+    if (deltaWC > 0) {
+      uses.push({
+        account_code: "—",
+        account_name: "Net Increase in Working Capital",
+        account_subtype: "Working Capital",
+        opening_balance: 0,
+        closing_balance: 0,
+        movement: deltaWC,
+        category: "Working Capital",
+      });
+    } else if (deltaWC < 0) {
+      sources.push({
+        account_code: "—",
+        account_name: "Net Decrease in Working Capital",
+        account_subtype: "Working Capital",
+        opening_balance: 0,
+        closing_balance: 0,
+        movement: Math.abs(deltaWC),
+        category: "Working Capital",
+      });
+    }
+
+    const totalSources = r2(sources.reduce((s, r) => s + r.movement, 0));
+    const totalUses    = r2(uses.reduce((s, r) => s + r.movement, 0));
+
+    return {
+      opening_date: opening,
+      closing_date: closing,
+      financial_year: fyStr,
+      funds_from_operations: {
+        net_profit: netProfit,
+        depreciation_added_back: r2(periodDepreciation),
+        total: r2(netProfit + periodDepreciation),
+      },
+      sources,
+      uses,
+      working_capital_change: workingCapital,
+      totals: {
+        total_sources: totalSources,
+        total_uses:    totalUses,
+        is_balanced:   r2(totalSources - totalUses) === 0,
+        difference:    r2(totalSources - totalUses),
+      },
+      notes: [
+        "Current Assets + Current Liabilities are netted into 'Working Capital' movement.",
+        "Tax Liability is grouped with Current Liability for working-capital purposes.",
+        "Depreciation is added back as a non-cash deduction from net profit.",
+        "Any rounding residual lands in `totals.difference` (expect |diff| < 1 ₹).",
+      ],
+    };
+  }
+
+  // ── GET /reports/ratio-analysis?as_of_date= ─────────────────────────────────
+  //
+  // Ratio Analysis Dashboard (Tier 4.10). Computes the classical management-
+  // accounting ratios from Balance Sheet + P&L for an FY ending at `as_of_date`.
+  //
+  //   LIQUIDITY
+  //   - Current Ratio      = CA / CL                  (≥1.5 healthy)
+  //   - Quick (Acid-Test)  = (CA − Inventory) / CL    (≥1.0 healthy)
+  //   - Cash Ratio         = Cash+Bank / CL
+  //
+  //   SOLVENCY / LEVERAGE
+  //   - Debt-Equity        = Long-term Debt / Equity
+  //   - Debt Ratio         = Total Liab / Total Assets
+  //   - Interest Coverage  = EBIT / Interest Expense
+  //
+  //   PROFITABILITY
+  //   - Net Profit Margin  = NP / Revenue
+  //   - Gross Profit Margin= (Revenue − Direct Cost) / Revenue
+  //   - ROCE               = EBIT / Capital Employed  (CE = Equity + LT Debt)
+  //   - ROA                = Net Profit / Total Assets
+  //
+  //   ACTIVITY (Working-capital cycle in days)
+  //   - DSO                = AR / Revenue × 365
+  //   - DPO                = AP / Purchases × 365
+  //   - DIO                = Inventory / Direct Cost × 365
+  //   - Cash Conversion    = DSO + DIO − DPO
+  static async ratioAnalysis({ as_of_date } = {}) {
+    const asOf = as_of_date ? new Date(as_of_date) : new Date();
+    asOf.setHours(23, 59, 59, 999);
+    const fyStr = getFY(asOf);
+    const fyFrom = fyStart(fyStr);
+
+    const accounts = await AccountTreeModel.find({
+      is_deleted: false,
+      is_group: false,
+      is_posting_account: true,
+    })
+      .select("account_code account_name account_type account_subtype opening_balance opening_balance_type is_bank_cash")
+      .lean();
+
+    const [mvAsOf, mvFyPeriod] = await Promise.all([
+      aggregateMovements({ to_date: asOf }),
+      aggregateMovements({ from_date: fyFrom, to_date: asOf }),
+    ]);
+
+    const signedClose = (a) => {
+      const mv = mvAsOf[a.account_code] || { total_debit: 0, total_credit: 0 };
+      const ob = signedOpening(a.opening_balance, a.opening_balance_type);
+      return ob + mv.total_debit - mv.total_credit; // Dr-positive
+    };
+    // Natural-side (Asset/Expense Dr+; Liab/Equity/Income Cr+)
+    const naturalClose = (a) => {
+      const s = signedClose(a);
+      return ["Asset", "Expense"].includes(a.account_type) ? s : -s;
+    };
+
+    // Bucket totals
+    let currentAssets = 0, fixedAssets = 0, inventory = 0, cashBank = 0, trade_receivables = 0;
+    let currentLiab = 0, longTermLiab = 0, taxLiab = 0, trade_payables = 0;
+    let equity = 0;
+    for (const a of accounts) {
+      const v = naturalClose(a);
+      if (!v) continue;
+      if (a.account_type === "Asset") {
+        if (a.account_subtype === "Fixed Asset" || a.account_subtype === "Contra Asset") fixedAssets += v;
+        else currentAssets += v;
+        if (a.is_bank_cash) cashBank += v;
+        // Receivable accounts live under Current Asset and typically carry "RCV"/"CL-" codes.
+        // Heuristic: treat all Current Asset codes whose name contains "receivable"/"debtor"/"client" as trade.
+        const n = (a.account_name || "").toLowerCase();
+        if (a.account_subtype === "Current Asset" && (n.includes("receivable") || n.includes("debtor") || n.includes("client"))) {
+          trade_receivables += v;
+        }
+        // Crude inventory detection: name contains "stock" or "inventory" or "material"
+        if (n.includes("inventory") || n.includes("stock") || n.includes("material")) {
+          inventory += v;
+        }
+      } else if (a.account_type === "Liability") {
+        if (a.account_subtype === "Long-term Liability") longTermLiab += v;
+        else if (a.account_subtype === "Tax Liability")   taxLiab += v;
+        else currentLiab += v;
+        const n = (a.account_name || "").toLowerCase();
+        if (a.account_subtype === "Current Liability" && (n.includes("payable") || n.includes("creditor") || n.includes("vendor") || n.includes("contractor"))) {
+          trade_payables += v;
+        }
+      } else if (a.account_type === "Equity") {
+        equity += v;
+      }
+    }
+    currentLiab += taxLiab; // For ratio purposes
+
+    // P&L numbers for the FY → period
+    let revenue = 0, directCost = 0, totalExpense = 0, interestExpense = 0;
+    for (const a of accounts) {
+      const mv = mvFyPeriod[a.account_code];
+      if (!mv) continue;
+      if (a.account_type === "Income")  revenue    += (mv.total_credit - mv.total_debit);
+      if (a.account_type === "Expense") {
+        const e = mv.total_debit - mv.total_credit;
+        totalExpense += e;
+        if (a.account_subtype === "Direct Cost")       directCost      += e;
+        if (a.account_subtype === "Financial Expense") interestExpense += e;
+      }
+    }
+    const netProfit = r2(revenue - totalExpense);
+    const ebit      = r2(netProfit + interestExpense);  // no separate Tax line in this COA
+    equity         = r2(equity + netProfit);             // include current-period retained earnings
+
+    // Purchases proxy — total Dr movement on Direct Cost accounts for the FY period
+    let purchases = 0;
+    for (const a of accounts) {
+      if (a.account_subtype !== "Direct Cost") continue;
+      const mv = mvFyPeriod[a.account_code];
+      if (mv) purchases += mv.total_debit;
+    }
+
+    const div = (num, den) => (den === 0 ? null : r2(num / den));
+    const pct = (num, den) => (den === 0 ? null : r2((num / den) * 100));
+
+    const totalAssets    = r2(currentAssets + fixedAssets);
+    const totalLiab      = r2(currentLiab + longTermLiab);
+    const capitalEmployed = r2(equity + longTermLiab);
+
+    const liquidity = {
+      current_ratio:     div(currentAssets, currentLiab),
+      quick_ratio:       div(currentAssets - inventory, currentLiab),
+      cash_ratio:        div(cashBank, currentLiab),
+    };
+    const solvency = {
+      debt_to_equity:    div(longTermLiab, equity),
+      debt_ratio:        div(totalLiab, totalAssets),
+      interest_coverage: div(ebit, interestExpense),
+    };
+    const profitability = {
+      net_profit_margin_pct:   pct(netProfit, revenue),
+      gross_profit_margin_pct: pct(revenue - directCost, revenue),
+      roce_pct:                pct(ebit, capitalEmployed),
+      roa_pct:                 pct(netProfit, totalAssets),
+    };
+    const activity = {
+      dso_days:           div(trade_receivables * 365, revenue),
+      dpo_days:           div(trade_payables * 365, purchases),
+      dio_days:           div(inventory * 365, directCost),
+      cash_conversion_cycle_days: (() => {
+        const dso = div(trade_receivables * 365, revenue);
+        const dpo = div(trade_payables * 365, purchases);
+        const dio = div(inventory * 365, directCost);
+        if (dso === null || dpo === null || dio === null) return null;
+        return r2(dso + dio - dpo);
+      })(),
+    };
+
+    return {
+      as_of_date: asOf,
+      financial_year: fyStr,
+      balance_sheet_snapshot: {
+        current_assets: r2(currentAssets),
+        fixed_assets:   r2(fixedAssets),
+        total_assets:   totalAssets,
+        current_liabilities: r2(currentLiab),
+        long_term_liabilities: r2(longTermLiab),
+        total_liabilities: totalLiab,
+        equity: equity,
+        capital_employed: capitalEmployed,
+        inventory: r2(inventory),
+        cash_bank: r2(cashBank),
+        trade_receivables: r2(trade_receivables),
+        trade_payables:    r2(trade_payables),
+      },
+      pnl_snapshot: {
+        revenue:          r2(revenue),
+        direct_cost:      r2(directCost),
+        total_expense:    r2(totalExpense),
+        interest_expense: r2(interestExpense),
+        net_profit:       netProfit,
+        ebit:             ebit,
+      },
+      ratios: {
+        liquidity,
+        solvency,
+        profitability,
+        activity,
+      },
+      notes: [
+        "Trade receivables/payables are identified by name-match ('receivable','debtor','client' / 'payable','creditor','vendor','contractor') within Current Asset/Liability subtypes.",
+        "Inventory is identified by name match ('stock','inventory','material').",
+        "EBIT = NP + Interest Expense (no separate Tax line in the COA).",
+        "null ratio ⇒ denominator is zero (not enough data yet).",
+      ],
+    };
+  }
+
+  // ── GET /reports/tender-profitability?from_date=&to_date=&tender_id= ────────
+  //
+  // Tender Profitability with full absorption costing (Tier 4.2).
+  //
+  //   For each tender:
+  //   - Revenue            = Σ Income allocated to tender (JE or line tender_id)
+  //   - Direct Cost        = Σ Expense (Direct Cost) on tender
+  //   - Site Overhead      = Σ Expense (Site Overhead) on tender
+  //   - Direct margin      = Revenue − (Direct + Site OH)
+  //   - Indirect allocation= share of company-wide Admin/Financial/Depreciation
+  //                         (unallocated JEs) × Revenue share ratio
+  //   - Operating profit   = Direct margin − Indirect allocation
+  //   - Margin %           = Operating profit / Revenue
+  //
+  // Absorption base: revenue-weighted for Admin/Financial; asset-direct for
+  // Depreciation when the asset's cost-head ties to a tender, else revenue-weighted.
+  static async tenderProfitability({ from_date, to_date, tender_id } = {}) {
+    const now = new Date();
+    const fyStr = getFY(to_date ? new Date(to_date) : now);
+    const from = from_date ? new Date(from_date) : fyStart(fyStr);
+    const to   = to_date   ? new Date(to_date)   : now;
+    to.setHours(23, 59, 59, 999);
+
+    // 1. Chart of accounts → lookup map
+    const accounts = await AccountTreeModel.find({
+      is_deleted: false, is_group: false, is_posting_account: true,
+    })
+      .select("account_code account_type account_subtype")
+      .lean();
+    const acc = Object.fromEntries(accounts.map((a) => [a.account_code, a]));
+
+    // 2. Fetch tenders (filter if specific one requested)
+    const tenderQuery = tender_id ? { tender_id } : {};
+    const tenders = await TenderModel.find(tenderQuery)
+      .select("tender_id tender_name tender_status tender_value agreement_value client_name")
+      .lean();
+    const tenderMap = Object.fromEntries(tenders.map((t) => [t.tender_id, t]));
+
+    // 3. Single aggregation: by (effective_tender_id, account_code) for the period
+    // effective tender = line.tender_id if present, else header tender_id
+    const agg = await JournalEntryModel.aggregate([
+      { $match: { status: "approved", je_date: { $gte: from, $lte: to } } },
+      { $unwind: "$lines" },
+      {
+        $project: {
+          effective_tender: {
+            $cond: [
+              { $and: [{ $ne: ["$lines.tender_id", null] }, { $ne: ["$lines.tender_id", ""] }] },
+              "$lines.tender_id",
+              "$tender_id",
+            ],
+          },
+          account_code: "$lines.account_code",
+          debit:  "$lines.debit_amt",
+          credit: "$lines.credit_amt",
+        },
+      },
+      {
+        $group: {
+          _id: { tender: "$effective_tender", code: "$account_code" },
+          debit:  { $sum: "$debit" },
+          credit: { $sum: "$credit" },
+        },
+      },
+    ]);
+
+    // 4. Roll up by tender → { revenue, direct_cost, site_overhead, admin, financial, depreciation }
+    const bucket = () => ({ revenue: 0, direct_cost: 0, site_overhead: 0, admin: 0, financial: 0, depreciation: 0, other_expense: 0 });
+    const byTender = {};                                      // tender_id -> bucket
+    const unallocated = bucket();
+
+    for (const row of agg) {
+      const t    = row._id.tender || "";
+      const a    = acc[row._id.code];
+      if (!a) continue;
+      const dr = row.debit, cr = row.credit;
+
+      // Pick or create bucket
+      const b = t ? (byTender[t] ||= bucket()) : unallocated;
+
+      if (a.account_type === "Income") {
+        b.revenue += (cr - dr);
+      } else if (a.account_type === "Expense") {
+        const e = (dr - cr);
+        switch (a.account_subtype) {
+          case "Direct Cost":       b.direct_cost += e; break;
+          case "Site Overhead":     b.site_overhead += e; break;
+          case "Admin Expense":     b.admin += e; break;
+          case "Financial Expense": b.financial += e; break;
+          case "Depreciation":      b.depreciation += e; break;
+          default:                  b.other_expense += e;
+        }
+      }
+    }
+
+    // 5. Allocation base — revenue share for each tender of total tender revenue
+    const totalTenderRevenue = Object.values(byTender).reduce((s, b) => s + b.revenue, 0);
+    const totalUnallocatedIndirect = r2(
+      unallocated.admin + unallocated.financial + unallocated.depreciation + unallocated.other_expense,
+    );
+
+    const rows = [];
+    for (const [tid, b] of Object.entries(byTender)) {
+      const meta = tenderMap[tid] || {};
+      const directMargin = r2(b.revenue - b.direct_cost - b.site_overhead);
+      const share = totalTenderRevenue > 0 ? (b.revenue / totalTenderRevenue) : 0;
+      const indirectAllocated = r2(totalUnallocatedIndirect * share);
+      const absorbedIndirect  = r2(b.admin + b.financial + b.depreciation + b.other_expense + indirectAllocated);
+      const operatingProfit   = r2(directMargin - absorbedIndirect);
+      const marginPct         = b.revenue > 0 ? r2((operatingProfit / b.revenue) * 100) : null;
+
+      rows.push({
+        tender_id:         tid,
+        tender_name:       meta.tender_name || "",
+        client_name:       meta.client_name || "",
+        tender_status:     meta.tender_status || "",
+        tender_value:      r2(meta.tender_value || 0),
+        agreement_value:   r2(meta.agreement_value || 0),
+        revenue:           r2(b.revenue),
+        direct_cost:       r2(b.direct_cost),
+        site_overhead:     r2(b.site_overhead),
+        direct_margin:     directMargin,
+        direct_indirect:   r2(b.admin + b.financial + b.depreciation + b.other_expense),
+        allocated_indirect: indirectAllocated,
+        absorbed_indirect: absorbedIndirect,
+        operating_profit:  operatingProfit,
+        operating_margin_pct: marginPct,
+        revenue_share_pct: r2(share * 100),
+      });
+    }
+
+    // 6. Sort by operating profit descending
+    rows.sort((a, b) => b.operating_profit - a.operating_profit);
+
+    // 7. Company-level totals
+    const companyRevenue = r2(rows.reduce((s, r) => s + r.revenue, 0));
+    const companyDirect  = r2(rows.reduce((s, r) => s + r.direct_cost + r.site_overhead, 0));
+    const companyAbsorbed = r2(rows.reduce((s, r) => s + r.absorbed_indirect, 0));
+    const companyOpProfit = r2(rows.reduce((s, r) => s + r.operating_profit, 0));
+
+    return {
+      from_date: from,
+      to_date:   to,
+      financial_year: fyStr,
+      tenders: rows,
+      unallocated_indirect: {
+        admin:          r2(unallocated.admin),
+        financial:      r2(unallocated.financial),
+        depreciation:   r2(unallocated.depreciation),
+        other_expense:  r2(unallocated.other_expense),
+        revenue_leak:   r2(unallocated.revenue),   // Income without tender tag (data quality signal)
+        total:          totalUnallocatedIndirect,
+      },
+      company_totals: {
+        total_revenue:       companyRevenue,
+        total_direct:        companyDirect,
+        total_absorbed_indirect: companyAbsorbed,
+        total_operating_profit:  companyOpProfit,
+        operating_margin_pct:    companyRevenue > 0 ? r2((companyOpProfit / companyRevenue) * 100) : null,
+      },
+      notes: [
+        "Indirect expenses without a tender tag are absorbed into tender P&Ls pro-rata by revenue share.",
+        "Depreciation is treated as an indirect cost unless the JE line carries a tender_id.",
+        "`revenue_leak` flags Income JEs that weren't tagged to any tender — improve tagging to reduce it.",
+      ],
+    };
+  }
+
   // ── GET /reports/gstr-1?from_date=&to_date= ─────────────────────────────────
   //
   // Outward supplies (sales) for the period:
@@ -1045,13 +1917,13 @@ class ReportsService {
       account_codes: [...GST_OUTPUT_CODES, ...GST_INPUT_CODES],
     });
 
-    const ledgerOutCgst = r2((movements["2110"]?.total_credit || 0) - (movements["2110"]?.total_debit || 0));
-    const ledgerOutSgst = r2((movements["2120"]?.total_credit || 0) - (movements["2120"]?.total_debit || 0));
-    const ledgerOutIgst = r2((movements["2130"]?.total_credit || 0) - (movements["2130"]?.total_debit || 0));
+    const ledgerOutCgst = r2((movements[GL.GST_OUTPUT_CGST]?.total_credit || 0) - (movements[GL.GST_OUTPUT_CGST]?.total_debit || 0));
+    const ledgerOutSgst = r2((movements[GL.GST_OUTPUT_SGST]?.total_credit || 0) - (movements[GL.GST_OUTPUT_SGST]?.total_debit || 0));
+    const ledgerOutIgst = r2((movements[GL.GST_OUTPUT_IGST]?.total_credit || 0) - (movements[GL.GST_OUTPUT_IGST]?.total_debit || 0));
 
-    const ledgerInCgst  = r2((movements["1080-CGST"]?.total_debit || 0) - (movements["1080-CGST"]?.total_credit || 0));
-    const ledgerInSgst  = r2((movements["1080-SGST"]?.total_debit || 0) - (movements["1080-SGST"]?.total_credit || 0));
-    const ledgerInIgst  = r2((movements["1080-IGST"]?.total_debit || 0) - (movements["1080-IGST"]?.total_credit || 0));
+    const ledgerInCgst  = r2((movements[GL.GST_INPUT_CGST]?.total_debit || 0) - (movements[GL.GST_INPUT_CGST]?.total_credit || 0));
+    const ledgerInSgst  = r2((movements[GL.GST_INPUT_SGST]?.total_debit || 0) - (movements[GL.GST_INPUT_SGST]?.total_credit || 0));
+    const ledgerInIgst  = r2((movements[GL.GST_INPUT_IGST]?.total_debit || 0) - (movements[GL.GST_INPUT_IGST]?.total_credit || 0));
 
     // ITC reversed in the period (Cr on Input ITC accounts via JE type "ITC Reversal")
     const reversed = await JournalEntryModel.aggregate([
@@ -1760,6 +2632,1030 @@ class ReportsService {
         "Deductee code 01=Individual, 02=Company/others. Review per deductee before filing.",
         "PAN-missing entries attract TDS @ 20% u/s 206AA — fix those before filing.",
       ],
+    };
+  }
+
+  // ── GET /reports/form-24q ─────────────────────────────────────────────────
+  //
+  // Form 24Q — quarterly TDS statement for SALARY (section 192).
+  //
+  // Source data:
+  //   PayrollModel.deductions.tax  — TDS deducted from employee salary
+  //   PayrollModel.earnings.grossPay — gross salary paid in the month
+  //   Employee.payroll.panNumber    — deductee PAN
+  //
+  // Output structure mirrors Form 26Q:
+  //   - Annexure I (every quarter): per-deductee challan-wise breakup
+  //   - Annexure II (Q4 only):       annual salary breakup per employee
+  //
+  // Challan fields (BSR/date/serial) are not tracked in Romaa today and are
+  // surfaced as blank — fill in at the TDS portal before upload.
+  static async form24Q({
+    financial_year, quarter, tan,
+    deductor_name, deductor_pan, deductor_address,
+  }) {
+    if (!financial_year) throw new Error("financial_year is required (e.g. '25-26')");
+    if (!quarter)        throw new Error("quarter is required (Q1|Q2|Q3|Q4)");
+
+    const { from, to, dueDate } = tdsQuarterRange(financial_year, quarter);
+
+    // Fetch payroll rows in the quarter window (month/year stored as integers)
+    const months = [];
+    for (let d = new Date(from); d <= to; d.setMonth(d.getMonth() + 1)) {
+      months.push({ month: d.getMonth() + 1, year: d.getFullYear() });
+    }
+    const monthFilter = { $or: months };
+
+    const payrolls = await PayrollModel.find(monthFilter)
+      .populate({
+        path: "employeeId",
+        select: "employeeId name email phone designation payroll dateOfJoining",
+      })
+      .lean();
+
+    // Build deductee records (one row per payroll month with TDS > 0)
+    const deducteeRecords = payrolls
+      .filter(p => (p.deductions?.tax || 0) > 0)
+      .map((p, idx) => {
+        const emp = p.employeeId || {};
+        return {
+          sl_no:                idx + 1,
+          deductee_code:        "01", // 01 = individual (always for salary)
+          pan:                  emp.payroll?.panNumber || "PANNOTAVBL",
+          deductee_name:        emp.name || "",
+          emp_id:               emp.employeeId || "",
+          designation:          emp.designation || "",
+          section_code:         "192",
+          payment_month:        `${p.year}-${String(p.month).padStart(2, "0")}`,
+          payment_date:         p.paymentDate || null,
+          gross_salary:         r2(p.earnings?.grossPay || 0),
+          tds_amount:           r2(p.deductions?.tax || 0),
+          tds_rate_pct:         (p.earnings?.grossPay > 0)
+                                  ? r2((p.deductions?.tax || 0) / p.earnings.grossPay * 100)
+                                  : 0,
+          surcharge:            0,
+          education_cess:       0,
+          total_tax_deducted:   r2(p.deductions?.tax || 0),
+          total_tax_deposited:  r2(p.deductions?.tax || 0),
+          // Challan fields — not tracked, blank for portal entry
+          bsr_code:             "",
+          challan_date:         "",
+          challan_serial_no:    "",
+          book_entry_flag:      "N",
+          payroll_id:           p._id,
+        };
+      });
+
+    // Per-employee summary (one row per deductee)
+    const empMap = {};
+    for (const d of deducteeRecords) {
+      const k = d.pan + "|" + d.emp_id;
+      if (!empMap[k]) {
+        empMap[k] = {
+          pan:           d.pan,
+          deductee_code: d.deductee_code,
+          emp_id:        d.emp_id,
+          name:          d.deductee_name,
+          designation:   d.designation,
+          months_count:  0,
+          total_paid:    0,
+          total_tds:     0,
+        };
+      }
+      empMap[k].months_count += 1;
+      empMap[k].total_paid   += d.gross_salary;
+      empMap[k].total_tds    += d.tds_amount;
+    }
+    const byEmployee = Object.values(empMap)
+      .map(e => ({ ...e, total_paid: r2(e.total_paid), total_tds: r2(e.total_tds) }))
+      .sort((a, b) => b.total_tds - a.total_tds);
+
+    // Annexure II — annual salary breakup (Q4 ONLY)
+    let annexureII = null;
+    if (quarter === "Q4") {
+      const fyMonths = [];
+      const startYY = 2000 + parseInt(financial_year.split("-")[0], 10);
+      // Apr (start year) through Mar (start year + 1)
+      for (let m = 4; m <= 12; m++) fyMonths.push({ month: m, year: startYY });
+      for (let m = 1; m <= 3;  m++) fyMonths.push({ month: m, year: startYY + 1 });
+
+      const fyPayrolls = await PayrollModel.find({ $or: fyMonths })
+        .populate({ path: "employeeId", select: "employeeId name designation payroll dateOfJoining" })
+        .lean();
+
+      const annualMap = {};
+      for (const p of fyPayrolls) {
+        const emp = p.employeeId || {};
+        const k   = (emp.payroll?.panNumber || "PANNOTAVBL") + "|" + (emp.employeeId || "");
+        if (!annualMap[k]) {
+          annualMap[k] = {
+            pan:                emp.payroll?.panNumber || "PANNOTAVBL",
+            emp_id:             emp.employeeId || "",
+            name:               emp.name || "",
+            designation:        emp.designation || "",
+            date_of_joining:    emp.dateOfJoining || null,
+            gross_salary:       0,
+            basic:              0,
+            hra:                0,
+            da:                 0,
+            other_allowances:   0,
+            pf:                 0,
+            esi:                0,
+            tds:                0,
+            // Old-regime / chapter VI-A — not tracked in Romaa, surface as 0
+            sec_80c:            0,
+            sec_80d:            0,
+            taxable_income:     0,
+          };
+        }
+        annualMap[k].gross_salary    += (p.earnings?.grossPay        || 0);
+        annualMap[k].basic           += (p.earnings?.basic           || 0);
+        annualMap[k].hra             += (p.earnings?.hra             || 0);
+        annualMap[k].da              += (p.earnings?.da              || 0);
+        annualMap[k].other_allowances+= (p.earnings?.otherAllowances || 0)
+                                       + (p.earnings?.overtimePay    || 0);
+        annualMap[k].pf              += (p.deductions?.pf            || 0);
+        annualMap[k].esi             += (p.deductions?.esi           || 0);
+        annualMap[k].tds             += (p.deductions?.tax           || 0);
+      }
+      annexureII = Object.values(annualMap).map(e => ({
+        ...e,
+        gross_salary:     r2(e.gross_salary),
+        basic:            r2(e.basic),
+        hra:              r2(e.hra),
+        da:               r2(e.da),
+        other_allowances: r2(e.other_allowances),
+        pf:               r2(e.pf),
+        esi:              r2(e.esi),
+        tds:              r2(e.tds),
+        // Best-effort taxable income = gross − PF − ESI (no investment data)
+        taxable_income:   r2(Math.max(0, e.gross_salary - e.pf - e.esi)),
+      })).sort((a, b) => b.gross_salary - a.gross_salary);
+    }
+
+    const totalPaid = r2(deducteeRecords.reduce((s, d) => s + d.gross_salary, 0));
+    const totalTds  = r2(deducteeRecords.reduce((s, d) => s + d.tds_amount,    0));
+    const missingPan = deducteeRecords.filter(d => !d.pan || d.pan === "PANNOTAVBL");
+
+    return {
+      form:            "24Q",
+      financial_year,
+      quarter,
+      period:          { from, to },
+      due_date:        dueDate,
+      deductor: {
+        tan:           tan || "",
+        name:          deductor_name || "",
+        pan:           deductor_pan || "",
+        address:       deductor_address || "",
+      },
+      summary: {
+        total_entries:    deducteeRecords.length,
+        total_paid:       totalPaid,
+        total_tds:        totalTds,
+        pan_missing:      missingPan.length,
+        deductees_count:  byEmployee.length,
+        has_annexure_ii:  quarter === "Q4",
+      },
+      by_employee:       byEmployee,
+      deductee_records:  deducteeRecords,
+      pan_missing_rows:  missingPan,
+      annexure_ii:       annexureII,
+      notes: [
+        "Section 192 (salary) only — non-salary TDS is filed via Form 26Q.",
+        "Challan fields (BSR, date, serial) are not tracked in Romaa; fill at TDS portal.",
+        "Annexure II (annual salary statement) is only required for Q4.",
+        "PAN-missing entries attract TDS @ 20% u/s 206AA — fix before filing.",
+        "Romaa does not capture old/new regime selection or 80C/80D investments — adjust at filing time.",
+      ],
+    };
+  }
+
+  // ── GET /reports/form-16 ──────────────────────────────────────────────────
+  //
+  // Form 16 — annual TDS certificate for SALARY (section 192).
+  // One certificate per employee per FY. If employee_id is omitted, returns
+  // certificates for ALL employees with TDS > 0 in the FY.
+  //
+  // Part A: quarter-wise TDS deducted (challan summary) — derived from PayrollModel
+  // Part B: salary breakup, deductions, taxable income — best-effort from Payroll
+  static async form16({ financial_year, employee_id, tan, deductor_name, deductor_pan, deductor_address }) {
+    if (!financial_year) throw new Error("financial_year is required (e.g. '25-26')");
+
+    const startYY = 2000 + parseInt(financial_year.split("-")[0], 10);
+    const fyMonths = [];
+    for (let m = 4; m <= 12; m++) fyMonths.push({ month: m, year: startYY });
+    for (let m = 1; m <= 3;  m++) fyMonths.push({ month: m, year: startYY + 1 });
+
+    const filter = { $or: fyMonths };
+    if (employee_id) filter.employeeId = employee_id;
+
+    const payrolls = await PayrollModel.find(filter)
+      .populate({
+        path: "employeeId",
+        select: "employeeId name email phone designation address payroll dateOfJoining",
+      })
+      .lean();
+
+    // Group by employee, then by quarter
+    const empMap = {};
+    for (const p of payrolls) {
+      const emp = p.employeeId || {};
+      const empKey = String(emp._id || p.employeeId);
+      if (!empMap[empKey]) {
+        empMap[empKey] = {
+          employee: {
+            _id:             emp._id,
+            emp_id:          emp.employeeId || "",
+            name:            emp.name || "",
+            email:           emp.email || "",
+            phone:           emp.phone || "",
+            designation:     emp.designation || "",
+            pan:             emp.payroll?.panNumber || "PANNOTAVBL",
+            uan:             emp.payroll?.uanNumber || "",
+            address:         emp.address || {},
+            date_of_joining: emp.dateOfJoining || null,
+          },
+          // Part A — quarterly TDS
+          part_a: { Q1: { paid: 0, tds: 0, months: 0 },
+                    Q2: { paid: 0, tds: 0, months: 0 },
+                    Q3: { paid: 0, tds: 0, months: 0 },
+                    Q4: { paid: 0, tds: 0, months: 0 } },
+          // Part B — annual salary breakup
+          part_b: {
+            gross_salary:        0,
+            basic:               0,
+            hra:                 0,
+            da:                  0,
+            other_allowances:    0,
+            // Section 16 standard deductions (best-effort)
+            std_deduction:       50000, // FY 24-25+ default
+            professional_tax:    0,
+            pf_employee:         0,
+            esi_employee:        0,
+            tds:                 0,
+            // Chapter VI-A — Romaa does not capture investments
+            sec_80c:             0,
+            sec_80d:             0,
+            sec_80g:             0,
+          },
+          months_count: 0,
+        };
+      }
+
+      const e = empMap[empKey];
+      const q = (p.month >= 4 && p.month <= 6)  ? "Q1"
+              : (p.month >= 7 && p.month <= 9)  ? "Q2"
+              : (p.month >= 10 && p.month <= 12)? "Q3" : "Q4";
+
+      e.part_a[q].paid += (p.earnings?.grossPay || 0);
+      e.part_a[q].tds  += (p.deductions?.tax    || 0);
+      e.part_a[q].months += 1;
+
+      e.part_b.gross_salary    += (p.earnings?.grossPay        || 0);
+      e.part_b.basic           += (p.earnings?.basic           || 0);
+      e.part_b.hra             += (p.earnings?.hra             || 0);
+      e.part_b.da              += (p.earnings?.da              || 0);
+      e.part_b.other_allowances+= (p.earnings?.otherAllowances || 0)
+                                + (p.earnings?.overtimePay     || 0);
+      e.part_b.pf_employee     += (p.deductions?.pf            || 0);
+      e.part_b.esi_employee    += (p.deductions?.esi           || 0);
+      e.part_b.tds             += (p.deductions?.tax           || 0);
+      e.months_count           += 1;
+    }
+
+    // Round + compute taxable income
+    const certificates = Object.values(empMap).map(e => {
+      ["Q1", "Q2", "Q3", "Q4"].forEach(q => {
+        e.part_a[q].paid = r2(e.part_a[q].paid);
+        e.part_a[q].tds  = r2(e.part_a[q].tds);
+      });
+      const b = e.part_b;
+      Object.keys(b).forEach(k => { if (typeof b[k] === "number") b[k] = r2(b[k]); });
+
+      const total_deductions = b.std_deduction + b.professional_tax + b.pf_employee + b.esi_employee
+                              + b.sec_80c + b.sec_80d + b.sec_80g;
+      const taxable_income   = r2(Math.max(0, b.gross_salary - total_deductions));
+      const total_tds_year   = r2(["Q1","Q2","Q3","Q4"].reduce((s, q) => s + e.part_a[q].tds, 0));
+      const total_paid_year  = r2(["Q1","Q2","Q3","Q4"].reduce((s, q) => s + e.part_a[q].paid, 0));
+
+      return {
+        employee:        e.employee,
+        period:          { financial_year, from: `${startYY}-04-01`, to: `${startYY + 1}-03-31` },
+        deductor: {
+          tan:     tan || "",
+          name:    deductor_name || "",
+          pan:     deductor_pan || "",
+          address: deductor_address || "",
+        },
+        part_a: {
+          quarters:         e.part_a,
+          total_paid_year,
+          total_tds_year,
+        },
+        part_b: {
+          ...b,
+          total_deductions: r2(total_deductions),
+          taxable_income,
+        },
+        months_count:     e.months_count,
+      };
+    }).filter(c => c.part_a.total_tds_year > 0 || employee_id) // include zero-TDS only if explicitly requested
+      .sort((a, b) => b.part_a.total_tds_year - a.part_a.total_tds_year);
+
+    return {
+      form:            "16",
+      financial_year,
+      certificates_count: certificates.length,
+      certificates,
+      notes: [
+        "Issued annually per employee — issue by 15 June following the FY (Income Tax Rule 31).",
+        "Part A challan / token data is not tracked in Romaa; populate via TRACES portal export.",
+        "Part B Chapter VI-A figures (80C/80D/80G) are zero — Romaa does not capture investments.",
+        "Standard deduction defaults to ₹50,000 — adjust per regime (old/new) before issuing.",
+      ],
+    };
+  }
+
+  // ── GET /reports/form-16a ─────────────────────────────────────────────────
+  //
+  // Form 16A — quarterly TDS certificate for NON-SALARY (sections 194C/194I/etc.).
+  // One certificate per (deductee × section × quarter). Surfaces directly from
+  // the existing tdsRegister (Form 26Q data) grouped by deductee + section.
+  //
+  // Filters:
+  //   financial_year, quarter — required
+  //   deductee_id             — optional (specific vendor/contractor/client)
+  //   section                 — optional (e.g. "194C", "194I")
+  static async form16A({ financial_year, quarter, deductee_id, section, tan, deductor_name, deductor_pan, deductor_address }) {
+    if (!financial_year) throw new Error("financial_year is required (e.g. '25-26')");
+    if (!quarter)        throw new Error("quarter is required (Q1|Q2|Q3|Q4)");
+
+    const { from, to, dueDate } = tdsQuarterRange(financial_year, quarter);
+
+    // Pull TDS register for the quarter
+    const register = await ReportsService.tdsRegister({ from_date: from, to_date: to });
+    let rows = (register.rows || []).filter(r => r.tds_section && r.tds_section !== "192");
+    if (deductee_id) rows = rows.filter(r => r.deductee_id === deductee_id);
+    if (section)     rows = rows.filter(r => r.tds_section === section);
+
+    // Group by (deductee, section)
+    const certMap = {};
+    for (const r of rows) {
+      const k = `${r.deductee_id}|${r.tds_section}`;
+      if (!certMap[k]) {
+        certMap[k] = {
+          deductee: {
+            type:  r.deductee_type,
+            id:    r.deductee_id,
+            name:  r.deductee_name,
+            pan:   r.pan || "PANNOTAVBL",
+            gstin: r.gstin || "",
+          },
+          section_code: r.tds_section,
+          period:       { financial_year, quarter, from, to },
+          due_date:     dueDate,
+          deductor: {
+            tan:     tan || "",
+            name:    deductor_name || "",
+            pan:     deductor_pan || "",
+            address: deductor_address || "",
+          },
+          // Per-payment breakdown
+          payments: [],
+          total_paid: 0,
+          total_tds:  0,
+        };
+      }
+      certMap[k].payments.push({
+        payment_date: r.payment_date,
+        voucher_no:   r.voucher_no,
+        amount_paid:  r.amount_paid,
+        tds_rate_pct: r.tds_pct,
+        tds_amount:   r.tds_amount,
+        // Challan fields — not tracked
+        bsr_code:          "",
+        challan_date:      "",
+        challan_serial_no: "",
+        book_entry_flag:   "N",
+      });
+      certMap[k].total_paid += r.amount_paid;
+      certMap[k].total_tds  += r.tds_amount;
+    }
+
+    const certificates = Object.values(certMap).map(c => ({
+      ...c,
+      total_paid: r2(c.total_paid),
+      total_tds:  r2(c.total_tds),
+    })).sort((a, b) => b.total_tds - a.total_tds);
+
+    return {
+      form:               "16A",
+      financial_year,
+      quarter,
+      period:             { from, to },
+      due_date:           dueDate,
+      certificates_count: certificates.length,
+      total_paid:         r2(certificates.reduce((s, c) => s + c.total_paid, 0)),
+      total_tds:          r2(certificates.reduce((s, c) => s + c.total_tds, 0)),
+      certificates,
+      notes: [
+        "Issue within 15 days of the 26Q quarterly return due date (i.e. Q1: 15 Aug, Q2: 15 Nov, Q3: 15 Feb, Q4: 15 Jun).",
+        "One certificate per deductee per section per quarter.",
+        "Challan / TRACES UIN must be filled before final issuance.",
+        "PAN-missing entries attract TDS @ 20% u/s 206AA — fix before filing 26Q.",
+      ],
+    };
+  }
+
+  // ── Audit Trail Report (Companies Act 2013 Rule 11(g) compliance) ─────────
+  //
+  // Chronological log of every financial event captured in the system. Built
+  // off JournalEntry as the universal source of truth — each approved JE is
+  // a posted GL movement with a created_by + approved_by audit trail and a
+  // source_ref/source_type linking back to the originating document
+  // (PurchaseBill, PV, RV, ExpenseVoucher, RetentionRelease, etc.).
+  //
+  // Event types surfaced:
+  //   "created"   — JE saved (any status)
+  //   "approved"  — JE approved + posted to ledger
+  //   "reversed"  — this JE is a reversal of another (is_reversal=true)
+  //   "auto_reversed" — original JE marked as auto-reversed (accrual unwind)
+  //
+  // Filters:
+  //   from_date, to_date  — by event timestamp
+  //   doc_type            — JE source_type ("PaymentVoucher", "PurchaseBill", etc.)
+  //   je_type             — Adjustment, Depreciation, Reversal, ...
+  //   user_id             — created_by OR approved_by
+  //   source_no           — exact match on source document number (e.g. "PV/25-26/0001")
+  //   je_no               — exact match on JE number
+  //   tender_id
+  //
+  // Pagination: page / limit (default 50, max 200).
+  static async auditTrail({
+    from_date, to_date, doc_type, je_type,
+    user_id, source_no, je_no, tender_id,
+    page = 1, limit = 50,
+  } = {}) {
+    const q = {};
+    if (doc_type)   q.source_type   = doc_type;
+    if (je_type)    q.je_type       = je_type;
+    if (source_no)  q.source_no     = source_no;
+    if (je_no)      q.je_no         = je_no;
+    if (tender_id)  q.tender_id     = tender_id;
+
+    if (user_id) {
+      q.$or = [{ created_by: user_id }, { approved_by: user_id }];
+    }
+
+    if (from_date || to_date) {
+      // Use createdAt for "events" — captures both creation and approval timeline
+      // (more accurate than je_date which can be back-dated).
+      q.createdAt = {};
+      if (from_date) q.createdAt.$gte = new Date(from_date);
+      if (to_date) {
+        const to = new Date(to_date);
+        to.setHours(23, 59, 59, 999);
+        q.createdAt.$lte = to;
+      }
+    }
+
+    const p   = Math.max(1, parseInt(page)  || 1);
+    const lim = Math.max(1, Math.min(200, parseInt(limit) || 50));
+    const skip = (p - 1) * lim;
+
+    const [docs, total] = await Promise.all([
+      JournalEntryModel.find(q)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(lim)
+        .populate({ path: "created_by",  select: "first_name last_name emp_id email" })
+        .populate({ path: "approved_by", select: "first_name last_name emp_id email" })
+        .lean(),
+      JournalEntryModel.countDocuments(q),
+    ]);
+
+    const fmtUser = (u) => u
+      ? { id: u._id, name: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.emp_id || u.email || String(u._id), emp_id: u.emp_id || "" }
+      : null;
+
+    // Each JE produces 1-2 events: creation + (if approved) approval
+    const events = [];
+    for (const d of docs) {
+      const base = {
+        je_id:           d._id,
+        je_no:           d.je_no,
+        je_date:         d.je_date,
+        je_type:         d.je_type,
+        narration:       d.narration,
+        total_debit:     r2(d.total_debit  || 0),
+        total_credit:    r2(d.total_credit || 0),
+        lines_count:     (d.lines || []).length,
+        tender_id:       d.tender_id || "",
+        tender_name:     d.tender_name || "",
+        source_type:     d.source_type || "",
+        source_no:       d.source_no || "",
+        source_ref:      d.source_ref || null,
+        is_reversal:     !!d.is_reversal,
+        reversal_of_no:  d.reversal_of_no || "",
+        created_by:      fmtUser(d.created_by),
+        approved_by:     fmtUser(d.approved_by),
+      };
+
+      events.push({
+        ...base,
+        timestamp:  d.createdAt,
+        event_type: d.is_reversal ? "reversed" : "created",
+      });
+      if (d.status === "approved" && d.approved_at) {
+        events.push({
+          ...base,
+          timestamp:  d.approved_at,
+          event_type: "approved",
+        });
+      }
+      if (d.auto_reversed) {
+        events.push({
+          ...base,
+          timestamp:  d.updatedAt,
+          event_type: "auto_reversed",
+        });
+      }
+    }
+
+    // Re-sort events chronologically (mixed creation+approval timestamps)
+    events.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+    // Summary counters
+    const eventsByType = events.reduce((m, e) => ((m[e.event_type] = (m[e.event_type] || 0) + 1), m), {});
+    const userSet     = new Set();
+    const docSet      = new Set();
+    for (const e of events) {
+      if (e.created_by?.id)  userSet.add(String(e.created_by.id));
+      if (e.approved_by?.id) userSet.add(String(e.approved_by.id));
+      docSet.add(e.je_no);
+    }
+
+    return {
+      filter: { from_date: from_date || null, to_date: to_date || null,
+                doc_type: doc_type || null, je_type: je_type || null,
+                user_id: user_id || null, source_no: source_no || null,
+                je_no: je_no || null, tender_id: tender_id || null },
+      pagination: { page: p, limit: lim, total, pages: Math.ceil(total / lim) },
+      summary: {
+        total_journal_entries: total,
+        events_in_page:        events.length,
+        events_by_type:        eventsByType,
+        unique_users_in_page:  userSet.size,
+        unique_journals_in_page: docSet.size,
+      },
+      events,
+    };
+  }
+
+  // ── Audit trail for a single document ─────────────────────────────────────
+  //
+  // Returns every JE (and reversals) tied to a single source document,
+  // identified by either:
+  //   - source_type + source_ref (preferred, ObjectId)
+  //   - source_type + source_no  (fallback, e.g. "PV/25-26/0001")
+  //
+  // Includes the JE's created_by/approved_by, plus any reversing JE that
+  // points at it (reversal_of = original._id).
+  static async auditTrailForDocument({ source_type, source_ref, source_no }) {
+    if (!source_type) throw new Error("source_type is required");
+    if (!source_ref && !source_no) throw new Error("source_ref or source_no is required");
+
+    const q = { source_type };
+    if (source_ref) q.source_ref = source_ref;
+    if (source_no)  q.source_no  = source_no;
+
+    // Originating JE(s)
+    const originals = await JournalEntryModel.find(q)
+      .sort({ createdAt: 1 })
+      .populate({ path: "created_by",  select: "first_name last_name emp_id email" })
+      .populate({ path: "approved_by", select: "first_name last_name emp_id email" })
+      .lean();
+
+    // Reversal JEs that point at any of the originals
+    const originalIds = originals.map(o => o._id);
+    const reversals = originalIds.length
+      ? await JournalEntryModel.find({ reversal_of: { $in: originalIds } })
+          .sort({ createdAt: 1 })
+          .populate({ path: "created_by",  select: "first_name last_name emp_id email" })
+          .populate({ path: "approved_by", select: "first_name last_name emp_id email" })
+          .lean()
+      : [];
+
+    const fmtUser = (u) => u
+      ? { id: u._id, name: [u.first_name, u.last_name].filter(Boolean).join(" ") || u.emp_id || u.email || String(u._id), emp_id: u.emp_id || "" }
+      : null;
+
+    const fmtJE = (d) => ({
+      je_id:           d._id,
+      je_no:           d.je_no,
+      je_date:         d.je_date,
+      je_type:         d.je_type,
+      status:          d.status,
+      narration:       d.narration,
+      is_reversal:     !!d.is_reversal,
+      reversal_of_no:  d.reversal_of_no || "",
+      reversal_of:     d.reversal_of || null,
+      total_debit:     r2(d.total_debit || 0),
+      total_credit:    r2(d.total_credit || 0),
+      lines:           (d.lines || []).map(l => ({
+        account_code: l.account_code,
+        account_name: l.account_name,
+        dr_cr:        l.dr_cr,
+        debit_amt:    r2(l.debit_amt || 0),
+        credit_amt:   r2(l.credit_amt || 0),
+        narration:    l.narration || "",
+      })),
+      created_by:    fmtUser(d.created_by),
+      approved_by:   fmtUser(d.approved_by),
+      created_at:    d.createdAt,
+      approved_at:   d.approved_at || null,
+      auto_reversed: !!d.auto_reversed,
+    });
+
+    // Build chronological event timeline
+    const events = [];
+    for (const d of originals) {
+      events.push({ timestamp: d.createdAt, event_type: "created", je: fmtJE(d) });
+      if (d.status === "approved" && d.approved_at) {
+        events.push({ timestamp: d.approved_at, event_type: "approved", je: fmtJE(d) });
+      }
+    }
+    for (const d of reversals) {
+      events.push({ timestamp: d.createdAt, event_type: "reversal_created", je: fmtJE(d) });
+      if (d.status === "approved" && d.approved_at) {
+        events.push({ timestamp: d.approved_at, event_type: "reversal_approved", je: fmtJE(d) });
+      }
+    }
+    events.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+
+    return {
+      document: {
+        source_type,
+        source_ref: source_ref || (originals[0]?.source_ref ?? null),
+        source_no:  source_no  || (originals[0]?.source_no  ?? ""),
+      },
+      summary: {
+        original_je_count: originals.length,
+        reversal_je_count: reversals.length,
+        is_reversed:       reversals.length > 0,
+        net_debit:  r2(originals.reduce((s, o) => s + (o.total_debit  || 0), 0) - reversals.reduce((s, r) => s + (r.total_debit  || 0), 0)),
+        net_credit: r2(originals.reduce((s, o) => s + (o.total_credit || 0), 0) - reversals.reduce((s, r) => s + (r.total_credit || 0), 0)),
+      },
+      originals: originals.map(fmtJE),
+      reversals: reversals.map(fmtJE),
+      events,
+    };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // GET /reports/gstr-9?financial_year=25-26
+  // ──────────────────────────────────────────────────────────────────────────
+  // GSTR-9 — Annual GST Return. Rolls up the full FY (Apr-Mar) of GSTR-1
+  // (outward), GSTR-2B (inward ITC), and GSTR-3B (net payable) into the
+  // table-wise structure required by the GSTN portal.
+  //
+  // Tables produced:
+  //   Table 4  — Outward supplies on which tax IS payable (B2B/B2CL/B2CS/CDNR/CDNUR)
+  //   Table 5  — Outward supplies on which tax is NOT payable (zero-rated/exempt/non-GST)
+  //   Table 6  — ITC availed during the FY (split: Inputs / Capital Goods / Input Services / RCM)
+  //   Table 7  — ITC reversed and ineligible
+  //   Table 8  — Other ITC info (matching with GSTR-2A/2B + ITC lapsed)
+  //   Table 9  — Tax paid / payable (per head: CGST/SGST/IGST/Cess + interest + late fee)
+  //   Table 17 — HSN-wise outward supplies
+  //   Table 18 — HSN-wise inward supplies (eligible ITC)
+  //
+  // NOT produced (out-of-scope or system doesn't track):
+  //   Tables 10-13 — Particulars of prior FY transactions declared in current FY
+  //   Table 14    — Differential tax paid on amendments
+  //   Table 15    — Demands and refunds
+  //   Table 16    — Composition / deemed supplies / goods sent on approval
+  //   Table 19    — Late fee payable / paid
+  //
+  // CAVEAT: GSTR-9 should ALWAYS be filed using values reconciled with the
+  // GSTN portal (via the firm's CA). This report is a working draft only.
+  // ══════════════════════════════════════════════════════════════════════════
+  static async gstr9({ financial_year } = {}) {
+    if (!financial_year) throw new Error("financial_year is required (e.g. '25-26')");
+    if (!/^\d{2}-\d{2}$/.test(financial_year)) {
+      throw new Error(`Invalid financial_year '${financial_year}' — expected YY-YY (e.g. '25-26')`);
+    }
+
+    const from = fyStart(financial_year);
+    const to   = new Date(from.getFullYear() + 1, 2, 31, 23, 59, 59, 999); // 31-Mar of FY-end
+
+    // Reuse existing computations
+    const [g1, g2b, g3b] = await Promise.all([
+      ReportsService.gstr1 ({ from_date: from, to_date: to }),
+      ReportsService.gstr2b({ from_date: from, to_date: to }),
+      ReportsService.gstr3b({ from_date: from, to_date: to }),
+    ]);
+
+    // ── Table 4: Outward taxable supplies ────────────────────────────────
+    const table4 = {
+      A_b2c:  { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 }, // B2CS + B2CL combined
+      B_b2b:  { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      C_zero_rated_export_with_payment: { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      D_sez_with_payment:               { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      E_deemed_export:                  { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      F_advances_received:              { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      G_inward_rcm:                     { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      H_subtotal:   { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      I_credit_notes_issued: { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      J_debit_notes_issued:  { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      K_amendments_added:    { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      L_amendments_reduced:  { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      N_supplies_on_which_tax_payable: { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+    };
+
+    // B2B (registered)
+    for (const r of (g1.b2b?.rows || [])) {
+      table4.B_b2b.taxable += r.taxable; table4.B_b2b.cgst += r.cgst_amt;
+      table4.B_b2b.sgst    += r.sgst_amt; table4.B_b2b.igst += r.igst_amt;
+    }
+    // B2CL + B2CS → A_b2c
+    for (const r of (g1.b2cl?.rows || [])) {
+      table4.A_b2c.taxable += r.taxable; table4.A_b2c.cgst += r.cgst_amt;
+      table4.A_b2c.sgst    += r.sgst_amt; table4.A_b2c.igst += r.igst_amt;
+    }
+    for (const r of (g1.b2cs?.rows || [])) {
+      table4.A_b2c.taxable += r.taxable; table4.A_b2c.cgst += r.cgst;
+      table4.A_b2c.sgst    += r.sgst;    table4.A_b2c.igst += r.igst;
+    }
+    // Credit notes (CDNR + CDNUR) → I
+    for (const r of [...(g1.cdnr?.rows || []), ...(g1.cdnur?.rows || [])]) {
+      table4.I_credit_notes_issued.taxable += r.taxable;
+      table4.I_credit_notes_issued.cgst    += r.cgst_amt;
+      table4.I_credit_notes_issued.sgst    += r.sgst_amt;
+      table4.I_credit_notes_issued.igst    += r.igst_amt;
+    }
+
+    // H = A + B + C + D + E + F + G
+    for (const k of ["A_b2c", "B_b2b", "C_zero_rated_export_with_payment", "D_sez_with_payment", "E_deemed_export", "F_advances_received", "G_inward_rcm"]) {
+      table4.H_subtotal.taxable += table4[k].taxable; table4.H_subtotal.cgst += table4[k].cgst;
+      table4.H_subtotal.sgst    += table4[k].sgst;    table4.H_subtotal.igst += table4[k].igst;
+      table4.H_subtotal.cess    += table4[k].cess;
+    }
+    // N = H + J − I − L + K
+    table4.N_supplies_on_which_tax_payable.taxable = table4.H_subtotal.taxable + table4.J_debit_notes_issued.taxable - table4.I_credit_notes_issued.taxable + table4.K_amendments_added.taxable - table4.L_amendments_reduced.taxable;
+    table4.N_supplies_on_which_tax_payable.cgst    = table4.H_subtotal.cgst    + table4.J_debit_notes_issued.cgst    - table4.I_credit_notes_issued.cgst    + table4.K_amendments_added.cgst    - table4.L_amendments_reduced.cgst;
+    table4.N_supplies_on_which_tax_payable.sgst    = table4.H_subtotal.sgst    + table4.J_debit_notes_issued.sgst    - table4.I_credit_notes_issued.sgst    + table4.K_amendments_added.sgst    - table4.L_amendments_reduced.sgst;
+    table4.N_supplies_on_which_tax_payable.igst    = table4.H_subtotal.igst    + table4.J_debit_notes_issued.igst    - table4.I_credit_notes_issued.igst    + table4.K_amendments_added.igst    - table4.L_amendments_reduced.igst;
+
+    const round4 = (g) => ({
+      taxable: r2(g.taxable), cgst: r2(g.cgst), sgst: r2(g.sgst), igst: r2(g.igst), cess: r2(g.cess),
+    });
+    Object.keys(table4).forEach(k => { table4[k] = round4(table4[k]); });
+
+    // ── Table 5: Non-taxable outward supplies ────────────────────────────
+    // Romaa doesn't tag exempt/zero-rated separately — defaults to zero.
+    const table5 = {
+      A_zero_rated_no_payment:    { taxable: 0 },
+      B_sez_no_payment:           { taxable: 0 },
+      C_outward_rcm_to_be_paid_by_recipient: { taxable: 0 },
+      D_exempted:                 { taxable: 0 },
+      E_nil_rated:                { taxable: 0 },
+      F_non_gst_supply:           { taxable: 0 },
+      G_subtotal:                 { taxable: 0 },
+      H_credit_notes_issued:      { taxable: 0 },
+      I_debit_notes_issued:       { taxable: 0 },
+      J_amendments_added:         { taxable: 0 },
+      K_amendments_reduced:       { taxable: 0 },
+      M_supplies_on_which_tax_not_payable: { taxable: 0 },
+      N_total_turnover_4N_plus_5M: { taxable: r2(table4.N_supplies_on_which_tax_payable.taxable) },
+    };
+
+    // ── Table 6: ITC availed ─────────────────────────────────────────────
+    const inputItc = {
+      cgst: g2b.summary.total_cgst || 0,
+      sgst: g2b.summary.total_sgst || 0,
+      igst: g2b.summary.total_igst || 0,
+    };
+    const table6 = {
+      A_total_itc_availed_per_3b: {
+        cgst: g3b.input_itc.from_documents.cgst,
+        sgst: g3b.input_itc.from_documents.sgst,
+        igst: g3b.input_itc.from_documents.igst,
+        cess: 0,
+      },
+      // Romaa doesn't separate inputs/capital goods/input services in 2B —
+      // we map all inward to "Inputs" by default. The CA can re-classify
+      // capital-goods purchases at filing via supporting workings.
+      B_inputs_other_than_imports_rcm: {
+        taxable: g2b.summary.total_taxable, cgst: inputItc.cgst, sgst: inputItc.sgst, igst: inputItc.igst, cess: 0,
+      },
+      C_inputs_rcm_received_unregistered: { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      D_inputs_rcm_received_registered:   { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      E_imports_inputs:           { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      F_imports_capital_goods:    { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      G_isd:                      { taxable: 0, cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      H_amount_of_itc_reclaimed:  { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      I_subtotal:                 { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      J_difference_I_minus_A:     { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      K_transition_credit_tran1:  { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      L_transition_credit_tran2:  { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      M_other_itc:                { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      N_total_itc_availed:        { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+    };
+    // I = B + C + D + E + F + G + H
+    for (const k of ["B_inputs_other_than_imports_rcm", "C_inputs_rcm_received_unregistered", "D_inputs_rcm_received_registered", "E_imports_inputs", "F_imports_capital_goods", "G_isd", "H_amount_of_itc_reclaimed"]) {
+      table6.I_subtotal.cgst += table6[k].cgst; table6.I_subtotal.sgst += table6[k].sgst;
+      table6.I_subtotal.igst += table6[k].igst; table6.I_subtotal.cess += (table6[k].cess || 0);
+    }
+    table6.J_difference_I_minus_A.cgst = table6.I_subtotal.cgst - table6.A_total_itc_availed_per_3b.cgst;
+    table6.J_difference_I_minus_A.sgst = table6.I_subtotal.sgst - table6.A_total_itc_availed_per_3b.sgst;
+    table6.J_difference_I_minus_A.igst = table6.I_subtotal.igst - table6.A_total_itc_availed_per_3b.igst;
+    // N = I + K + L + M
+    table6.N_total_itc_availed.cgst = table6.I_subtotal.cgst + table6.K_transition_credit_tran1.cgst + table6.L_transition_credit_tran2.cgst + table6.M_other_itc.cgst;
+    table6.N_total_itc_availed.sgst = table6.I_subtotal.sgst + table6.K_transition_credit_tran1.sgst + table6.L_transition_credit_tran2.sgst + table6.M_other_itc.sgst;
+    table6.N_total_itc_availed.igst = table6.I_subtotal.igst + table6.K_transition_credit_tran1.igst + table6.L_transition_credit_tran2.igst + table6.M_other_itc.igst;
+
+    const round6 = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, r2(v)]));
+    Object.keys(table6).forEach(k => { table6[k] = round6(table6[k]); });
+
+    // ── Table 7: ITC reversed ────────────────────────────────────────────
+    const table7 = {
+      A_rule_37:               { cgst: 0, sgst: 0, igst: 0, cess: 0 }, // unpaid invoices > 180 days
+      B_rule_39:               { cgst: 0, sgst: 0, igst: 0, cess: 0 }, // ISD reversal
+      C_rule_42:               { cgst: 0, sgst: 0, igst: 0, cess: 0 }, // exempt + taxable mix
+      D_rule_43:               { cgst: 0, sgst: 0, igst: 0, cess: 0 }, // capital goods exempt + taxable mix
+      E_section_17_5_blocked:  { cgst: 0, sgst: 0, igst: 0, cess: 0 }, // blocked credits
+      F_other:                 {
+        cgst: g3b.itc_reversed.cgst, sgst: g3b.itc_reversed.sgst,
+        igst: g3b.itc_reversed.igst, cess: 0,
+      },
+      G_total: { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      H_net_itc_available_6N_minus_7G: { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+    };
+    for (const k of ["A_rule_37", "B_rule_39", "C_rule_42", "D_rule_43", "E_section_17_5_blocked", "F_other"]) {
+      table7.G_total.cgst += table7[k].cgst; table7.G_total.sgst += table7[k].sgst;
+      table7.G_total.igst += table7[k].igst; table7.G_total.cess += table7[k].cess;
+    }
+    table7.H_net_itc_available_6N_minus_7G.cgst = table6.N_total_itc_availed.cgst - table7.G_total.cgst;
+    table7.H_net_itc_available_6N_minus_7G.sgst = table6.N_total_itc_availed.sgst - table7.G_total.sgst;
+    table7.H_net_itc_available_6N_minus_7G.igst = table6.N_total_itc_availed.igst - table7.G_total.igst;
+    Object.keys(table7).forEach(k => { table7[k] = round6(table7[k]); });
+
+    // ── Table 8: ITC matching with GSTR-2A / 2B ──────────────────────────
+    const table8 = {
+      A_itc_per_2a_2b: {
+        cgst: g2b.summary.total_cgst || 0, sgst: g2b.summary.total_sgst || 0,
+        igst: g2b.summary.total_igst || 0, cess: 0,
+      },
+      B_itc_per_table_6_B_H: { cgst: table6.B_inputs_other_than_imports_rcm.cgst, sgst: table6.B_inputs_other_than_imports_rcm.sgst, igst: table6.B_inputs_other_than_imports_rcm.igst, cess: 0 },
+      C_itc_per_invoices_received_in_subsequent_fy: { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      D_difference_A_minus_B_C: { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      E_itc_available_but_not_availed: { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      F_itc_available_but_ineligible:  { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      G_igst_paid_on_imports:          { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      H_igst_credit_availed_on_imports: { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      I_difference_G_minus_H:          { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      J_itc_available_but_not_availed_on_import: { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+      K_total_itc_lapsed: { cgst: 0, sgst: 0, igst: 0, cess: 0 },
+    };
+    table8.D_difference_A_minus_B_C.cgst = table8.A_itc_per_2a_2b.cgst - table8.B_itc_per_table_6_B_H.cgst - table8.C_itc_per_invoices_received_in_subsequent_fy.cgst;
+    table8.D_difference_A_minus_B_C.sgst = table8.A_itc_per_2a_2b.sgst - table8.B_itc_per_table_6_B_H.sgst - table8.C_itc_per_invoices_received_in_subsequent_fy.sgst;
+    table8.D_difference_A_minus_B_C.igst = table8.A_itc_per_2a_2b.igst - table8.B_itc_per_table_6_B_H.igst - table8.C_itc_per_invoices_received_in_subsequent_fy.igst;
+    Object.keys(table8).forEach(k => { table8[k] = round6(table8[k]); });
+
+    // ── Table 9: Tax paid / payable ──────────────────────────────────────
+    const table9 = {
+      integrated_tax: { tax_payable: g3b.net_gst_payable.igst, paid_in_cash: 0, paid_through_itc: 0, interest: 0, late_fee: 0, penalty: 0, other: 0 },
+      central_tax:    { tax_payable: g3b.net_gst_payable.cgst, paid_in_cash: 0, paid_through_itc: 0, interest: 0, late_fee: 0, penalty: 0, other: 0 },
+      state_ut_tax:   { tax_payable: g3b.net_gst_payable.sgst, paid_in_cash: 0, paid_through_itc: 0, interest: 0, late_fee: 0, penalty: 0, other: 0 },
+      cess:           { tax_payable: 0, paid_in_cash: 0, paid_through_itc: 0, interest: 0, late_fee: 0, penalty: 0, other: 0 },
+    };
+    Object.keys(table9).forEach(k => { table9[k] = round6(table9[k]); });
+
+    // ── Table 17: HSN-wise outward summary ───────────────────────────────
+    // Construction-firm bills are works contracts — default SAC 9954.
+    // We group by tax-rate slab since outward bills don't carry HSN per item.
+    const hsnOutMap = {};
+    const allOutRows = [...(g1.b2b?.rows || []), ...(g1.b2cl?.rows || [])];
+    for (const r of allOutRows) {
+      const rate = r2(r.cgst_pct + r.sgst_pct + r.igst_pct);
+      const key  = `9954|${rate}`;
+      if (!hsnOutMap[key]) {
+        hsnOutMap[key] = {
+          hsn_code: "9954", description: "Works Contract Service (default)",
+          uqc: "OTH", quantity: 0, rate_pct: rate, taxable: 0,
+          cgst: 0, sgst: 0, igst: 0, cess: 0, invoice_count: 0,
+        };
+      }
+      hsnOutMap[key].taxable += r.taxable; hsnOutMap[key].cgst += r.cgst_amt;
+      hsnOutMap[key].sgst    += r.sgst_amt; hsnOutMap[key].igst += r.igst_amt;
+      hsnOutMap[key].invoice_count += 1;
+    }
+    for (const r of (g1.b2cs?.rows || [])) {
+      const rate = r2(r.rate_pct);
+      const key  = `9954|${rate}`;
+      if (!hsnOutMap[key]) {
+        hsnOutMap[key] = {
+          hsn_code: "9954", description: "Works Contract Service (default)",
+          uqc: "OTH", quantity: 0, rate_pct: rate, taxable: 0,
+          cgst: 0, sgst: 0, igst: 0, cess: 0, invoice_count: 0,
+        };
+      }
+      hsnOutMap[key].taxable += r.taxable; hsnOutMap[key].cgst += r.cgst;
+      hsnOutMap[key].sgst    += r.sgst;    hsnOutMap[key].igst += r.igst;
+      hsnOutMap[key].invoice_count += r.invoice_count;
+    }
+    const table17 = Object.values(hsnOutMap)
+      .map(r => ({ ...r, taxable: r2(r.taxable), cgst: r2(r.cgst), sgst: r2(r.sgst), igst: r2(r.igst) }))
+      .sort((a, b) => b.taxable - a.taxable);
+
+    // ── Table 18: HSN-wise inward summary ────────────────────────────────
+    // Aggregate from PurchaseBill line_items joined to Material.hsnSac.
+    const inwardBills = await PurchaseBillModel.find({
+      status: "approved",
+      bill_date: { $gte: from, $lte: to },
+    }, { line_items: 1 }).lean();
+
+    const itemIds = new Set();
+    for (const b of inwardBills) {
+      for (const li of (b.line_items || [])) {
+        if (li.item_id) itemIds.add(String(li.item_id));
+      }
+    }
+    let hsnByItem = {};
+    if (itemIds.size > 0) {
+      const mats = await MaterialModel.find(
+        { _id: { $in: [...itemIds] } },
+        { hsnSac: 1, name: 1, unit: 1 },
+      ).lean();
+      hsnByItem = Object.fromEntries(mats.map(m => [String(m._id), m]));
+    }
+
+    const hsnInMap = {};
+    for (const b of inwardBills) {
+      for (const li of (b.line_items || [])) {
+        const mat = li.item_id ? hsnByItem[String(li.item_id)] : null;
+        const hsn = mat?.hsnSac || "UNKNOWN";
+        const desc = mat?.name || li.item_description || "";
+        const uqc  = li.unit || mat?.unit || "OTH";
+        const rate = r2((li.cgst_pct || 0) + (li.sgst_pct || 0) + (li.igst_pct || 0));
+        const key  = `${hsn}|${rate}|${uqc}`;
+        if (!hsnInMap[key]) {
+          hsnInMap[key] = {
+            hsn_code: hsn, description: desc, uqc, quantity: 0,
+            rate_pct: rate, taxable: 0,
+            cgst: 0, sgst: 0, igst: 0, cess: 0, invoice_count: 0,
+          };
+        }
+        hsnInMap[key].quantity += (li.accepted_qty || 0);
+        hsnInMap[key].taxable  += (li.gross_amt    || 0);
+        hsnInMap[key].cgst     += (li.cgst_amt     || 0);
+        hsnInMap[key].sgst     += (li.sgst_amt     || 0);
+        hsnInMap[key].igst     += (li.igst_amt     || 0);
+        hsnInMap[key].invoice_count += 1;
+      }
+    }
+    const table18 = Object.values(hsnInMap)
+      .map(r => ({
+        ...r,
+        quantity: r2(r.quantity), taxable: r2(r.taxable),
+        cgst: r2(r.cgst), sgst: r2(r.sgst), igst: r2(r.igst),
+      }))
+      .sort((a, b) => b.taxable - a.taxable);
+
+    // ── Notes & caveats ──────────────────────────────────────────────────
+    const notes = [
+      "GSTR-9 is a draft — reconcile with GSTN portal totals before filing.",
+      "Tables 5 (non-taxable supplies) defaulted to zero — Romaa doesn't tag exempt/zero-rated/non-GST supplies.",
+      "Table 6 ITC classification (inputs vs. capital goods vs. input services) defaulted to 'Inputs'. CA should re-classify capital-goods at filing.",
+      "Table 7 ITC-reversal breakdown by Rule (37/39/42/43/§17(5)) defaulted to 'Other' — Romaa doesn't tag reversal reasons.",
+      "Table 17 outward HSN defaulted to SAC 9954 (Works Contract Service) — over-ride per-bill HSN if products were also sold.",
+      "Tables 10-16, 19 (prior-FY adjustments / amendments / demands / late fee) are not auto-populated. Add manually at filing.",
+    ];
+
+    return {
+      financial_year,
+      from_date: from,
+      to_date:   to,
+      table4,
+      table5,
+      table6,
+      table7,
+      table8,
+      table9,
+      table17_outward_hsn: table17,
+      table18_inward_hsn:  table18,
+      summary: {
+        total_outward_taxable_supplies: table4.N_supplies_on_which_tax_payable.taxable,
+        total_outward_tax: r2(table4.N_supplies_on_which_tax_payable.cgst + table4.N_supplies_on_which_tax_payable.sgst + table4.N_supplies_on_which_tax_payable.igst),
+        total_itc_availed:  r2(table6.N_total_itc_availed.cgst + table6.N_total_itc_availed.sgst + table6.N_total_itc_availed.igst),
+        total_itc_reversed: r2(table7.G_total.cgst + table7.G_total.sgst + table7.G_total.igst),
+        net_itc_available:  r2(table7.H_net_itc_available_6N_minus_7G.cgst + table7.H_net_itc_available_6N_minus_7G.sgst + table7.H_net_itc_available_6N_minus_7G.igst),
+        net_tax_payable:    r2(table9.integrated_tax.tax_payable + table9.central_tax.tax_payable + table9.state_ut_tax.tax_payable),
+        outward_hsn_lines:  table17.length,
+        inward_hsn_lines:   table18.length,
+      },
+      notes,
     };
   }
 }

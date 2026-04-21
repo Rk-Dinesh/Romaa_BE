@@ -9,6 +9,7 @@ import mongoose from "mongoose";
 import NotificationService from "../../../notifications/notification.service.js";
 import SteelEstimateModel from "../../../project/CBEstimates/steelestimate/steelEstimate.model.js";
 import BillingEstimateModel from "../../../project/CBEstimates/estimate/billingestimate.model.js";
+import { GL, projectRevenueCode } from "../../gl.constants.js";
 
 class BillingService {
   static getLevelFromCode(code) {
@@ -395,7 +396,7 @@ class BillingService {
 
     // ── Auto Journal Entry: Dr Receivable / Cr Revenue + GST Output ──────────
     const clientAccCode = await JournalEntryService.getSupplierAccountCode("Client", tender.client_id);
-    const projectAccCode = `4010-${bill.tender_id}`;
+    const projectAccCode = projectRevenueCode(bill.tender_id);
 
     if (clientAccCode) {
       const jeLines = [
@@ -406,15 +407,15 @@ class BillingService {
       ];
 
       // Cr: GST Output accounts
-      if (bill.cgst_amt > 0) jeLines.push({ account_code: "2110", dr_cr: "Cr", debit_amt: 0, credit_amt: bill.cgst_amt, narration: "CGST Output" });
-      if (bill.sgst_amt > 0) jeLines.push({ account_code: "2120", dr_cr: "Cr", debit_amt: 0, credit_amt: bill.sgst_amt, narration: "SGST Output" });
-      if (bill.igst_amt > 0) jeLines.push({ account_code: "2130", dr_cr: "Cr", debit_amt: 0, credit_amt: bill.igst_amt, narration: "IGST Output" });
+      if (bill.cgst_amt > 0) jeLines.push({ account_code: GL.GST_OUTPUT_CGST, dr_cr: "Cr", debit_amt: 0, credit_amt: bill.cgst_amt, narration: "CGST Output" });
+      if (bill.sgst_amt > 0) jeLines.push({ account_code: GL.GST_OUTPUT_SGST, dr_cr: "Cr", debit_amt: 0, credit_amt: bill.sgst_amt, narration: "SGST Output" });
+      if (bill.igst_amt > 0) jeLines.push({ account_code: GL.GST_OUTPUT_IGST, dr_cr: "Cr", debit_amt: 0, credit_amt: bill.igst_amt, narration: "IGST Output" });
 
       // Dr: Retention Money Receivable (withheld by client — released after DLP)
-      if (bill.retention_amount > 0) jeLines.push({ account_code: "1060", dr_cr: "Dr", debit_amt: bill.retention_amount, credit_amt: 0, narration: "Retention withheld by client" });
+      if (bill.retention_amount > 0) jeLines.push({ account_code: GL.RETENTION_RECEIVABLE, dr_cr: "Dr", debit_amt: bill.retention_amount, credit_amt: 0, narration: "Retention withheld by client" });
 
       // Dr: TDS Receivable (deducted by client — adjustable against tax)
-      if (bill.total_deductions > 0) jeLines.push({ account_code: "1070", dr_cr: "Dr", debit_amt: bill.total_deductions, credit_amt: 0, narration: "TDS / deductions by client" });
+      if (bill.total_deductions > 0) jeLines.push({ account_code: GL.TDS_RECEIVABLE, dr_cr: "Dr", debit_amt: bill.total_deductions, credit_amt: 0, narration: "TDS / deductions by client" });
 
       const je = await JournalEntryService.createFromVoucher(jeLines, {
         je_type: "Client Bill",

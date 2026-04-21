@@ -3,6 +3,7 @@ import BillingModel  from "../clientbilling/clientbilling/clientbilling.model.js
 import LedgerService from "../ledger/ledger.service.js";
 import JournalEntryService from "../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
+import { GL, projectRevenueCode } from "../gl.constants.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -197,7 +198,7 @@ class ClientCNService {
 
     // ── Auto Journal Entry: Dr Revenue / Cr Client Receivable + GST reversal ──
     const clientAccCode = await JournalEntryService.getSupplierAccountCode("Client", ccn.client_id);
-    const projectAccCode = `4010-${ccn.tender_id}`;
+    const projectAccCode = projectRevenueCode(ccn.tender_id);
 
     if (clientAccCode) {
       const jeLines = [
@@ -208,9 +209,9 @@ class ClientCNService {
       ];
 
       // Dr: Reverse GST Output
-      if (ccn.cgst_amt > 0) jeLines.push({ account_code: "2110", dr_cr: "Dr", debit_amt: ccn.cgst_amt, credit_amt: 0, narration: "CGST Output reversal" });
-      if (ccn.sgst_amt > 0) jeLines.push({ account_code: "2120", dr_cr: "Dr", debit_amt: ccn.sgst_amt, credit_amt: 0, narration: "SGST Output reversal" });
-      if (ccn.igst_amt > 0) jeLines.push({ account_code: "2130", dr_cr: "Dr", debit_amt: ccn.igst_amt, credit_amt: 0, narration: "IGST Output reversal" });
+      if (ccn.cgst_amt > 0) jeLines.push({ account_code: GL.GST_OUTPUT_CGST, dr_cr: "Dr", debit_amt: ccn.cgst_amt, credit_amt: 0, narration: "CGST Output reversal" });
+      if (ccn.sgst_amt > 0) jeLines.push({ account_code: GL.GST_OUTPUT_SGST, dr_cr: "Dr", debit_amt: ccn.sgst_amt, credit_amt: 0, narration: "SGST Output reversal" });
+      if (ccn.igst_amt > 0) jeLines.push({ account_code: GL.GST_OUTPUT_IGST, dr_cr: "Dr", debit_amt: ccn.igst_amt, credit_amt: 0, narration: "IGST Output reversal" });
 
       const je = await JournalEntryService.createFromVoucher(jeLines, {
         je_type: "Client Credit Note",

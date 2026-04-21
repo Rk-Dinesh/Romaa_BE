@@ -79,9 +79,16 @@ export const getAllByNewRequest = async (req, res) => {
 
 export const getAllByQuotationRequested = async (req, res) => {
   try {
-    const { page, limit, search, fromdate, todate } = req.query;
-    const result = await PurchaseRequestService.getAllByQuotationRequested({ page, limit, search, fromdate, todate });
-    _respondPaginated(res, result);
+    const { page, limit, search, fromdate, todate, approval_type } = req.query;
+    const result = await PurchaseRequestService.getAllByQuotationRequested({ page, limit, search, fromdate, todate, approval_type });
+    res.status(200).json({
+      status: true,
+      currentPage: result.currentPage,
+      totalPages: result.totalPages,
+      totalCount: result.totalCount,
+      counts: result.counts,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -89,9 +96,16 @@ export const getAllByQuotationRequested = async (req, res) => {
 
 export const getAllByQuotationApproved = async (req, res) => {
   try {
-    const { page, limit, search, fromdate, todate } = req.query;
-    const result = await PurchaseRequestService.getAllByQuotationApproved({ page, limit, search, fromdate, todate });
-    _respondPaginated(res, result);
+    const { page, limit, search, fromdate, todate, approval_type } = req.query;
+    const result = await PurchaseRequestService.getAllByQuotationApproved({ page, limit, search, fromdate, todate, approval_type });
+    res.status(200).json({
+      status: true,
+      currentPage: result.currentPage,
+      totalPages: result.totalPages,
+      totalCount: result.totalCount,
+      counts: result.counts,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }

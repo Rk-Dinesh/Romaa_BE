@@ -79,6 +79,9 @@ const BillingSchema = new mongoose.Schema(
     // ── Retention ─────────────────────────────────────────────────────────────
     retention_pct:    { type: Number, default: 0 },
     retention_amount: { type: Number, default: 0 }, // pre-save computed
+    // Cumulative retention received back from client (via RetentionRelease).
+    // retention_outstanding = retention_amount − retention_released
+    retention_released: { type: Number, default: 0 },
 
     // ── Other deductions (TDS, mobilization advance recovery, labour cess, etc.)
     deductions: [

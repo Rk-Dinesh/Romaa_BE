@@ -77,12 +77,108 @@ class WorkOrderRequestService {
     return await workOrderRequest.save();
   }
 
+  static async _paginatedByStatus({ projectId, statusFilter, filters, sort, selectFields }) {
+    const query = { projectId, status: statusFilter };
 
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { requestId:           { $regex: s, $options: "i" } },
+        { title:               { $regex: s, $options: "i" } },
+        { tender_name:         { $regex: s, $options: "i" } },
+        { tender_project_name: { $regex: s, $options: "i" } },
+        { "selectedContractor.contractorName": { $regex: s, $options: "i" } },
+      ];
+    }
 
-  static async getAllByNewRequest(projectId) {
-    return await WorkOrderRequestModel.find({ projectId, status: { $in: ["Request Raised", "Quotation Received"] } }).select(
-      "requestId projectId tender_name tender_project_name title  status requestDate requiredByDate  siteDetails "
-    ).sort({ requestId: -1 }); // field selection
+    if (filters.fromdate || filters.todate) {
+      query.requestDate = {};
+      if (filters.fromdate) query.requestDate.$gte = new Date(filters.fromdate);
+      if (filters.todate) {
+        const to = new Date(filters.todate);
+        to.setHours(23, 59, 59, 999);
+        query.requestDate.$lte = to;
+      }
+    }
+
+    const page  = Math.max(1, parseInt(filters.page)  || 1);
+    const limit = Math.max(1, Math.min(100, parseInt(filters.limit) || 20));
+    const skip  = (page - 1) * limit;
+
+    const [data, total] = await Promise.all([
+      WorkOrderRequestModel.find(query).select(selectFields).sort(sort).skip(skip).limit(limit).lean(),
+      WorkOrderRequestModel.countDocuments(query),
+    ]);
+
+    return {
+      data,
+      currentPage: page,
+      totalPages: Math.ceil(total / limit) || 1,
+      totalCount: total,
+    };
+  }
+
+  static async getAllByNewRequest(projectId, filters = {}) {
+    const validStatuses = ["Request Raised", "Quotation Received"];
+    let statusFilter = { $in: validStatuses };
+    
+    if (filters.approval_type && validStatuses.includes(filters.approval_type)) {
+      statusFilter = filters.approval_type;
+    } 
+
+    const result = await WorkOrderRequestService._paginatedByStatus({
+      projectId,
+      statusFilter,
+      filters,
+      sort: { requestId: -1 },
+      selectFields: "requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails",
+    });
+
+    // Always calculate global counts to maintain UI tab numbers
+    const query = { projectId, status: { $in: validStatuses } };
+
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { requestId:           { $regex: s, $options: "i" } },
+        { title:               { $regex: s, $options: "i" } },
+        { tender_name:         { $regex: s, $options: "i" } },
+        { tender_project_name: { $regex: s, $options: "i" } },
+        { "selectedContractor.contractorName": { $regex: s, $options: "i" } },
+      ];
+    }
+
+    if (filters.fromdate || filters.todate) {
+      query.requestDate = {};
+      if (filters.fromdate) query.requestDate.$gte = new Date(filters.fromdate);
+      if (filters.todate) {
+        const to = new Date(filters.todate);
+        to.setHours(23, 59, 59, 999);
+        query.requestDate.$lte = to;
+      }
+    }
+
+    const countsAgg = await WorkOrderRequestModel.aggregate([
+      { $match: query },
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]);
+
+    const counts = {
+      "Request Raised": 0,
+      "Quotation Received": 0,
+      total: 0
+    };
+
+    countsAgg.forEach(c => {
+      if (counts[c._id] !== undefined) {
+        counts[c._id] = c.count;
+        counts.total += c.count;
+      }
+    });
+
+    result.counts = counts;
+
+    return result;
   }
 
   static async getQuotationRequested(projectId, requestId) {
@@ -94,13 +190,68 @@ class WorkOrderRequestService {
     return requests;
   }
 
-  static async getAllByQuotationApproved(projectId) {
-    return await WorkOrderRequestModel.find({
+  static async getAllByQuotationApproved(projectId, filters = {}) {
+    const validStatuses = ["Contractor Approved", "Work Order Issued", "Completed"];
+    let statusFilter = { $in: validStatuses };
+    
+    if (filters.approval_type && validStatuses.includes(filters.approval_type)) {
+      statusFilter = filters.approval_type;
+    } 
+
+    const result = await WorkOrderRequestService._paginatedByStatus({
       projectId,
-      status: { $in: ["Contractor Approved", "Work Order Issued", "Completed"] }
-    })
-      .select("requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails")
-      .sort({ requestId: -1 }); // 1. Status Ascending (Received first), 2. Newest dates first
+      statusFilter,
+      filters,
+      sort: { requestId: -1 },
+      selectFields: "requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails",
+    });
+
+    // Always calculate global counts to maintain UI tab numbers
+    const query = { projectId, status: { $in: validStatuses } };
+
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { requestId:           { $regex: s, $options: "i" } },
+        { title:               { $regex: s, $options: "i" } },
+        { tender_name:         { $regex: s, $options: "i" } },
+        { tender_project_name: { $regex: s, $options: "i" } },
+        { "selectedContractor.contractorName": { $regex: s, $options: "i" } },
+      ];
+    }
+
+    if (filters.fromdate || filters.todate) {
+      query.requestDate = {};
+      if (filters.fromdate) query.requestDate.$gte = new Date(filters.fromdate);
+      if (filters.todate) {
+        const to = new Date(filters.todate);
+        to.setHours(23, 59, 59, 999);
+        query.requestDate.$lte = to;
+      }
+    }
+
+    const countsAgg = await WorkOrderRequestModel.aggregate([
+      { $match: query },
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]);
+
+    const counts = {
+      "Contractor Approved": 0,
+      "Work Order Issued": 0,
+      "Completed": 0,
+      total: 0
+    };
+
+    countsAgg.forEach(c => {
+      if (counts[c._id] !== undefined) {
+        counts[c._id] = c.count;
+        counts.total += c.count;
+      }
+    });
+
+    result.counts = counts;
+
+    return result;
   }
 
   static async getAllByWorkOrderIssuedForWorkDone(projectId) {

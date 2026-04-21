@@ -5,6 +5,7 @@ import JournalEntryService from "../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
 import EmployeeModel from "../../hr/employee/employee.model.js";
 import TenderModel from "../../tender/tender/tender.model.js";
+import { GL } from "../gl.constants.js";
 
 // ── FY helper ─────────────────────────────────────────────────────────────────
 function currentFY() {
@@ -365,14 +366,14 @@ class ExpenseVoucherService {
     const sumCgst = r2(ev.lines.reduce((s, l) => s + (l.cgst_amt || 0), 0));
     const sumSgst = r2(ev.lines.reduce((s, l) => s + (l.sgst_amt || 0), 0));
     const sumIgst = r2(ev.lines.reduce((s, l) => s + (l.igst_amt || 0), 0));
-    if (sumCgst > 0) lines.push({ account_code: "1080-CGST", dr_cr: "Dr", debit_amt: sumCgst, credit_amt: 0, narration: "CGST Input" });
-    if (sumSgst > 0) lines.push({ account_code: "1080-SGST", dr_cr: "Dr", debit_amt: sumSgst, credit_amt: 0, narration: "SGST Input" });
-    if (sumIgst > 0) lines.push({ account_code: "1080-IGST", dr_cr: "Dr", debit_amt: sumIgst, credit_amt: 0, narration: "IGST Input" });
+    if (sumCgst > 0) lines.push({ account_code: GL.GST_INPUT_CGST, dr_cr: "Dr", debit_amt: sumCgst, credit_amt: 0, narration: "CGST Input" });
+    if (sumSgst > 0) lines.push({ account_code: GL.GST_INPUT_SGST, dr_cr: "Dr", debit_amt: sumSgst, credit_amt: 0, narration: "SGST Input" });
+    if (sumIgst > 0) lines.push({ account_code: GL.GST_INPUT_IGST, dr_cr: "Dr", debit_amt: sumIgst, credit_amt: 0, narration: "IGST Input" });
 
     // Cr TDS Payable (if any)
     if (ev.tds_amt > 0) {
       lines.push({
-        account_code: "2140",
+        account_code: GL.TDS_PAYABLE,
         dr_cr:        "Cr",
         debit_amt:    0,
         credit_amt:   r2(ev.tds_amt),

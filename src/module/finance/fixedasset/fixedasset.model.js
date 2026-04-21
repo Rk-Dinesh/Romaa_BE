@@ -15,6 +15,28 @@ const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 const DEPRECIATION_METHODS = ["SLM", "WDV"];
 const ASSET_STATUSES       = ["active", "disposed", "fully_depreciated", "archived"];
 
+// ── Income Tax Act, Section 32 — Block of Assets ─────────────────────────────
+// Parallel "tax book" depreciation runs alongside the Companies Act book.
+// Always WDV. Half-rate applies if the asset is put-to-use for < 180 days
+// in its year of acquisition (it_acquired_in_year_half=true).
+//
+// Standard block rates (Income Tax Rules, Appendix I) — surface as a
+// recommendation; user can override per-asset via it_rate_pct.
+const IT_BLOCKS = [
+  "Building-Residential",        // 5%
+  "Building-Other",              // 10%
+  "Furniture & Fittings",        // 10%
+  "Plant & Machinery-General",   // 15%
+  "Motor Cars-Personal",         // 15%
+  "Motor Vehicles-Commercial",   // 30%
+  "Computer & Software",         // 40%
+  "Books-Annual",                // 40%
+  "Pollution Control",           // 40%
+  "Energy Saving Devices",       // 40%
+  "Intangible Assets",           // 25%
+  "Other",
+];
+
 const DepreciationHistorySchema = new mongoose.Schema(
   {
     period_label:  { type: String, default: "" },   // e.g. "2025-04"
@@ -89,6 +111,34 @@ const FixedAssetSchema = new mongoose.Schema(
     // ── History ───────────────────────────────────────────────────────────
     depreciation_history: { type: [DepreciationHistorySchema], default: [] },
     disposal:             { type: DisposalSchema, default: null },
+
+    // ── Income Tax Act, Section 32 — parallel "tax book" ─────────────────
+    // Tracked alongside the Companies Act book but does NOT post journal
+    // entries — book-vs-tax differences are reconciled in the income tax
+    // return via deferred tax provisions at year-end.
+    //
+    // Always WDV. If the asset was put to use for < 180 days in its year
+    // of acquisition, claim only 50% of the year's rate (half-year rule).
+    it_block:                 { type: String, enum: IT_BLOCKS, default: "Plant & Machinery-General" },
+    it_rate_pct:              { type: Number, default: 15 },           // annual WDV %
+    it_acquired_in_year_half: { type: Boolean, default: false },       // true → half-rate in acquisition year
+    it_accumulated_depreciation: { type: Number, default: 0 },
+    it_book_value:            { type: Number, default: 0 },            // cost − it_accumulated_dep (WDV)
+    it_last_depreciation_fy:  { type: String, default: "" },           // last FY computed e.g. "25-26"
+    it_depreciation_history:  {
+      type: [{
+        financial_year: { type: String, default: "" },
+        opening_wdv:    { type: Number, default: 0 },
+        additions:      { type: Number, default: 0 },   // for future asset additions to the block (manual)
+        deletions:      { type: Number, default: 0 },   // disposal proceeds reducing block
+        rate_pct:       { type: Number, default: 0 },
+        half_rate_applied: { type: Boolean, default: false },
+        depreciation:   { type: Number, default: 0 },
+        closing_wdv:    { type: Number, default: 0 },
+        posted_at:      { type: Date,   default: Date.now },
+      }],
+      default: [],
+    },
 
     narration:   { type: String, default: "" },
     created_by:  { type: String, default: "" },

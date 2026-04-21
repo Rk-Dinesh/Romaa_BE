@@ -112,13 +112,23 @@ class FixedAssetService {
 
     const asset_no = await FixedAssetService.getNextAssetNo();
 
+    // ── IT-Act parallel book defaults ────────────────────────────────────
+    // Half-year rule: if put-to-use date < 180 days before FY-end (31-Mar)
+    // of the acquisition year, claim only 50% of the year's rate.
+    const acqDate = new Date(payload.acquisition_date);
+    const fyEnd   = new Date(acqDate.getMonth() >= 3 ? acqDate.getFullYear() + 1 : acqDate.getFullYear(), 2, 31);
+    const daysToFyEnd = Math.floor((fyEnd - acqDate) / (1000 * 60 * 60 * 24));
+    const halfYearRule = payload.it_acquired_in_year_half !== undefined
+      ? Boolean(payload.it_acquired_in_year_half)
+      : daysToFyEnd < 180;
+
     const doc = await FixedAssetModel.create({
       asset_no,
       asset_name: payload.asset_name,
       category:   payload.category || "Plant & Machinery",
       linked_machinery_id:  payload.linked_machinery_id  || "",
       linked_machinery_ref: payload.linked_machinery_ref || null,
-      acquisition_date: new Date(payload.acquisition_date),
+      acquisition_date: acqDate,
       acquisition_cost: r2(payload.acquisition_cost),
       salvage_value:    r2(payload.salvage_value || 0),
       depreciation_method: method,
@@ -132,6 +142,14 @@ class FixedAssetService {
       tender_name: payload.tender_name || "",
       accumulated_depreciation: 0,
       book_value: r2(payload.acquisition_cost),
+      // IT-Act shadow ledger
+      it_block:                 payload.it_block || "Plant & Machinery-General",
+      it_rate_pct:              Number(payload.it_rate_pct) || 15,
+      it_acquired_in_year_half: halfYearRule,
+      it_accumulated_depreciation: 0,
+      it_book_value:            r2(payload.acquisition_cost),
+      it_last_depreciation_fy:  "",
+      it_depreciation_history:  [],
       narration:  payload.narration || "",
       created_by: payload.created_by || "",
     });
@@ -308,6 +326,223 @@ class FixedAssetService {
     }
 
     return { period: monthKey(targetDate), posted, skipped, failed, details };
+  }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // INCOME TAX ACT — §32 BLOCK-OF-ASSETS WDV DEPRECIATION (shadow ledger)
+  // ──────────────────────────────────────────────────────────────────────
+  // The IT-Act book runs in PARALLEL to the Companies Act book and posts
+  // NO journal entries. Differences between the two books are reconciled
+  // at year-end via the deferred tax provision in the income tax return.
+  //
+  // Computation rules:
+  //   • Method: WDV (mandatory under §32)
+  //   • Cycle:  Annual (no monthly accrual)
+  //   • Rate:   `it_rate_pct` (default per IT_BLOCKS recommendation)
+  //   • Half-year rule: if `it_acquired_in_year_half=true`, charge only
+  //     50% of the rate IN THE ACQUISITION YEAR ONLY (full rate every
+  //     year thereafter).
+  //   • FY format: "YY-YY" (e.g. "25-26" → 1-Apr-2025 to 31-Mar-2026)
+  // ══════════════════════════════════════════════════════════════════════
+
+  static fyToYearStart(fy) {
+    // "25-26" → 2025
+    const [a] = String(fy).split("-");
+    if (!/^\d{2}$/.test(a)) throw new Error(`Invalid financial_year '${fy}' (expected YY-YY e.g. "25-26")`);
+    return 2000 + parseInt(a, 10);
+  }
+
+  // Post IT depreciation for ONE asset for ONE financial year.
+  // Idempotent: skips if already posted for that FY.
+  static async postItDepreciationForAsset(asset, financial_year) {
+    if (!financial_year) throw new Error("financial_year is required (e.g. '25-26')");
+
+    if (asset.status === "disposed") {
+      return { skipped: true, reason: "asset_disposed" };
+    }
+
+    const fyStartYear = FixedAssetService.fyToYearStart(financial_year);
+    const fyEnd       = new Date(fyStartYear + 1, 2, 31, 23, 59, 59, 999);
+    const acqDate     = new Date(asset.acquisition_date);
+
+    if (acqDate > fyEnd) {
+      return { skipped: true, reason: "acquired_after_fy" };
+    }
+
+    const already = (asset.it_depreciation_history || []).some(h => h.financial_year === financial_year);
+    if (already) return { skipped: true, reason: "already_posted" };
+
+    const openingWdv = r2(asset.it_book_value || 0);
+    if (openingWdv <= 0.01) return { skipped: true, reason: "wdv_zero" };
+
+    const acqFy = acqDate.getMonth() >= 3 ? acqDate.getFullYear() : acqDate.getFullYear() - 1;
+    const isAcquisitionFy = acqFy === fyStartYear;
+    const halfRate = Boolean(asset.it_acquired_in_year_half) && isAcquisitionFy;
+
+    const ratePct = Number(asset.it_rate_pct) || 0;
+    if (ratePct <= 0) return { skipped: true, reason: "zero_rate" };
+
+    const annualRate = halfRate ? ratePct / 2 : ratePct;
+    const charge = r2(openingWdv * (annualRate / 100));
+    if (charge <= 0) return { skipped: true, reason: "zero_charge" };
+
+    const closingWdv = r2(openingWdv - charge);
+
+    const fresh = await FixedAssetModel.findById(asset._id);
+    if (!fresh) return { skipped: true, reason: "asset_not_found" };
+
+    fresh.it_accumulated_depreciation = r2((fresh.it_accumulated_depreciation || 0) + charge);
+    fresh.it_book_value = closingWdv;
+    fresh.it_last_depreciation_fy = financial_year;
+    fresh.it_depreciation_history.push({
+      financial_year,
+      opening_wdv:       openingWdv,
+      additions:         0,
+      deletions:         0,
+      rate_pct:          ratePct,
+      half_rate_applied: halfRate,
+      depreciation:      charge,
+      closing_wdv:       closingWdv,
+      posted_at:         new Date(),
+    });
+    await fresh.save();
+
+    return {
+      skipped: false,
+      asset_no: fresh.asset_no,
+      financial_year,
+      opening_wdv: openingWdv,
+      rate_pct: ratePct,
+      half_rate_applied: halfRate,
+      depreciation: charge,
+      closing_wdv: closingWdv,
+    };
+  }
+
+  // Batch: post IT-Act depreciation for ALL non-disposed assets for a FY.
+  static async postItDepreciationForAllAssets({ financial_year } = {}) {
+    if (!financial_year) throw new Error("financial_year is required (e.g. '25-26')");
+
+    const assets = await FixedAssetModel.find({ status: { $ne: "disposed" } }).lean();
+    let posted = 0, skipped = 0, failed = 0;
+    const details = [];
+
+    for (const a of assets) {
+      try {
+        const r = await FixedAssetService.postItDepreciationForAsset(a, financial_year);
+        if (r.skipped) { skipped++; details.push({ asset_no: a.asset_no, ...r }); }
+        else           { posted++;  details.push({ asset_no: a.asset_no, ...r }); }
+      } catch (err) {
+        failed++;
+        logger.error(`[FixedAsset] IT depreciation failed for ${a.asset_no}: ${err.message}`);
+        details.push({ asset_no: a.asset_no, skipped: true, reason: "error", error: err.message });
+      }
+    }
+
+    return { financial_year, posted, skipped, failed, details };
+  }
+
+  // Side-by-side Companies Act vs IT-Act report.
+  // Returns per-asset cost/dep/NBV under both books, plus aggregate
+  // book_vs_tax_difference (a positive value means deferred tax LIABILITY,
+  // negative means deferred tax ASSET — actual DTL/DTA computation is
+  // outside this report).
+  static async getDualDepreciationReport({ financial_year, as_of_date, category, status } = {}) {
+    const asOf = as_of_date ? new Date(as_of_date) : new Date();
+
+    const filter = {};
+    if (status)   filter.status   = status;
+    if (category) filter.category = category;
+
+    const assets = await FixedAssetModel.find(filter).sort({ acquisition_date: 1 }).lean();
+
+    let coTotalCost = 0, coTotalAccDep = 0, coTotalNbv = 0;
+    let itTotalCost = 0, itTotalAccDep = 0, itTotalWdv = 0;
+    const rows = [];
+
+    for (const a of assets) {
+      const cost = r2(a.acquisition_cost || 0);
+
+      // Companies Act NBV — sum history rows up to as_of_date
+      const coAccDep = r2((a.depreciation_history || [])
+        .filter(h => h.period_end && new Date(h.period_end) <= asOf)
+        .reduce((s, h) => s + (h.amount || 0), 0));
+      const coNbv = r2(cost - coAccDep);
+
+      // IT-Act WDV — sum history rows up to (and including) financial_year if given,
+      // otherwise use the asset's running it_book_value.
+      let itAccDep, itWdv, itLastFy;
+      if (financial_year) {
+        const upto = (a.it_depreciation_history || []).filter(h => h.financial_year <= financial_year);
+        itAccDep = r2(upto.reduce((s, h) => s + (h.depreciation || 0), 0));
+        itWdv    = r2(cost - itAccDep);
+        itLastFy = upto.length ? upto[upto.length - 1].financial_year : "";
+      } else {
+        itAccDep = r2(a.it_accumulated_depreciation || 0);
+        itWdv    = r2(a.it_book_value || cost);
+        itLastFy = a.it_last_depreciation_fy || "";
+      }
+
+      coTotalCost   += cost;       coTotalAccDep += coAccDep; coTotalNbv += coNbv;
+      itTotalCost   += cost;       itTotalAccDep += itAccDep; itTotalWdv += itWdv;
+
+      rows.push({
+        asset_no:   a.asset_no,
+        asset_name: a.asset_name,
+        category:   a.category,
+        acquisition_date: a.acquisition_date,
+        acquisition_cost: cost,
+        // Companies Act book
+        co_method:        a.depreciation_method,
+        co_rate_or_life:  a.depreciation_method === "SLM"
+                            ? `${a.useful_life_months} months`
+                            : `${a.wdv_rate_pct}% WDV`,
+        co_accumulated_depreciation: coAccDep,
+        co_net_book_value:           coNbv,
+        // IT-Act book
+        it_block:          a.it_block || "",
+        it_rate_pct:       a.it_rate_pct || 0,
+        it_half_year_rule: Boolean(a.it_acquired_in_year_half),
+        it_last_fy:        itLastFy,
+        it_accumulated_depreciation: itAccDep,
+        it_book_value:               itWdv,
+        // Delta — difference between book NBV and tax WDV
+        // +ve  → book NBV > tax WDV  → tax dep faster → DTL
+        // -ve  → book NBV < tax WDV  → book dep faster → DTA
+        book_vs_tax_difference: r2(coNbv - itWdv),
+        status: a.status,
+      });
+    }
+
+    const totalDifference = r2(coTotalNbv - itTotalWdv);
+
+    return {
+      as_of: asOf,
+      financial_year: financial_year || null,
+      rows,
+      totals: {
+        asset_count: rows.length,
+        total_cost:  r2(coTotalCost),
+        companies_act: {
+          accumulated_depreciation: r2(coTotalAccDep),
+          net_book_value:           r2(coTotalNbv),
+        },
+        income_tax_act: {
+          accumulated_depreciation: r2(itTotalAccDep),
+          written_down_value:       r2(itTotalWdv),
+        },
+        book_vs_tax_difference: totalDifference,
+        deferred_tax_indicator: totalDifference > 0 ? "DTL"
+                              : totalDifference < 0 ? "DTA"
+                              : "NIL",
+      },
+      notes: [
+        "IT-Act book tracks Section 32 block-of-assets WDV depreciation in parallel.",
+        "No journal entries are posted for IT-Act depreciation — this is a shadow ledger.",
+        "Book-vs-tax differences should be reconciled via deferred tax (AS 22 / Ind AS 12) at year-end.",
+        "Half-year rule: assets put-to-use < 180 days in acquisition year claim 50% rate that FY only.",
+      ],
+    };
   }
 
   // ── Dispose an asset ────────────────────────────────────────────────────

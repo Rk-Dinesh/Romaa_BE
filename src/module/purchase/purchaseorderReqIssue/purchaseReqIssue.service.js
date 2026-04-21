@@ -153,21 +153,129 @@ class PurchaseRequestService {
   }
 
   static async getAllByQuotationRequested(filters = {}) {
-    return PurchaseRequestService._paginatedByStatus({
-      statusFilter: { $in: ["Quotation Requested", "Quotation Received", "Vendor Approved"] },
+    const validStatuses = ["Quotation Requested", "Quotation Received"];
+    
+    let statusFilter = { $in: validStatuses };
+    if (filters.approval_type && validStatuses.includes(filters.approval_type)) {
+      statusFilter = filters.approval_type;
+    } 
+
+    const result = await PurchaseRequestService._paginatedByStatus({
+      statusFilter,
       filters,
       sort: { status: 1, requestDate: -1 },
       selectFields: "requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails",
     });
+
+    // Always calculate global counts to maintain UI tab numbers
+    const query = { status: { $in: validStatuses } };
+
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { requestId:           { $regex: s, $options: "i" } },
+        { title:               { $regex: s, $options: "i" } },
+        { tender_name:         { $regex: s, $options: "i" } },
+        { tender_project_name: { $regex: s, $options: "i" } },
+        { "selectedVendor.vendor_name": { $regex: s, $options: "i" } },
+      ];
+    }
+
+    if (filters.fromdate || filters.todate) {
+      query.requestDate = {};
+      if (filters.fromdate) query.requestDate.$gte = new Date(filters.fromdate);
+      if (filters.todate) {
+        const to = new Date(filters.todate);
+        to.setHours(23, 59, 59, 999);
+        query.requestDate.$lte = to;
+      }
+    }
+
+    const countsAgg = await PurchaseRequestModel.aggregate([
+      { $match: query },
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]);
+
+    const counts = {
+      "Quotation Requested": 0,
+      "Quotation Received": 0,
+      "Vendor Approved": 0,
+      total: 0
+    };
+
+    countsAgg.forEach(c => {
+      if (counts[c._id] !== undefined) {
+        counts[c._id] = c.count;
+        counts.total += c.count;
+      }
+    });
+
+    result.counts = counts;
+
+    return result;
   }
 
   static async getAllByQuotationApproved(filters = {}) {
-    return PurchaseRequestService._paginatedByStatus({
-      statusFilter: { $in: ["Vendor Approved", "Purchase Order Issued", "Completed"] },
+    const validStatuses = ["Vendor Approved", "Purchase Order Issued", "Completed"];
+    
+    let statusFilter = { $in: validStatuses };
+    if (filters.approval_type && validStatuses.includes(filters.approval_type)) {
+      statusFilter = filters.approval_type;
+    } 
+
+    const result = await PurchaseRequestService._paginatedByStatus({
+      statusFilter,
       filters,
       sort: { status: 1, requestDate: -1 },
       selectFields: "requestId projectId tender_name tender_project_name title status requestDate requiredByDate siteDetails",
     });
+
+    // Always calculate global counts to maintain UI tab numbers
+    const query = { status: { $in: validStatuses } };
+
+    if (filters.search) {
+      const s = filters.search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      query.$or = [
+        { requestId:           { $regex: s, $options: "i" } },
+        { title:               { $regex: s, $options: "i" } },
+        { tender_name:         { $regex: s, $options: "i" } },
+        { tender_project_name: { $regex: s, $options: "i" } },
+        { "selectedVendor.vendor_name": { $regex: s, $options: "i" } },
+      ];
+    }
+
+    if (filters.fromdate || filters.todate) {
+      query.requestDate = {};
+      if (filters.fromdate) query.requestDate.$gte = new Date(filters.fromdate);
+      if (filters.todate) {
+        const to = new Date(filters.todate);
+        to.setHours(23, 59, 59, 999);
+        query.requestDate.$lte = to;
+      }
+    }
+
+    const countsAgg = await PurchaseRequestModel.aggregate([
+      { $match: query },
+      { $group: { _id: "$status", count: { $sum: 1 } } }
+    ]);
+
+    const counts = {
+      "Vendor Approved": 0,
+      "Purchase Order Issued": 0,
+      "Completed": 0,
+      total: 0
+    };
+
+    countsAgg.forEach(c => {
+      if (counts[c._id] !== undefined) {
+        counts[c._id] = c.count;
+        counts.total += c.count;
+      }
+    });
+
+    result.counts = counts;
+
+    return result;
   }
 
   static async getAllByProjectIdSelectedVendor(projectId) {

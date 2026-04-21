@@ -76,6 +76,20 @@ import RecurringVoucherService from "./src/module/finance/recurringvoucher/recur
 import budgetRouter from "./src/module/finance/budget/budget.route.js";
 import fixedAssetRouter from "./src/module/finance/fixedasset/fixedasset.route.js";
 import FixedAssetService from "./src/module/finance/fixedasset/fixedasset.service.js";
+import advanceAllocationRouter from "./src/module/finance/advanceallocation/advanceallocation.route.js";
+import retentionLedgerRouter from "./src/module/finance/retentionledger/retentionledger.route.js";
+import gstMatcherRouter from "./src/module/finance/gstmatcher/gstmatcher.route.js";
+import financeAttachmentRouter from "./src/module/finance/attachment/financeattachment.route.js";
+import einvoiceRouter from "./src/module/finance/einvoice/einvoice.route.js";
+import ewaybillRouter from "./src/module/finance/ewaybill/ewaybill.route.js";
+import contractPocRouter from "./src/module/finance/contractpoc/contractpoc.route.js";
+import approvalRouter from "./src/module/finance/approval/approval.route.js";
+import yearEndCloseRouter from "./src/module/finance/yearendclose/yearendclose.route.js";
+import ledgerSealRouter from "./src/module/finance/ledgerseal/ledgerseal.route.js";
+import statutoryDeadlineRouter from "./src/module/finance/statutorydeadline/statutorydeadline.route.js";
+import supplierScorecardRouter from "./src/module/finance/supplierscorecard/supplierscorecard.route.js";
+import form26asRouter from "./src/module/finance/form26as/form26as.route.js";
+import consolidationRouter from "./src/module/finance/consolidation/consolidation.route.js";
 import aiRouter from "./src/module/ai/ai.route.js";
 import SiteDrawingRouter from "./src/module/documents/sitedrawingdocuments/SiteDrawing.route.js";
 
@@ -253,6 +267,20 @@ app.use("/bankreconciliation", bankReconciliationRouter);
 app.use("/recurringvoucher",   recurringVoucherRouter);
 app.use("/budget",             budgetRouter);
 app.use("/fixedasset",         fixedAssetRouter);
+app.use("/advance",            advanceAllocationRouter);
+app.use("/retention",          retentionLedgerRouter);
+app.use("/gst-matcher",        gstMatcherRouter);
+app.use("/finance/attachments", financeAttachmentRouter);
+app.use("/einvoice",           einvoiceRouter);
+app.use("/ewaybill",           ewaybillRouter);
+app.use("/contract-poc",       contractPocRouter);
+app.use("/approvals",          approvalRouter);
+app.use("/year-end-close",     yearEndCloseRouter);
+app.use("/ledger-seal",        ledgerSealRouter);
+app.use("/statutory-deadlines", statutoryDeadlineRouter);
+app.use("/supplier-scorecard",  supplierScorecardRouter);
+app.use("/form26as",           form26asRouter);
+app.use("/consolidation",      consolidationRouter);
 app.use("/ai", aiRouter);
 
 app.get("/", (_req, res) => {

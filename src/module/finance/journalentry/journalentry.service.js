@@ -248,6 +248,15 @@ class JournalEntryService {
     const je_date      = payload.je_date ? new Date(payload.je_date) : new Date();
     const financial_year = getFY(je_date);
 
+    // Block postings into a closed FY (Gap 1 fix). `allow_closed_fy` is the
+    // back-door for the closing JE itself (posted by YearEndCloseService).
+    if (!payload.allow_closed_fy) {
+      const { default: YearEndCloseService } = await import("../yearendclose/yearendclose.service.js");
+      if (await YearEndCloseService.isClosed(financial_year)) {
+        throw new Error(`FY ${financial_year} is closed — no further postings allowed. Reopen the FY first if corrections are needed.`);
+      }
+    }
+
     const enrichedLines = await enrichAndValidateLines(payload.lines || []);
 
     const doc = {
@@ -292,6 +301,40 @@ class JournalEntryService {
       throw new Error("Cannot approve a journal entry without a narration. Please add a description first");
     }
 
+    // Gap 1: block approval into a closed FY
+    {
+      const { default: YearEndCloseService } = await import("../yearendclose/yearendclose.service.js");
+      if (await YearEndCloseService.isClosed(je.financial_year)) {
+        throw new Error(`FY ${je.financial_year} is closed — cannot approve a JE in a closed period. Reopen the FY first.`);
+      }
+    }
+
+    // Gap 2: if an approval rule is configured for JournalEntry and this JE's
+    // amount falls within a threshold band, require the ApprovalRequest for
+    // this JE to have been separately approved first.
+    {
+      const { default: ApprovalService } = await import("../approval/approval.service.js");
+      const rule = await ApprovalService.getRule("JournalEntry");
+      if (rule) {
+        const amt  = Number(je.total_debit) || 0;
+        const band = rule.thresholds.find((t) =>
+          amt >= t.min_amount && amt <= (t.max_amount ?? Number.MAX_SAFE_INTEGER),
+        );
+        if (band) {
+          const st = await ApprovalService.statusFor({ source_type: "JournalEntry", source_ref: je._id });
+          if (!st) {
+            throw new Error(
+              `JE amount ₹${amt} requires multi-level approval — please initiate an ApprovalRequest ` +
+              `(POST /approvals/requests) before approving this JE.`,
+            );
+          }
+          if (st.status !== "approved") {
+            throw new Error(`Linked ApprovalRequest is currently '${st.status}' — all approvers must sign off before this JE can be approved.`);
+          }
+        }
+      }
+    }
+
     je.status      = "approved";
     je.is_posted   = true;
     je.approved_by = approvedBy;
@@ -300,6 +343,15 @@ class JournalEntryService {
 
     await crossPostToSupplierLedger(je);
     await AccountTreeService.applyBalanceLines(je.lines);
+
+    // Gap 6: extend the tamper-evident hash chain with this approval. Lazy
+    // import avoids a static cycle since ledgerseal → journalentry model.
+    try {
+      const { default: LedgerSealService } = await import("../ledgerseal/ledgerseal.service.js");
+      await LedgerSealService.sealOne(je);
+    } catch (e) {
+      logger.warn(`[ledger-seal] failed to seal ${je.je_no}: ${e.message}`);
+    }
 
     return je;
   }
@@ -458,6 +510,15 @@ class JournalEntryService {
       const fy        = getFY(je_date);
 
       const enriched = await enrichLines(rawLines);
+
+      // Gap 10: propagate header tender_id down to each line so aggregations
+      // that only index `lines.tender_id` (POC, tender-profitability,
+      // consolidation) pick up voucher-driven JEs without any caller change.
+      if (meta.tender_id) {
+        for (const l of enriched) {
+          if (!l.tender_id) l.tender_id = meta.tender_id;
+        }
+      }
 
       const saved = await JournalEntryModel.create({
         je_no,

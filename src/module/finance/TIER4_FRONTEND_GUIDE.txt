@@ -1,0 +1,562 @@
+════════════════════════════════════════════════════════════════════════════
+  ROMAA BACKEND — TIER 4 FRONTEND INTEGRATION GUIDE
+  Enterprise analytics & controls: Consolidation, Tender profitability,
+  Cash-flow forecast, Fund-flow, Ratio analysis, Contract POC, Supplier
+  scorecard, Approval workflows, Statutory deadlines, Form 26AS,
+  Ledger seal, Year-end close
+════════════════════════════════════════════════════════════════════════════
+
+All endpoints require a valid access token (JWT) — send via:
+  • HTTP-only cookie `accessToken`  (preferred), OR
+  • Header `Authorization: Bearer <token>`
+
+All responses follow the standard shape:
+  { "status": true,  "data": ... }
+  { "status": false, "message": "..." }
+
+Tier 4 is code-complete (12/12) and smoke-tested on 2026-04-21. Every
+endpoint below is live. Where endpoints paginate the payload is:
+  { status, currentPage, totalPages, totalCount, data: [...] }
+
+Tier 4 is built on top of Tier 1–3. It does not generate JE postings on
+its own (except for POC snapshot, year-end close, and the closing-JE
+reversal); everything else is a read-side analytical view over the
+already-posted ledger.
+
+
+════════════════════════════════════════════════════════════════════════════
+  1. CONSOLIDATION                                   base: /consolidation
+════════════════════════════════════════════════════════════════════════════
+
+Multi-entity (per-tender) consolidated financials. Each tender is treated
+as a profit centre; un-tagged JE lines roll up under the synthetic entity
+"CORP". Inter-entity transactions (intra-group recharges) are eliminated
+from the consolidated P&L so parent totals are not double-counted.
+
+FLOW (UI):
+  1. Consolidation landing page:
+       GET /consolidation/entities         → entity selector
+  2. Three tabs across the top of the page:
+       • Trial Balance      → /consolidation/trial-balance
+       • Profit & Loss      → /consolidation/pnl
+       • Balance Sheet      → /consolidation/balance-sheet
+  3. A 4th tab "Inter-Entity" shows elimination entries flagged automatically.
+       GET /consolidation/inter-entity
+
+──────────────────────────────────────────────────────────────────
+GET /consolidation/entities
+    Response: [{ tender_id, tender_name, is_corp:false }, ..., { tender_id:"CORP", ... }]
+
+GET /consolidation/trial-balance?as_of_date=2026-03-31
+    Response: [{
+      entity: "TND-001" | "CORP",
+      entity_name,
+      rows: [{ account_code, account_name, account_type, debit, credit, balance }],
+      totals: { debit, credit }
+    }, ...]
+
+GET /consolidation/pnl?financial_year=25-26 (or &from_date=&to_date=)
+    Response:
+      {
+        period: { from, to, financial_year },
+        entities: [{
+          entity, entity_name,
+          income_lines:  [{ account_code, account_name, amount }],
+          expense_lines: [...],
+          total_income, total_expense, net_profit
+        }],
+        consolidated: { total_income, total_expense, net_profit },
+        eliminations: { total, lines:[{from_entity, to_entity, amount, reason}] }
+      }
+    Sort order: entities alphabetical; CORP last.
+    Uses one aggregation pipeline (no N+1 fan-out).
+
+GET /consolidation/balance-sheet?as_of_date=2026-03-31
+    Response shape mirrors trial balance but grouped by Asset / Liability /
+    Equity with sub-totals; inter-entity receivables/payables netted to zero.
+
+GET /consolidation/inter-entity?financial_year=25-26 (or &from/&to)
+    → Lines where one tender's JE touched another tender's account;
+      used to tick off why the consolidation has eliminations.
+
+UI tips:
+  • Show "Net Profit (Consolidated)" prominently — that's what management reads.
+  • A toggle "Show Eliminations" expands the eliminations strip inline.
+  • Give each entity a stable colour so P&L and BS tabs are recognisable.
+
+
+════════════════════════════════════════════════════════════════════════════
+  2. TENDER PROFITABILITY                            base: /reports
+════════════════════════════════════════════════════════════════════════════
+
+Per-tender P&L with billed vs. estimated vs. actual. Answers the PM's
+question: "Is this project making or losing money?"
+
+GET /reports/tender-profitability?from_date=&to_date=&tender_id=
+    Response:
+      [{
+        tender_id, tender_name,
+        contract_value,
+        revenue_billed,        // Sum(approved ClientBilling.net_amount)
+        revenue_recognized,    // POC-recognized revenue (if Contract POC is live)
+        cost_incurred,         // Material + Labour + Sub-contract + Overheads
+        cost_breakdown: { material, labour, subcontract, overhead, misc },
+        gross_profit,
+        margin_pct,
+        cost_to_complete,      // (estimated_cost − cost_incurred), if POC record exists
+        forecast_margin_pct    // forecast at completion
+      }, ...]
+
+UI: top bar = "Portfolio Margin" kpi, grid of tender cards with margin %,
+colour-coded (green > 10%, amber 3-10%, red < 3%).
+Click a card → drill into the per-tender ledger (/reports/general-ledger
+with tender_id filter, already in Tier 2).
+
+
+════════════════════════════════════════════════════════════════════════════
+  3. CASH-FLOW FORECAST                              base: /reports
+════════════════════════════════════════════════════════════════════════════
+
+Forward-looking projection of cash in/out for N days based on:
+  • unpaid client bills  (inflow, shifted by client_credit_days)
+  • unpaid purchase/weekly bills (outflow, shifted by contractor_credit_days)
+  • recurring vouchers / cron-posted payables
+  • known statutory payments in window (GST, TDS)
+
+GET /reports/cash-flow-forecast
+    ?as_of=2026-04-21
+    &horizon_days=90
+    &client_credit_days=45
+    &contractor_credit_days=30
+    Response:
+      {
+        as_of, horizon_days, opening_cash,
+        buckets: [{
+          bucket_start, bucket_end,   // e.g. weekly
+          inflow, outflow, net, running_balance
+        }],
+        low_points: [{ date, running_balance }],   // days balance < 0 or thresh
+        summary: {
+          total_inflow, total_outflow, net,
+          terminal_balance, min_balance
+        }
+      }
+
+UI: line chart of running balance + bar chart of net per bucket. A
+"Warnings" strip shows bucket dates where balance goes below treasury
+threshold.
+
+
+════════════════════════════════════════════════════════════════════════════
+  4. FUND-FLOW                                       base: /reports
+════════════════════════════════════════════════════════════════════════════
+
+Classic funds-flow statement — sources vs. applications between two
+balance-sheet dates. Backward-looking, complements the forward
+cash-flow-forecast.
+
+GET /reports/fund-flow?opening_date=2025-04-01&closing_date=2026-03-31
+    Response:
+      {
+        opening_date, closing_date,
+        sources: [{ description, amount }],           // issue of shares, loans taken, profit, etc.
+        applications: [{ description, amount }],       // asset purchases, loan repaid, dividends
+        net_change_in_working_capital,
+        reconciliation: { diff_between_sources_apps }  // should tally to zero
+      }
+
+UI: two-column ledger with sources on the left and applications on the
+right. Totals row at the bottom highlights green when reconciled.
+
+
+════════════════════════════════════════════════════════════════════════════
+  5. RATIO ANALYSIS                                  base: /reports
+════════════════════════════════════════════════════════════════════════════
+
+Standard financial ratios computed off the live trial balance. One shot,
+read-only.
+
+GET /reports/ratio-analysis?as_of_date=2026-03-31
+    Response:
+      {
+        as_of_date,
+        liquidity:    { current_ratio, quick_ratio, cash_ratio },
+        solvency:     { debt_equity, debt_ratio, interest_coverage },
+        profitability:{ gross_margin_pct, net_margin_pct, roa, roe },
+        efficiency:   { ar_days, ap_days, inventory_days, cash_conversion_cycle },
+        construction:{ wip_days, retention_as_pct_of_turnover }
+      }
+
+UI: matrix card layout, each ratio gets a value + a traffic-light badge
+vs. its benchmark band.
+
+
+════════════════════════════════════════════════════════════════════════════
+  6. CONTRACT POC (% OF COMPLETION)                  base: /contract-poc
+════════════════════════════════════════════════════════════════════════════
+
+Ind AS 115 Input-Method revenue recognition. Backs up the Tender
+Profitability screen with proper revenue accrual.
+
+MENTAL MODEL:
+  POC %        = costs_incurred / total_estimated_cost   (capped at 100%)
+  Revenue Rec  = POC % × contract_value
+  WIP Adj      = Revenue Rec − Revenue Billed
+                 +ve WIP adj → Dr Contract Asset,  Cr Revenue
+                 −ve WIP adj → Dr Revenue, Cr Contract Liability
+
+FLOW (UI):
+  1. Per tender, PM sets (or revises) the POC baseline:
+       POST /contract-poc  { tender_id, contract_value, total_estimated_cost, reason }
+  2. Finance runs "compute" any time to see the number without posting:
+       GET /contract-poc/:tender_id/compute?as_of=2026-03-31
+  3. At period-end, finance runs "snapshot" which posts the WIP JE:
+       POST /contract-poc/:tender_id/snapshot
+  4. Portfolio view:
+       GET /contract-poc/compute-all?as_of=2026-03-31
+
+──────────────────────────────────────────────────────────────────
+POST /contract-poc
+     Body: { tender_id, contract_value, total_estimated_cost,
+             tender_name?, reason? }
+     Upserts the baseline. If total_estimated_cost changed from the
+     previous live record, the prior value is pushed into history[].
+
+GET  /contract-poc/list?page=&limit=&status=active|closed
+GET  /contract-poc/:tender_id
+     → { tender_id, contract_value, total_estimated_cost,
+         status, history:[...], last_recognized:{...}, je_history:[...] }
+
+GET  /contract-poc/:tender_id/compute?as_of=YYYY-MM-DD
+     Response:
+       { tender_id, as_of,
+         costs_incurred, total_estimated_cost, poc_pct,
+         revenue_recognized, cumulative_billed, wip_adjustment,
+         wip_direction: "asset" | "liability" | "zero" }
+
+POST /contract-poc/:tender_id/snapshot
+     Body: {
+       as_of: YYYY-MM-DD,                   // required
+       contract_asset_code?:     "1090",    // override defaults if needed
+       contract_liability_code?: "2190",
+       revenue_code?:            "4010-<tender>"
+     }
+     Effect:
+       • Reverses any earlier snapshot JE for the same tender (keeps books clean)
+       • Posts a fresh WIP Adjustment JE dated `as_of`
+       • Updates `last_recognized` + appends to `je_history[]`
+     Response includes: { je_no, revenue_recognized, wip_adjustment }
+
+GET  /contract-poc/compute-all?as_of=YYYY-MM-DD
+     → Array of per-tender compute blobs; used for portfolio view.
+
+UI: on each tender profitability card, show the "Last Recognised" chip
+with its date. "Snapshot" button with confirm dialog warning of the
+posting side-effect.
+
+
+════════════════════════════════════════════════════════════════════════════
+  7. SUPPLIER SCORECARD                              base: /supplier-scorecard
+════════════════════════════════════════════════════════════════════════════
+
+Vendor + contractor KPIs computed from Purchase Bills, Weekly Billing,
+Payment Vouchers, and delivery timestamps. Used by procurement to
+shortlist or blacklist suppliers.
+
+MENTAL MODEL — 3 dimensions:
+  • Price performance: avg price variance vs. PO, quote win rate
+  • Quality:           rejections / debit notes as %, retention hits
+  • Reliability:       on-time delivery %, payment days taken, bill-defect %
+
+FLOW (UI):
+  1. Landing page toggles "Vendors" vs. "Contractors".
+       GET /supplier-scorecard/vendors?from_date=&to_date=
+       GET /supplier-scorecard/contractors?from_date=&to_date=
+     → paginated table sortable by any KPI column, colour-chip per KPI.
+  2. Click row → drill-in detail page:
+       GET /supplier-scorecard/vendor/:vendor_id?from_date=&to_date=
+       GET /supplier-scorecard/contractor/:contractor_id?from_date=&to_date=
+     → includes full history of POs/bills, rejections, payment diary.
+
+Response shape (list):
+  [{
+    vendor_id | contractor_id,
+    name, gstin,
+    total_spend, bill_count,
+    price_variance_pct,
+    rejection_rate_pct,
+    on_time_delivery_pct,
+    avg_payment_days,
+    composite_score: 0-100,
+    grade: "A+" | "A" | "B" | "C" | "D"
+  }]
+
+Response shape (detail): same KPIs + bills[], debit_notes[], payments[].
+
+UI: radar chart of the 3 dimensions on the detail view, plus a trend-line
+of composite score over the last 12 months.
+
+
+════════════════════════════════════════════════════════════════════════════
+  8. APPROVAL WORKFLOWS                              base: /approvals
+════════════════════════════════════════════════════════════════════════════
+
+Generic multi-level, threshold-based approval pipeline. Any voucher or
+document type can be plugged in by adding an ApprovalRule for its
+`source_type`. Current wired-in types:
+  PaymentVoucher, PurchaseBill, WeeklyBilling, ExpenseVoucher,
+  ClientBilling, BankTransfer.
+
+MENTAL MODEL:
+  Rule = per source_type, list of amount-bands; each band has an
+         ordered approvers[] (all must sign) OR any_of=true (one is enough).
+  Request = one per document; status pending → approved | rejected | withdrawn.
+            approval_log[] keeps the full audit.
+
+FLOW (UI — admin, "Approval Policies"):
+  1. Page lists every rule:
+       GET /approvals/rules
+  2. Create/Edit rule:
+       POST /approvals/rules
+       Body: {
+         source_type: "PaymentVoucher",
+         is_active: true,
+         thresholds: [
+           { min_amount: 0,       max_amount: 50000,  approvers:["<uid1>"],               label:"L1: Manager" },
+           { min_amount: 50001,   max_amount: 500000, approvers:["<uid1>","<uid2>"],      label:"L1+L2: Mgr,CFO" },
+           { min_amount: 500001,  max_amount: null,   approvers:["<uid1>","<uid2>","<uid3>"], label:"L1+L2+CEO" }
+         ]
+       }
+  3. Rule-by-source fetch:
+       GET /approvals/rules/:source_type
+
+FLOW (UI — user, "My Approvals"):
+  1. Inbox of what needs MY sign-off:
+       GET /approvals/requests/pending-for-me?source_type=&page=&limit=
+  2. Open a request detail:
+       GET /approvals/requests/:id
+     → see source_no, amount, narration, required_approvers[], approval_log[]
+  3. Action buttons:
+       POST /approvals/requests/:id/approve   Body: { comment?: "" }
+       POST /approvals/requests/:id/reject    Body: { comment: "Required" }
+       POST /approvals/requests/:id/comment   Body: { comment: "Question..." }
+
+FLOW (UI — initiator):
+  1. When a document is created, controller calls:
+       POST /approvals/requests
+       Body: { source_type, source_ref:<objectId>, source_no, amount, narration }
+     (This is usually hidden from the user — the voucher form does it.)
+  2. User can withdraw own request:
+       POST /approvals/requests/:id/withdraw  Body: { comment: "No longer needed" }
+
+Global view:
+  GET /approvals/requests?source_type=&status=&page=&limit=
+    → every request for audit / ops oversight.
+
+UI tips:
+  • Show approval status + next-approver name on every voucher detail page.
+  • Pending-for-me count → surface as a nav badge.
+  • After approve/reject, navigate back to the document — the voucher's own
+    `approval_status` flips so the "Post to Books" button is unlocked.
+
+
+════════════════════════════════════════════════════════════════════════════
+  9. STATUTORY DEADLINES                             base: /statutory-deadlines
+════════════════════════════════════════════════════════════════════════════
+
+Compliance calendar for the FY: GST, TDS, Payroll PF/ESI, Income Tax,
+MCA — generated from rules, then users tick them off as filed. Calendar
+is authoritative; filings are the user overlay.
+
+FLOW (UI):
+  1. Calendar page (monthly grid):
+       GET /statutory-deadlines/calendar?financial_year=25-26
+     → [{ category, form_name, period_label, due_date, is_filed, filing:{...} }]
+  2. Home-page widget "Upcoming Filings":
+       GET /statutory-deadlines/upcoming?as_of=&window_days=60
+     → same items where due_date within window and not filed.
+  3. Mark-as-filed drawer on click:
+       POST /statutory-deadlines/filings
+       Body: {
+         financial_year: "25-26",
+         category: "GST",
+         form_name: "GSTR-3B",
+         period_label: "04-2025",
+         filed_on: "2025-05-18",
+         filing_ref: "ARN-XXXXX",
+         amount_paid, late_fee, interest, remarks
+       }
+  4. Filings list / register (for the auditor):
+       GET /statutory-deadlines/filings?financial_year=&category=&page=&limit=
+  5. Mistake correction:
+       DELETE /statutory-deadlines/filings/:id
+
+UI tips:
+  • Calendar tiles colour: green (filed), amber (<7 days to due), red (overdue).
+  • Duplicate-filing prevented at DB level (unique on FY+category+form+period).
+
+
+════════════════════════════════════════════════════════════════════════════
+  10. FORM 26AS                                      base: /form26as
+════════════════════════════════════════════════════════════════════════════
+
+Ingest the TDS statement pulled from the TRACES portal (or pasted CSV)
+and reconcile it against the TDS deductions we booked in ClientBilling.
+Any diff means a client under-reported to the IT dept, or we missed a
+TDS entry in our books.
+
+UPLOAD DEDUPE KEY (enforced DB-level + service-level):
+  financial_year + quarter + deductor_tan + section + booked_date
+  + amount_credited + tds_amount + challan_number
+
+FLOW (UI):
+  1. Upload page — CSV parser turns the TRACES file into the API shape, then:
+       POST /form26as/upload
+       Body: { entries: [{ financial_year, quarter, deductor_tan, deductor_name,
+                           our_pan, section, booked_date, amount_credited,
+                           tds_amount, challan_number, status_26as, client_id }, ...] }
+       Response: { total_submitted, inserted, skipped, rows:[...] }
+     → "Skipped" = row already existed on the composite key (safe idempotent re-upload).
+  2. Browse:
+       GET /form26as/list?financial_year=&quarter=&deductor_tan=
+  3. Reconciliation view:
+       GET /form26as/reconcile?financial_year=25-26&quarter=Q4
+       Response:
+         {
+           financial_year, quarter, window,
+           summary: { total_26as_entries, total_billings,
+                      total_tds_26as, total_tds_booked,
+                      matched_count, only_in_26as, only_in_books,
+                      tds_diff_overall, status: "balanced" | "mismatched" },
+           matched:       [{ tan, section, tds_26as, tds_booked, tds_diff,
+                              match_quality:"exact"|"close"|"divergent", ... }],
+           only_in_26as:  [...],    // client filed but we didn't book
+           only_in_books: [...]     // we booked but client didn't file
+         }
+       Matching rule: by client_id (direct or via Client.tan_no lookup)
+                       then ±30-day booked-date window.
+  4. Manual edit (rarely used — raw mistake cleanup):
+       DELETE /form26as/:id
+
+UI tips:
+  • Three-tab reconciliation page: Matched | Only in 26AS | Only in Books.
+  • "Only in 26AS" tab should have a "Create Missing TDS" CTA that deep-links
+    into the corresponding ClientBilling.
+  • Re-upload is idempotent — users can paste the full quarter any time.
+
+
+════════════════════════════════════════════════════════════════════════════
+  11. LEDGER SEAL (Tamper-Evident Hash Chain)        base: /ledger-seal
+════════════════════════════════════════════════════════════════════════════
+
+Append-only SHA-256 chain over approved Journal Entries. Any later edit
+to a sealed JE breaks the chain and is flagged. Latest chain_hash is what
+auditors snapshot externally (print + sign, email, blockchain anchor).
+
+MENTAL MODEL:
+  content_hash = H(canonical JE fields + sorted lines)
+  chain_hash   = H(prev_chain_hash || content_hash)
+  sequence     = monotonic integer (genesis = 1)
+
+FLOW (UI — admin, "Ledger Seal"):
+  1. Seal any newly-approved-but-unsealed JEs:
+       POST /ledger-seal/seal-approved
+       Response: { added: <n>, last_sequence, last_chain_hash }
+     Run nightly from a cron OR on demand via the button.
+  2. Verify the chain for a period (for auditor / internal audit):
+       GET /ledger-seal/verify?from_date=&to_date=
+       Response:
+         {
+           verified: true | false,
+           broken_at_sequence: null | <n>,
+           reason: "content_hash mismatch — JE edited after seal"
+                   | "prev_hash mismatch — chain rewrite" | null,
+           total_checked, first_sequence, last_sequence
+         }
+  3. Status card (home/dashboard):
+       GET /ledger-seal/status
+       → { unsealed_count, last_sequence, last_chain_hash, last_sealed_at }
+  4. Browse chain:
+       GET /ledger-seal/list?page=&limit=&from_date=&to_date=
+       → paginated [{ sequence, je_no, je_date, content_hash, prev_hash,
+                       chain_hash, sealed_at }]
+
+UI tips:
+  • Status card shows a giant green tick when verified=true and 0 unsealed;
+    red banner with the broken sequence otherwise.
+  • "Copy latest chain_hash" button — auditors paste that into their
+    external sign-off record.
+
+
+════════════════════════════════════════════════════════════════════════════
+  12. YEAR-END CLOSE                                 base: /year-end-close
+════════════════════════════════════════════════════════════════════════════
+
+Three-step FY close: preview → close → (optional) reopen. Closing posts a
+closing JE that zeros every income & expense account and lands the net
+profit on Retained Earnings. Subsequent backdated JEs into that FY are
+blocked by JournalEntryService.
+
+FLOW (UI — controller only, confirm dialog required at every step):
+  1. Preview the close — nothing is posted yet:
+       GET /year-end-close/preview?financial_year=25-26
+       Response:
+         {
+           financial_year, fy_start_date, fy_end_date,
+           pnl_snapshot: {
+             total_income, total_expense, net_profit,
+             income_lines:[...], expense_lines:[...]
+           },
+           balance_sheet_snapshot:[...],
+           warnings: [ "Unapproved JE count: 3",
+                       "Draft PurchaseBill count: 1" ],
+           ready_to_close: true | false
+         }
+     Show warnings. "Close FY" button disabled until ready_to_close OR force=true.
+  2. Perform the close:
+       POST /year-end-close/close
+       Body: {
+         financial_year: "25-26",
+         retained_earnings_code: "3200",   // user picks from COA dropdown
+         force: false                      // true bypasses the ready_to_close gate
+       }
+       Response: { financial_year, status:"closed", closing_je_no,
+                    pnl_snapshot, balance_sheet_snapshot, closed_on, closed_by }
+  3. View prior closes:
+       GET /year-end-close/list
+       GET /year-end-close/:financial_year
+  4. Opening balances for the next FY:
+       GET /year-end-close/opening-balances?financial_year=26-27
+       → [{ account_code, account_name, account_type, opening_balance }]
+  5. Reopen (rare, auditor correction):
+       POST /year-end-close/reopen
+       Body: { financial_year:"25-26", reason:"Depreciation correction" }
+       Effect: posts a reversing JE of the closing JE; status → "reopened";
+               JE posting into the FY is unblocked again.
+
+UI tips:
+  • The close button must show a "hard stop" confirm: "This posts a JE
+    and freezes FY 25-26. Type the FY code to confirm: [_____]".
+  • Post-close banner: "FY 25-26 closed on 2026-04-18 by K. Kumar. Closing
+    JE: JE/25-26/9999. [Reopen] [Download P&L] [Download BS]".
+
+
+════════════════════════════════════════════════════════════════════════════
+  INTEGRATION CHECKLIST
+════════════════════════════════════════════════════════════════════════════
+  [ ] Consolidation module with 4 tabs (entities / TB / P&L / BS / inter-entity)
+  [ ] Tender profitability portfolio grid + per-tender drill-in
+  [ ] Cash-flow forecast page with horizon/credit-days controls + low-point flags
+  [ ] Fund-flow statement between two BS dates
+  [ ] Ratio analysis dashboard with benchmark traffic-lights
+  [ ] Contract POC baseline editor + snapshot button on tender detail
+  [ ] Supplier scorecard (vendor/contractor toggle) with radar on drill-in
+  [ ] Approval policies admin page + "My Approvals" inbox + per-voucher status chip
+  [ ] Statutory deadlines calendar + "Upcoming Filings" widget + mark-filed drawer
+  [ ] Form 26AS uploader + 3-tab reconciliation page
+  [ ] Ledger seal status card + verify page + "seal now" action
+  [ ] Year-end-close wizard (preview → confirm → post) + reopen flow
+
+Questions → the finance backend team. Exact response shapes are also
+documented inline in the controllers and services
+(src/module/finance/*.controller.js, *.service.js).

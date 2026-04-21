@@ -115,7 +115,22 @@ const RoleSchema = new mongoose.Schema(
         gstr3b: Actions,
         itc_reversal: Actions,
         tds_register: Actions,
-        
+        bank_reconciliation: Actions,
+        recurring_vouchers: Actions,
+        budgets: Actions,
+        aging_reports: Actions,
+        fixed_assets: Actions,
+        form_26q: Actions,
+        einvoice: Actions,
+        ewaybill: Actions,
+        gst_matcher: Actions,
+        advance_allocation:Actions,
+        retention:Actions,
+        audit_trail:Actions,
+        form_16:Actions,
+        form_16a:Actions,
+        form_24q:Actions,
+        gstr9:Actions
       },
 
       // --- Reports Module ---

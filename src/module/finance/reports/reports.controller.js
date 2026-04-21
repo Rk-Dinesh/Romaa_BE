@@ -64,6 +64,59 @@ export const getCashFlow = async (req, res) => {
   }
 };
 
+// GET /reports/tender-profitability?from_date=&to_date=&tender_id=
+export const getTenderProfitability = async (req, res) => {
+  try {
+    const data = await ReportsService.tenderProfitability({
+      from_date: req.query.from_date,
+      to_date:   req.query.to_date,
+      tender_id: req.query.tender_id,
+    });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/ratio-analysis?as_of_date=
+export const getRatioAnalysis = async (req, res) => {
+  try {
+    const data = await ReportsService.ratioAnalysis({ as_of_date: req.query.as_of_date });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/fund-flow?opening_date=&closing_date=
+export const getFundFlow = async (req, res) => {
+  try {
+    const data = await ReportsService.fundFlow({
+      opening_date: req.query.opening_date,
+      closing_date: req.query.closing_date,
+    });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    const code = error.message.includes("must be after") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/cash-flow-forecast?as_of=&horizon_days=&client_credit_days=&contractor_credit_days=
+export const getCashFlowForecast = async (req, res) => {
+  try {
+    const data = await ReportsService.cashFlowForecast({
+      as_of:                  req.query.as_of,
+      horizon_days:           req.query.horizon_days,
+      client_credit_days:     req.query.client_credit_days,
+      contractor_credit_days: req.query.contractor_credit_days,
+    });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 // GET /reports/gstr-1?from_date=&to_date=
 export const getGstr1 = async (req, res) => {
   try {
@@ -215,6 +268,151 @@ export const getForm26QCsv = async (req, res) => {
     res.status(200).send(csv);
   } catch (error) {
     const code = error.message.includes("required") || error.message.includes("must be") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/form-24q?financial_year=&quarter=&tan=&deductor_name=&deductor_pan=&deductor_address=
+export const getForm24Q = async (req, res) => {
+  try {
+    const data = await ReportsService.form24Q({
+      financial_year:    req.query.financial_year || req.query.fy,
+      quarter:           req.query.quarter,
+      tan:               req.query.tan,
+      deductor_name:     req.query.deductor_name,
+      deductor_pan:      req.query.deductor_pan,
+      deductor_address:  req.query.deductor_address,
+    });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    const code = error.message.includes("required") || error.message.includes("must be") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/form-24q/csv?financial_year=&quarter=
+export const getForm24QCsv = async (req, res) => {
+  try {
+    const data = await ReportsService.form24Q({
+      financial_year:    req.query.financial_year || req.query.fy,
+      quarter:           req.query.quarter,
+      tan:               req.query.tan,
+      deductor_name:     req.query.deductor_name,
+      deductor_pan:      req.query.deductor_pan,
+      deductor_address:  req.query.deductor_address,
+    });
+    const escape = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const headers = [
+      "sl_no", "deductee_code", "pan", "deductee_name", "emp_id", "designation",
+      "section_code", "payment_month", "payment_date", "gross_salary",
+      "tds_rate_pct", "tds_amount", "surcharge", "education_cess",
+      "total_tax_deducted", "total_tax_deposited",
+      "bsr_code", "challan_date", "challan_serial_no", "book_entry_flag",
+    ];
+    const lines = [headers.join(",")];
+    for (const r of data.deductee_records) {
+      lines.push([
+        r.sl_no, r.deductee_code, r.pan, r.deductee_name, r.emp_id, r.designation,
+        r.section_code, r.payment_month,
+        r.payment_date ? new Date(r.payment_date).toISOString().slice(0, 10) : "",
+        r.gross_salary, r.tds_rate_pct, r.tds_amount,
+        r.surcharge, r.education_cess, r.total_tax_deducted, r.total_tax_deposited,
+        r.bsr_code, r.challan_date, r.challan_serial_no, r.book_entry_flag,
+      ].map(escape).join(","));
+    }
+    const csv = lines.join("\n");
+    const filename = `Form24Q_${data.financial_year}_${data.quarter}.csv`;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res.status(200).send(csv);
+  } catch (error) {
+    const code = error.message.includes("required") || error.message.includes("must be") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/form-16?financial_year=&employee_id=&tan=&deductor_name=&deductor_pan=&deductor_address=
+export const getForm16 = async (req, res) => {
+  try {
+    const data = await ReportsService.form16({
+      financial_year:    req.query.financial_year || req.query.fy,
+      employee_id:       req.query.employee_id,
+      tan:               req.query.tan,
+      deductor_name:     req.query.deductor_name,
+      deductor_pan:      req.query.deductor_pan,
+      deductor_address:  req.query.deductor_address,
+    });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    const code = error.message.includes("required") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/form-16a?financial_year=&quarter=&deductee_id=&section=&tan=&deductor_name=&deductor_pan=&deductor_address=
+export const getForm16A = async (req, res) => {
+  try {
+    const data = await ReportsService.form16A({
+      financial_year:    req.query.financial_year || req.query.fy,
+      quarter:           req.query.quarter,
+      deductee_id:       req.query.deductee_id,
+      section:           req.query.section,
+      tan:               req.query.tan,
+      deductor_name:     req.query.deductor_name,
+      deductor_pan:      req.query.deductor_pan,
+      deductor_address:  req.query.deductor_address,
+    });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    const code = error.message.includes("required") || error.message.includes("must be") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/audit-trail?from_date=&to_date=&doc_type=&je_type=&user_id=&source_no=&je_no=&tender_id=&page=&limit=
+export const getAuditTrail = async (req, res) => {
+  try {
+    const data = await ReportsService.auditTrail({
+      from_date:  req.query.from_date || req.query.fromdate,
+      to_date:    req.query.to_date   || req.query.todate,
+      doc_type:   req.query.doc_type,
+      je_type:    req.query.je_type,
+      user_id:    req.query.user_id,
+      source_no:  req.query.source_no,
+      je_no:      req.query.je_no,
+      tender_id:  req.query.tender_id,
+      page:       req.query.page,
+      limit:      req.query.limit,
+    });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/audit-trail/document?source_type=PaymentVoucher&source_no=PV/25-26/0001
+// or  /reports/audit-trail/document?source_type=PaymentVoucher&source_ref=<oid>
+export const getAuditTrailForDocument = async (req, res) => {
+  try {
+    const data = await ReportsService.auditTrailForDocument({
+      source_type: req.query.source_type,
+      source_ref:  req.query.source_ref,
+      source_no:   req.query.source_no,
+    });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    const code = error.message.includes("required") ? 400 : 500;
+    res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+// GET /reports/gstr-9?financial_year=25-26
+export const getGstr9 = async (req, res) => {
+  try {
+    const data = await ReportsService.gstr9({ financial_year: req.query.financial_year });
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    const code = error.message.includes("required") || error.message.includes("Invalid") ? 400 : 500;
     res.status(code).json({ status: false, message: error.message });
   }
 };

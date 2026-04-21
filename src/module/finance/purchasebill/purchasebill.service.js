@@ -4,6 +4,7 @@ import VendorModel from "../../purchase/vendor/vendor.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import JournalEntryService from "../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
+import { GL } from "../gl.constants.js";
 
 // ── Build document from payload ───────────────────────────────────────────────
 // Only source fields are mapped here.
@@ -431,24 +432,24 @@ class PurchaseBillService {
 
     const jeLines = [
       // Dr: Material / subcontract expense
-      { account_code: "5010", dr_cr: "Dr", debit_amt: bill.grand_total, credit_amt: 0, narration: "Material cost" },
+      { account_code: GL.MATERIAL_COST, dr_cr: "Dr", debit_amt: bill.grand_total, credit_amt: 0, narration: "Material cost" },
     ];
 
     // Dr: GST Input ITC (split by component based on tax_mode)
     if (bill.tax_mode === "instate") {
       const cgstTotal = bill.tax_groups.reduce((s, g) => s + (g.cgst_amt || 0), 0);
       const sgstTotal = bill.tax_groups.reduce((s, g) => s + (g.sgst_amt || 0), 0);
-      if (cgstTotal > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Dr", debit_amt: cgstTotal, credit_amt: 0, narration: "CGST Input ITC" });
-      if (sgstTotal > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Dr", debit_amt: sgstTotal, credit_amt: 0, narration: "SGST Input ITC" });
+      if (cgstTotal > 0) jeLines.push({ account_code: GL.GST_INPUT_CGST, dr_cr: "Dr", debit_amt: cgstTotal, credit_amt: 0, narration: "CGST Input ITC" });
+      if (sgstTotal > 0) jeLines.push({ account_code: GL.GST_INPUT_SGST, dr_cr: "Dr", debit_amt: sgstTotal, credit_amt: 0, narration: "SGST Input ITC" });
     } else {
       const igstTotal = bill.tax_groups.reduce((s, g) => s + (g.igst_amt || 0), 0);
-      if (igstTotal > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Dr", debit_amt: igstTotal, credit_amt: 0, narration: "IGST Input ITC" });
+      if (igstTotal > 0) jeLines.push({ account_code: GL.GST_INPUT_IGST, dr_cr: "Dr", debit_amt: igstTotal, credit_amt: 0, narration: "IGST Input ITC" });
     }
 
     // Handle additional charges / deductions + round-off (keeps JE balanced)
     const slop = Math.round((bill.net_amount - bill.grand_total - bill.total_tax) * 100) / 100;
-    if (slop > 0) jeLines.push({ account_code: "5160", dr_cr: "Dr", debit_amt: slop, credit_amt: 0, narration: "Additional charges / round-off" });
-    if (slop < 0) jeLines.push({ account_code: "4050", dr_cr: "Cr", debit_amt: 0, credit_amt: Math.abs(slop), narration: "Deductions / round-off" });
+    if (slop > 0) jeLines.push({ account_code: GL.SITE_CONTINGENCY, dr_cr: "Dr", debit_amt: slop, credit_amt: 0, narration: "Additional charges / round-off" });
+    if (slop < 0) jeLines.push({ account_code: GL.MISC_INCOME, dr_cr: "Cr", debit_amt: 0, credit_amt: Math.abs(slop), narration: "Deductions / round-off" });
 
     // Cr: Vendor payable (personal ledger account)
     if (vendorAccCode) {

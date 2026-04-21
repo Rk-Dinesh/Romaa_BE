@@ -6,6 +6,7 @@ import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import JournalEntryService from "../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
+import { GL, expenseCodeForSupplier } from "../gl.constants.js";
 
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -194,7 +195,7 @@ async function markBillAdjusted(cn) {
 // Supplier sends CN: Dr supplier payable / Cr material cost + Cr GST Input reversal
 async function postCNJe(cn) {
   const supplierAccCode = await JournalEntryService.getSupplierAccountCode(cn.supplier_type, cn.supplier_id);
-  const expenseAccCode  = cn.supplier_type === "Contractor" ? "5030" : "5010";
+  const expenseAccCode  = expenseCodeForSupplier(cn.supplier_type);
 
   const jeLines = [];
   if (supplierAccCode) {
@@ -203,9 +204,9 @@ async function postCNJe(cn) {
   // Cr: reverse material / subcontract cost
   jeLines.push({ account_code: expenseAccCode, dr_cr: "Cr", debit_amt: 0, credit_amt: cn.taxable_amount || cn.amount, narration: "Cost reversal" });
   // Cr: reverse GST Input ITC
-  if (cn.cgst_amt > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Cr", debit_amt: 0, credit_amt: cn.cgst_amt, narration: "CGST ITC reversal" });
-  if (cn.sgst_amt > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Cr", debit_amt: 0, credit_amt: cn.sgst_amt, narration: "SGST ITC reversal" });
-  if (cn.igst_amt > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Cr", debit_amt: 0, credit_amt: cn.igst_amt, narration: "IGST ITC reversal" });
+  if (cn.cgst_amt > 0) jeLines.push({ account_code: GL.GST_INPUT_CGST, dr_cr: "Cr", debit_amt: 0, credit_amt: cn.cgst_amt, narration: "CGST ITC reversal" });
+  if (cn.sgst_amt > 0) jeLines.push({ account_code: GL.GST_INPUT_SGST, dr_cr: "Cr", debit_amt: 0, credit_amt: cn.sgst_amt, narration: "SGST ITC reversal" });
+  if (cn.igst_amt > 0) jeLines.push({ account_code: GL.GST_INPUT_IGST, dr_cr: "Cr", debit_amt: 0, credit_amt: cn.igst_amt, narration: "IGST ITC reversal" });
 
   const je = await JournalEntryService.createFromVoucher(jeLines, {
     je_type:     "Credit Note",

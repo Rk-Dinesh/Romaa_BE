@@ -6,6 +6,7 @@ import WeeklyBillingModel from "../weeklyBilling/WeeklyBilling.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import JournalEntryService from "../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
+import { GL, expenseCodeForSupplier } from "../gl.constants.js";
 
 const round2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
@@ -199,20 +200,20 @@ async function markBillAdjusted(dn) {
 //     Dr expense (5010 or 5030) + Dr GST Input ITC / Cr supplier payable
 async function postDNJe(dn) {
   const supplierAccCode = await JournalEntryService.getSupplierAccountCode(dn.supplier_type, dn.supplier_id);
-  const expenseAccCode  = dn.supplier_type === "Contractor" ? "5030" : "5010";
+  const expenseAccCode  = expenseCodeForSupplier(dn.supplier_type);
   const jeLines         = [];
 
   if (dn.raised_by === "Vendor") {
     // Vendor/Contractor raises DN: we owe them more
     jeLines.push({ account_code: expenseAccCode, dr_cr: "Dr", debit_amt: dn.taxable_amount || dn.amount, credit_amt: 0, narration: "Cost increase from supplier DN" });
-    if (dn.cgst_amt > 0) jeLines.push({ account_code: "1080-CGST", dr_cr: "Dr", debit_amt: dn.cgst_amt, credit_amt: 0, narration: "CGST Input ITC" });
-    if (dn.sgst_amt > 0) jeLines.push({ account_code: "1080-SGST", dr_cr: "Dr", debit_amt: dn.sgst_amt, credit_amt: 0, narration: "SGST Input ITC" });
-    if (dn.igst_amt > 0) jeLines.push({ account_code: "1080-IGST", dr_cr: "Dr", debit_amt: dn.igst_amt, credit_amt: 0, narration: "IGST Input ITC" });
+    if (dn.cgst_amt > 0) jeLines.push({ account_code: GL.GST_INPUT_CGST, dr_cr: "Dr", debit_amt: dn.cgst_amt, credit_amt: 0, narration: "CGST Input ITC" });
+    if (dn.sgst_amt > 0) jeLines.push({ account_code: GL.GST_INPUT_SGST, dr_cr: "Dr", debit_amt: dn.sgst_amt, credit_amt: 0, narration: "SGST Input ITC" });
+    if (dn.igst_amt > 0) jeLines.push({ account_code: GL.GST_INPUT_IGST, dr_cr: "Dr", debit_amt: dn.igst_amt, credit_amt: 0, narration: "IGST Input ITC" });
     if (supplierAccCode) jeLines.push({ account_code: supplierAccCode, dr_cr: "Cr", debit_amt: 0, credit_amt: dn.amount, narration: "Supplier payable increased" });
   } else {
     // Company raises DN: reduces what we owe the supplier (penalty / deduction)
     if (supplierAccCode) jeLines.push({ account_code: supplierAccCode, dr_cr: "Dr", debit_amt: dn.amount, credit_amt: 0, narration: "Supplier payable reduced by DN" });
-    jeLines.push({ account_code: "4030", dr_cr: "Cr", debit_amt: 0, credit_amt: dn.amount, narration: "Penalty / deduction recovered" });
+    jeLines.push({ account_code: GL.PENALTY_INCOME, dr_cr: "Cr", debit_amt: 0, credit_amt: dn.amount, narration: "Penalty / deduction recovered" });
   }
 
   const je = await JournalEntryService.createFromVoucher(jeLines, {

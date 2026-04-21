@@ -13,8 +13,16 @@ export const createWorkOrderRequest = async (req, res) => {
 export const getAllByNewRequest = async (req, res) => {
   try {
     const { projectId } = req.params;
-    const workorder = await WorkOrderRequestService.getAllByNewRequest(projectId);
-    res.status(200).json({ status: true, data: workorder });
+    const { page, limit, search, fromdate, todate, approval_type } = req.query;
+    const result = await WorkOrderRequestService.getAllByNewRequest(projectId, { page, limit, search, fromdate, todate, approval_type });
+    res.status(200).json({
+      status: true,
+      currentPage: result.currentPage,
+      totalPages: result.totalPages,
+      totalCount: result.totalCount,
+      counts: result.counts,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
@@ -33,8 +41,16 @@ export const getQuotationRequested = async (req, res) => {
 export const getAllByQuotationApproved = async (req, res) => {
   try {
     const { projectId } = req.params;
-    const workorder = await WorkOrderRequestService.getAllByQuotationApproved(projectId);
-    res.status(200).json({ status: true, data: workorder });
+    const { page, limit, search, fromdate, todate, approval_type } = req.query;
+    const result = await WorkOrderRequestService.getAllByQuotationApproved(projectId, { page, limit, search, fromdate, todate, approval_type });
+    res.status(200).json({
+      status: true,
+      currentPage: result.currentPage,
+      totalPages: result.totalPages,
+      totalCount: result.totalCount,
+      counts: result.counts,
+      data: result.data,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
   }
