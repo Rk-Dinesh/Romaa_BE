@@ -1,4 +1,6 @@
 import PaymentVoucherService from "./paymentvoucher.service.js";
+import logger from "../../../config/logger.js";
+import { logError } from "../../../common/App.helperFunction.js";
 
 // GET /paymentvoucher/next-no
 export const getNextPvNo = async (_req, res) => {
@@ -122,6 +124,7 @@ export const create = async (req, res) => {
     const data = await PaymentVoucherService.create(req.body);
     res.status(201).json({ status: true, message: "Payment voucher created successfully", data });
   } catch (error) {
+    logError(logger, req, error, "paymentvoucher.create");
     const code = error.message.includes("required") ||
                  error.message.includes("not found") ||
                  error.message.includes("Invalid") ? 400 : 500;
@@ -135,6 +138,7 @@ export const update = async (req, res) => {
     const data = await PaymentVoucherService.update(req.params.id, req.body);
     res.status(200).json({ status: true, message: "Payment voucher updated successfully", data });
   } catch (error) {
+    logError(logger, req, error, "paymentvoucher.update");
     const code = error.message.includes("not found") || error.message.includes("Cannot") ? 400 : 500;
     res.status(code).json({ status: false, message: error.message });
   }
@@ -157,6 +161,7 @@ export const approve = async (req, res) => {
     const data = await PaymentVoucherService.approve(req.params.id, req.body);
     res.status(200).json({ status: true, message: "Payment voucher approved and posted to ledger successfully", data });
   } catch (error) {
+    logError(logger, req, error, "paymentvoucher.approve");
     const code = error.message.includes("not found") ||
                  error.message.includes("Already") ? 400 : 500;
     res.status(code).json({ status: false, message: error.message });

@@ -127,6 +127,13 @@ const BillingSchema = new mongoose.Schema(
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
 
+    // ── Multi-currency ────────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
+
     // ── Audit fields ──────────────────────────────────────────────────────────
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
@@ -137,6 +144,9 @@ const BillingSchema = new mongoose.Schema(
 
 // ── Pre-save: compute all derived fields ──────────────────────────────────────
 BillingSchema.pre("save", function (next) {
+  // Optimistic locking: increment _version on every update (not on initial create)
+  if (!this.isNew) this._version += 1;
+
   let grandTotal = 0;
   let totalUpto  = 0;
   let totalPrev  = 0;

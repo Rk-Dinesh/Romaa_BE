@@ -92,6 +92,8 @@ import form26asRouter from "./src/module/finance/form26as/form26as.route.js";
 import consolidationRouter from "./src/module/finance/consolidation/consolidation.route.js";
 import aiRouter from "./src/module/ai/ai.route.js";
 import SiteDrawingRouter from "./src/module/documents/sitedrawingdocuments/SiteDrawing.route.js";
+import currencyRouter from "./src/module/finance/currency/currency.route.js";
+import { correlationIdMiddleware } from "./src/common/correlationId.js";
 
 dotenv.config();
 const PORT = process.env.PORT;
@@ -170,6 +172,7 @@ app.use(
 app.use(cookieParser(process.env.ACCESS_TOKEN_SECRET)); //Secure Cookie Parser
 app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(correlationIdMiddleware); // Attach x-correlation-id to every request/response
 
 // NoSQL injection sanitizer — Express v5 compatible (req.query is a read-only getter in v5)
 // Strips keys starting with '$' or containing '.' from req.body and req.params.
@@ -271,6 +274,7 @@ app.use("/advance",            advanceAllocationRouter);
 app.use("/retention",          retentionLedgerRouter);
 app.use("/gst-matcher",        gstMatcherRouter);
 app.use("/finance/attachments", financeAttachmentRouter);
+app.use("/finance/currency",    currencyRouter);
 app.use("/einvoice",           einvoiceRouter);
 app.use("/ewaybill",           ewaybillRouter);
 app.use("/contract-poc",       contractPocRouter);
@@ -285,6 +289,34 @@ app.use("/ai", aiRouter);
 
 app.get("/", (_req, res) => {
   res.send(`Welcome to Romaa Backend`);
+});
+
+// ── Global error handler (Task 6) ────────────────────────────────────────────
+// Must be registered AFTER all routes so Express routes errors here via next(err).
+app.use((err, req, res, next) => {
+  const correlationId = req.correlationId;
+  const status = err.status || err.statusCode || 500;
+  logger.error({
+    correlationId,
+    message: err.message,
+    stack:   err.stack,
+    path:    req.path,
+    method:  req.method,
+  });
+  res.status(status).json({
+    status:  false,
+    message: status === 500 ? "Internal server error" : err.message,
+    ...(correlationId && { correlationId }),
+  });
+});
+
+// ── Process-level error guards ────────────────────────────────────────────────
+process.on("unhandledRejection", (reason) => {
+  logger.error({ message: "Unhandled Promise Rejection", reason: String(reason) });
+});
+process.on("uncaughtException", (err) => {
+  logger.error({ message: "Uncaught Exception", error: err.message, stack: err.stack });
+  process.exit(1);
 });
 
 app.listen(PORT, () => {

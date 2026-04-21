@@ -144,11 +144,21 @@ const FixedAssetSchema = new mongoose.Schema(
     created_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     updated_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     is_deleted:  { type: Boolean, default: false },
+
+    // ── Multi-currency ────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at acquisition date
+
+    // ── Optimistic locking ────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
 FixedAssetSchema.pre("save", function (next) {
+  // Optimistic locking: increment _version on every update (not on initial create)
+  if (!this.isNew) this._version += 1;
+
   this.accumulated_depreciation = round2(this.accumulated_depreciation || 0);
   this.book_value = round2((this.acquisition_cost || 0) - this.accumulated_depreciation);
   if (this.book_value <= (this.salvage_value || 0) + 0.01 && this.status === "active") {

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { getNextDnNo, getList, getBySupplier, getByTender, getById, create, approve, update, deleteDraft } from "./debitnote.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
+import { validate } from "../../../common/validate.js";
+import { CreateDebitNoteSchema, UpdateDebitNoteSchema } from "../finance.schemas.js";
 
 const debitNoteRouter = Router();
 
@@ -41,6 +43,7 @@ debitNoteRouter.post(
   "/create",
   verifyJWT,
   verifyPermission("finance", "debit_credit_note", "create"),
+  validate(CreateDebitNoteSchema),
   create
 );
 
@@ -57,6 +60,7 @@ debitNoteRouter.patch(
   "/update/:id",
   verifyJWT,
   verifyPermission("finance", "debit_credit_note", "edit"),
+  validate(UpdateDebitNoteSchema),
   update
 );
 

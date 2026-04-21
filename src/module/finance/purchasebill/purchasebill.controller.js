@@ -1,4 +1,6 @@
 import PurchaseBillService from "./purchasebill.service.js";
+import logger from "../../../config/logger.js";
+import { logError } from "../../../common/App.helperFunction.js";
 
 // GET /purchasebill/list?fromdate=&todate=&doc_id=&tender_id=&vendor_id=&tax_mode=&invoice_no=&status=&search=&page=&limit=
 export const getBills = async (req, res) => {
@@ -84,6 +86,7 @@ export const approvePurchaseBill = async (req, res) => {
     const data = await PurchaseBillService.approvePurchaseBill(req.params.id);
     res.status(200).json({ status: true, message: "Purchase bill approved and posted to ledger", data });
   } catch (error) {
+    logError(logger, req, error, "approvePurchaseBill");
     const code = error.message.includes("not found") ? 404
                : error.message.includes("Already") ? 409 : 500;
     res.status(code).json({ status: false, message: error.message });
@@ -96,6 +99,7 @@ export const createPurchaseBill = async (req, res) => {
     const data = await PurchaseBillService.createPurchaseBill(req.body);
     res.status(201).json({ status: true, message: "Purchase bill created", data });
   } catch (error) {
+    logError(logger, req, error, "createPurchaseBill");
     const code = error.message.includes("required") || error.message.includes("already exists") ? 400 : 500;
     res.status(code).json({ status: false, message: error.message });
   }
@@ -118,6 +122,7 @@ export const updatePurchaseBill = async (req, res) => {
     const data = await PurchaseBillService.updatePurchaseBill(req.params.id, req.body);
     res.status(200).json({ status: true, message: "Purchase bill updated", data });
   } catch (error) {
+    logError(logger, req, error, "updatePurchaseBill");
     const code = error.message.includes("not found") || error.message.includes("Cannot edit") ? 400 : 500;
     res.status(code).json({ status: false, message: error.message });
   }

@@ -1,10 +1,16 @@
+import mongoose from "mongoose";
 import PurchaseBillModel from "./purchasebill.model.js";
 import MaterialTransactionModel from "../../tender/materials/materialTransaction.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
+import AccountTreeModel from "../accounttree/accounttree.model.js";
+import PaymentVoucherModel from "../paymentvoucher/paymentvoucher.model.js";
 import LedgerService from "../ledger/ledger.service.js";
 import JournalEntryService from "../journalentry/journalentry.service.js";
 import FinanceCounterModel from "../FinanceCounter.model.js";
 import { GL } from "../gl.constants.js";
+import ApprovalRequestModel from "../approval/approvalrequest.model.js";
+import logger from "../../../config/logger.js";
+import CurrencyService from "../currency/currency.service.js";
 
 // ── Build document from payload ───────────────────────────────────────────────
 // Only source fields are mapped here.
@@ -368,6 +374,11 @@ class PurchaseBillService {
     if (!bill) throw new Error("Purchase bill record not found. Please verify the bill ID and try again");
     if (bill.status === "approved") throw new Error("Cannot edit an approved purchase bill. Approved bills are locked for audit integrity");
 
+    // Optimistic locking: reject stale updates
+    if (payload._version !== undefined && bill._version !== payload._version) {
+      throw new Error("Document was modified by another user. Please refresh and try again.");
+    }
+
     const allowed = ["doc_date", "invoice_no", "invoice_date", "credit_days", "narration", "line_items", "additional_charges", "place_of_supply"];
     for (const field of allowed) {
       if (payload[field] !== undefined) bill[field] = payload[field];
@@ -379,14 +390,35 @@ class PurchaseBillService {
     return bill;
   }
 
-  // DELETE /purchasebill/delete/:id
+  // DELETE /purchasebill/delete/:id  (soft-delete)
   static async deletePurchaseBill(id) {
     const bill = await PurchaseBillModel.findById(id);
     if (!bill) throw new Error("Purchase bill not found");
     if (bill.status === "approved") throw new Error("Cannot delete an approved purchase bill");
+
     // Release GRN locks so they can be picked by a new bill
     await unmarkGRNsBilled(bill.line_items);
-    await bill.deleteOne();
+
+    // Soft-delete (Task 5 cascade)
+    bill.is_deleted = true;
+    await bill.save();
+
+    // Task 5 cascade — Warn if a JE was posted (approved bills are blocked above,
+    // but just in case status is stale or a future flow allows it)
+    if (bill.je_ref) {
+      logger.warn(`[PurchaseBill] Deleted bill ${bill.doc_id} had a je_ref ${bill.je_ref} — JE reversal may be required`);
+    }
+
+    // Task 5 — Clean orphaned payment refs in PaymentVoucher
+    try {
+      await PaymentVoucherModel.updateMany(
+        { "bill_refs.bill_ref": bill._id },
+        { $pull: { bill_refs: { bill_ref: bill._id } } }
+      );
+    } catch (e) {
+      logger.warn(`[PurchaseBill] Could not clean PV bill_refs for deleted bill ${bill.doc_id}: ${e.message}`);
+    }
+
     return { deleted: true, doc_id: bill.doc_id };
   }
 
@@ -409,6 +441,25 @@ class PurchaseBillService {
     payload.tax_mode        = payload.place_of_supply === "InState" ? "instate" : "otherstate";
     // Auto-fill credit_days from vendor master if not explicitly provided
     if (!payload.credit_days) payload.credit_days = vendor.credit_day || 0;
+
+    // Task 3a — Auto-inherit TDS from vendor master (vendor model currently doesn't carry
+    // tds_ fields, so we fall through and use whatever was passed in the request body).
+    // When vendor.tds_applicable is set in the future this block will activate.
+    if (vendor.tds_applicable && !payload.tds_section) {
+      payload.tds_applicable = true;
+      payload.tds_section    = vendor.tds_section || "194C";
+      payload.tds_rate       = vendor.tds_rate    || 0;
+    }
+
+    // Task 7 — Auto-fetch exchange rate for foreign-currency bills
+    if (payload.currency && payload.currency !== "INR" && (!payload.exchange_rate || payload.exchange_rate === 1)) {
+      try {
+        const { exchange_rate } = await CurrencyService.convertToBase(1, payload.currency, payload.invoice_date || new Date());
+        payload.exchange_rate = exchange_rate;
+      } catch (e) {
+        logger.warn(`[PurchaseBill] Could not fetch exchange rate for ${payload.currency}: ${e.message}`);
+      }
+    }
 
     // Atomically allocate doc_id (ignore any client-supplied doc_id to prevent duplicates)
     const doc_id = await PurchaseBillService.#allocateDocId();
@@ -475,23 +526,87 @@ class PurchaseBillService {
 
   // PATCH /purchasebill/approve/:id
   static async approvePurchaseBill(id) {
-    const bill = await PurchaseBillModel.findById(id);
-    if (!bill)                        throw new Error("Purchase bill not found");
-    if (bill.status === "approved")   throw new Error("Already approved");
+    // Attempt to use a MongoDB session for atomicity (requires replica set).
+    // Falls back gracefully to no-session mode on standalone MongoDB.
+    let session = null;
+    try {
+      session = await mongoose.startSession();
+      session.startTransaction();
+    } catch {
+      session = null;
+    }
 
-    bill.status = "approved";
-    await bill.save();
+    try {
+      const sessionOpt = session ? { session } : {};
 
-    // 1. Post Cr entry to vendor sub-ledger (liability created — payable to vendor)
-    await postToLedger(bill);
+      const bill = await PurchaseBillModel.findById(id).session(session || null);
+      if (!bill)                        throw new Error("Purchase bill not found");
+      if (bill.status === "approved")   throw new Error("Already approved");
 
-    // 2. Lock all linked GRNs — mark them as billed so they can't be picked again
-    await markGRNsBilled(bill);
+      // Task 4 — Approval workflow gate
+      // Check if there is a pending ApprovalRequest for this bill
+      const approvalReq = await ApprovalRequestModel.findOne({
+        source_type: "PurchaseBill",
+        source_ref:  bill._id,
+      }).lean();
+      if (approvalReq && approvalReq.status === "pending") {
+        throw new Error(`Approval pending — bill cannot be approved until the ApprovalRequest is cleared`);
+      }
+      if (approvalReq && approvalReq.status === "rejected") {
+        throw new Error(`Approval rejected — bill cannot be approved. Please revise and re-initiate approval`);
+      }
 
-    // 3. Post double-entry JE to general ledger (Dr expense + GST ITC / Cr vendor payable)
-    await PurchaseBillService.#postJE(bill);
+      bill.status = "approved";
+      await bill.save(sessionOpt);
 
-    return bill;
+      // 1. Post Cr entry to vendor sub-ledger (liability created — payable to vendor)
+      await postToLedger(bill);
+
+      // 2. Lock all linked GRNs — mark them as billed so they can't be picked again
+      await markGRNsBilled(bill);
+
+      // 3. Post double-entry JE to general ledger (Dr expense + GST ITC / Cr vendor payable)
+      await PurchaseBillService.#postJE(bill);
+
+      // Task 3b — Post TDS liability JE if TDS is applicable
+      if (bill.tds_applicable && bill.tds_amount > 0) {
+        try {
+          const tdsAccount = await AccountTreeModel.findOne({
+            account_type: "Liability",
+            account_name: { $regex: /tds payable/i },
+            is_deleted:   { $ne: true },
+          }).lean();
+
+          if (tdsAccount) {
+            await LedgerService.postEntry({
+              account_code: tdsAccount.account_code,
+              entry_type:   "Cr",
+              amount:        bill.tds_amount,
+              source_type:  "PurchaseBill",
+              source_ref:   bill._id,
+              source_no:    bill.doc_id,
+              narration:    `TDS u/s ${bill.tds_section} on ${bill.doc_id}`,
+              entry_date:   bill.doc_date,
+              fin_year:     bill.fin_year,
+              currency:     bill.currency,
+              exchange_rate: bill.exchange_rate,
+            }, session);
+          } else {
+            logger.warn(`[PurchaseBill] TDS account not found — TDS not posted for ${bill.doc_id}`);
+          }
+        } catch (tdsErr) {
+          logger.warn(`[PurchaseBill] TDS posting failed for ${bill.doc_id}: ${tdsErr.message}`);
+        }
+      }
+
+      if (session) await session.commitTransaction();
+      return bill;
+    } catch (err) {
+      if (session) await session.abortTransaction();
+      throw err;
+    } finally {
+      if (session) session.endSession();
+    }
   }
 }
 

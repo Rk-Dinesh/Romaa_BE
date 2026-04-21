@@ -21,6 +21,13 @@ import TenderModel from "../../tender/tender/tender.model.js";
 const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
 const CORP = "__CORPORATE__";
 
+// ── Current financial year helper ─────────────────────────────────────────────
+const currentFY = () => {
+  const now  = new Date();
+  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${String(year).slice(2)}-${String(year + 1).slice(2)}`;
+};
+
 function getFY(date) {
   const d = new Date(date), m = d.getMonth() + 1, y = d.getFullYear();
   const start = m >= 4 ? y : y - 1;
@@ -67,7 +74,8 @@ class ConsolidationService {
     }).select("account_code account_name account_type account_subtype opening_balance opening_balance_type").lean();
 
     const rows = await JournalEntryModel.aggregate([
-      { $match: { status: "approved", je_date: { $lte: asOf } } },
+      { $match: { status: "approved", je_date: { $lte: asOf }, is_deleted: { $ne: true } } },
+      { $limit: 10000 },
       { $unwind: "$lines" },
       { $project: {
         account_code: "$lines.account_code",
@@ -149,7 +157,7 @@ class ConsolidationService {
   // one AccountTree fetch — entity rows, CORP, and the consolidated total.
   static async pnl({ financial_year, from_date, to_date }) {
     try {
-    const fy    = financial_year || getFY(new Date());
+    const fy    = financial_year || currentFY();
     const start = from_date ? new Date(from_date) : fyStart(fy);
     const end   = to_date   ? new Date(to_date)   : new Date();
     end.setHours(23, 59, 59, 999);
@@ -174,7 +182,8 @@ class ConsolidationService {
 
     // 3. Single aggregation — group by (account × effective_tender).
     const rows = await JournalEntryModel.aggregate([
-      { $match: { status: "approved", je_date: { $gte: start, $lte: end } } },
+      { $match: { status: "approved", je_date: { $gte: start, $lte: end }, fin_year: fy, is_deleted: { $ne: true } } },
+      { $limit: 10000 },
       { $unwind: "$lines" },
       { $match: { "lines.account_code": { $in: codes } } },
       { $project: {
@@ -337,7 +346,8 @@ class ConsolidationService {
     const jes = await JournalEntryModel.find({
       status:  "approved",
       je_date: { $gte: start, $lte: end },
-    }).select("je_no je_date narration lines tender_id total_debit").lean();
+      is_deleted: { $ne: true },
+    }).select("je_no je_date narration lines tender_id total_debit").limit(10000).lean();
 
     // Pre-load account types for fast lookup
     const codes = [...new Set(jes.flatMap((j) => j.lines.map((l) => l.account_code)))];
@@ -410,7 +420,7 @@ class ConsolidationService {
       }
     }
     const jes = await JournalEntryModel.find(q)
-      .select("lines tender_id").lean();
+      .select("lines tender_id").limit(10000).lean();
 
     const codes = [...new Set(jes.flatMap((j) => j.lines.map((l) => l.account_code)))];
     const accs  = await AccountTreeModel.find({ account_code: { $in: codes } })

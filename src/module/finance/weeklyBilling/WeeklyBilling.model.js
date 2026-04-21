@@ -108,6 +108,13 @@ const WeeklyBillingSchema = new mongoose.Schema(
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
 
+    // ── Multi-currency ────────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
+
     // ── Soft delete ───────────────────────────────────────────────────────────
     is_deleted: { type: Boolean, default: false },
   },
@@ -118,6 +125,9 @@ const WeeklyBillingSchema = new mongoose.Schema(
 // Mar 2026 → "25-26"   Apr 2026 → "26-27"
 // Computed from bill_date (or current date) so the frontend never needs to send it.
 WeeklyBillingSchema.pre("save", function (next) {
+  // Optimistic locking: increment _version on every update (not on initial create)
+  if (!this.isNew) this._version += 1;
+
   const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
   // Auto fin_year from bill_date

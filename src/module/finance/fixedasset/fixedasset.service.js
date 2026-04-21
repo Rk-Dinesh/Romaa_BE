@@ -187,6 +187,11 @@ class FixedAssetService {
     if (!doc) throw new Error("Fixed asset not found");
     if (doc.status === "disposed") throw new Error("Cannot update a disposed asset");
 
+    // Optimistic locking: reject stale updates
+    if (payload._version !== undefined && doc._version !== payload._version) {
+      throw new Error("Document was modified by another user. Please refresh and try again.");
+    }
+
     // Only safe fields are updatable after creation — cost/method changes
     // would require a reset of history, which this method doesn't do.
     const ALLOWED = [

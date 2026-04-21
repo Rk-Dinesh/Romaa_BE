@@ -2,6 +2,11 @@ import ApprovalRuleModel from "./approvalrule.model.js";
 import ApprovalRequestModel from "./approvalrequest.model.js";
 import EmployeeModel from "../../hr/employee/employee.model.js";
 
+// Set to true to block all vouchers without an approval rule from auto-approving.
+// When false (default), vouchers with no matching rule pass through unblocked
+// (backward-compatible behaviour).
+const ENFORCE_APPROVAL_FOR_ALL = false;
+
 class ApprovalService {
   // ── Rule CRUD ───────────────────────────────────────────────────────────────
   static async upsertRule({ source_type, thresholds, is_active = true, user_id = "" }) {
@@ -53,12 +58,49 @@ class ApprovalService {
     if (existing && existing.status === "approved") return { required: true, request: existing, already_approved: true };
 
     const rule = await this.getRule(source_type);
-    if (!rule) return { required: false };
+    if (!rule) {
+      // No rule configured for this source_type.
+      if (ENFORCE_APPROVAL_FOR_ALL) {
+        // Strict mode: require manual approval even without a rule
+        const request = await ApprovalRequestModel.create({
+          source_type,
+          source_ref,
+          source_no,
+          amount:             amt,
+          narration,
+          required_approvers: [],
+          any_of:             false,
+          next_approver_id:   "",
+          initiated_by:       initiator_id,
+          rule_snapshot:      null,
+        });
+        return { required: true, request_id: request._id, request };
+      }
+      return { required: false };
+    }
 
     const band = rule.thresholds.find((t) =>
       amt >= t.min_amount && amt <= (t.max_amount ?? Number.MAX_SAFE_INTEGER),
     );
-    if (!band) return { required: false };       // amount below smallest band
+    if (!band) {
+      // Amount below smallest band configured.
+      if (ENFORCE_APPROVAL_FOR_ALL) {
+        const request = await ApprovalRequestModel.create({
+          source_type,
+          source_ref,
+          source_no,
+          amount:             amt,
+          narration,
+          required_approvers: [],
+          any_of:             false,
+          next_approver_id:   "",
+          initiated_by:       initiator_id,
+          rule_snapshot:      null,
+        });
+        return { required: true, request_id: request._id, request };
+      }
+      return { required: false };
+    }
 
     const request = await ApprovalRequestModel.create({
       source_type,

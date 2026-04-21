@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import PaymentVoucherModel from "./paymentvoucher.model.js";
 import VendorModel from "../../purchase/vendor/vendor.model.js";
 import ContractorModel from "../../hr/contractors/contractor.model.js";
@@ -327,10 +328,27 @@ class PaymentVoucherService {
 
     const saved = await PaymentVoucherModel.create(doc);
 
+    // If approved, use a session to atomically post ledger + mark bills + post JE
     if (saved.status === "approved") {
-      await postToLedger(saved);
-      await markBillsSettled(saved);
-      await PaymentVoucherService.#postJE(saved);
+      let session = null;
+      try {
+        session = await mongoose.startSession();
+        session.startTransaction();
+      } catch {
+        session = null;
+      }
+
+      try {
+        await postToLedger(saved);
+        await markBillsSettled(saved);
+        await PaymentVoucherService.#postJE(saved);
+        if (session) await session.commitTransaction();
+      } catch (err) {
+        if (session) await session.abortTransaction();
+        throw err;
+      } finally {
+        if (session) session.endSession();
+      }
     }
 
     return saved;
@@ -341,6 +359,11 @@ class PaymentVoucherService {
     const pv = await PaymentVoucherModel.findById(id);
     if (!pv) throw new Error("Payment voucher not found. Please verify the voucher ID and try again");
     if (pv.status === "approved") throw new Error("Cannot edit an approved payment voucher. Create a reversal entry instead");
+
+    // Optimistic locking: reject stale updates
+    if (payload._version !== undefined && pv._version !== payload._version) {
+      throw new Error("Document was modified by another user. Please refresh and try again.");
+    }
 
     const allowed = [
       "pv_date", "document_year", "payment_mode", "bank_account_code", "bank_name", "bank_ref",

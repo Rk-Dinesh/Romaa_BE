@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { getNextRvNo, getList, getListCash, getListBank, getBySupplier, getByTender, getById, create, approve, update, deleteDraft } from "./receiptvoucher.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
+import { validate } from "../../../common/validate.js";
+import { CreateReceiptVoucherSchema, UpdateReceiptVoucherSchema } from "../finance.schemas.js";
 
 const receiptVoucherRouter = Router();
 
@@ -55,6 +57,7 @@ receiptVoucherRouter.post(
   "/create",
   verifyJWT,
   verifyPermission("finance", "bank_transaction", "create"),
+  validate(CreateReceiptVoucherSchema),
   create
 );
 
@@ -71,6 +74,7 @@ receiptVoucherRouter.patch(
   "/update/:id",
   verifyJWT,
   verifyPermission("finance", "bank_transaction", "edit"),
+  validate(UpdateReceiptVoucherSchema),
   update
 );
 

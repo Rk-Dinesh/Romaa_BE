@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { getBills, getBillsByTender, getTenderSummary, getAllTendersSummary, getNextDocId, createPurchaseBill, approvePurchaseBill, getPurchaseBillById, updatePurchaseBill, deletePurchaseBill } from "./purchasebill.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
+import { validate } from "../../../common/validate.js";
+import { CreatePurchaseBillSchema, UpdatePurchaseBillSchema } from "../finance.schemas.js";
 
 const purchaseBillRouter = Router();
 
@@ -49,6 +51,7 @@ purchaseBillRouter.post(
   "/create",
   verifyJWT,
   verifyPermission("finance", "purchase_bill", "create"),
+  validate(CreatePurchaseBillSchema),
   createPurchaseBill
 );
 
@@ -65,6 +68,7 @@ purchaseBillRouter.patch(
   "/update/:id",
   verifyJWT,
   verifyPermission("finance", "purchase_bill", "edit"),
+  validate(UpdatePurchaseBillSchema),
   updatePurchaseBill
 );
 

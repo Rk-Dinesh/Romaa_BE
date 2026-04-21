@@ -11,6 +11,8 @@ import {
   deleteDraft,
 } from "./journalentry.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
+import { validate } from "../../../common/validate.js";
+import { CreateJournalEntrySchema, UpdateJournalEntrySchema } from "../finance.schemas.js";
 
 const journalEntryRouter = Router();
 
@@ -51,6 +53,7 @@ journalEntryRouter.post(
   "/create",
   verifyJWT,
   verifyPermission("finance", "journal_entry", "create"),
+  validate(CreateJournalEntrySchema),
   create
 );
 
@@ -75,6 +78,7 @@ journalEntryRouter.patch(
   "/update/:id",
   verifyJWT,
   verifyPermission("finance", "journal_entry", "edit"),
+  validate(UpdateJournalEntrySchema),
   update
 );
 

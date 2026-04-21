@@ -1,6 +1,6 @@
 import { parseFileToJson } from "../../../../../utils/parseFileToJson.js";
 import BillingService from "./clientbilling.service.js";
-import logger from "../../../../../config/logger.js";
+import logger from "../../../../config/logger.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from 'url';

@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { getNextPvNo, getList, getListCash, getListBank, getBySupplier, getByTender, getById, create, approve, update, deleteDraft } from "./paymentvoucher.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
+import { validate } from "../../../common/validate.js";
+import { CreatePaymentVoucherSchema, UpdatePaymentVoucherSchema } from "../finance.schemas.js";
 
 const paymentVoucherRouter = Router();
 
@@ -55,6 +57,7 @@ paymentVoucherRouter.post(
   "/create",
   verifyJWT,
   verifyPermission("finance", "bank_transaction", "create"),
+  validate(CreatePaymentVoucherSchema),
   create
 );
 
@@ -71,6 +74,7 @@ paymentVoucherRouter.patch(
   "/update/:id",
   verifyJWT,
   verifyPermission("finance", "bank_transaction", "edit"),
+  validate(UpdatePaymentVoucherSchema),
   update
 );
 

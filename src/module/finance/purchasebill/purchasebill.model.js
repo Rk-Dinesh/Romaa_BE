@@ -165,6 +165,22 @@ const PurchaseBillSchema = new mongoose.Schema(
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
 
+    // ── TDS (Tax Deducted at Source) ──────────────────────────────────────────
+    // Deducted from net_amount at time of payment — reduces net_payable to vendor.
+    tds_applicable: { type: Boolean, default: false },
+    tds_section:    { type: String, default: "" },    // "194C", "194J", "194I", "194Q"
+    tds_rate:       { type: Number, default: 0 },     // percentage
+    tds_amount:     { type: Number, default: 0 },     // computed: taxable_value * tds_rate / 100
+    // net_payable = net_amount - tds_amount (if tds_applicable, TDS deducted at source)
+    taxable_value:  { type: Number, default: 0 },     // base for TDS = grand_total (pre-GST)
+
+    // ── Multi-currency ────────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
+
     // ── Audit fields ──────────────────────────────────────────────────────────
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
@@ -180,6 +196,9 @@ const PurchaseBillSchema = new mongoose.Schema(
 // regardless of what the client sent.
 
 PurchaseBillSchema.pre("save", function (next) {
+  // 0. Optimistic locking: increment _version on every update (not on initial create)
+  if (!this.isNew) this._version += 1;
+
   // 1. Per-item tax amounts derived from pct × gross_amt
   //    Enforce tax_mode: instate → CGST+SGST only (zero IGST)
   //                      otherstate → IGST only (zero CGST+SGST)
@@ -261,6 +280,15 @@ PurchaseBillSchema.pre("save", function (next) {
   this.balance_due = round2(
     this.net_amount - (this.amount_paid || 0) - (this.cn_amount || 0) - (this.dn_amount || 0)
   );
+
+  // 9. TDS computation — taxable_value = grand_total (pre-GST base)
+  this.taxable_value = this.grand_total;
+  if (this.tds_applicable && this.tds_rate > 0) {
+    this.tds_amount = round2(this.taxable_value * this.tds_rate / 100);
+  } else {
+    this.tds_amount = 0;
+  }
+  // net_payable = net_amount - tds_amount (stored in balance_due context — TDS reduces cash outflow)
 
   next();
 });

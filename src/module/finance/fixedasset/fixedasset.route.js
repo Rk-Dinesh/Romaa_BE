@@ -6,6 +6,8 @@ import {
   getRegister, getSchedule,
   postItDepreciation, postItDepreciationOne, getDualDepreciationReport,
 } from "./fixedasset.controller.js";
+import { validate } from "../../../common/validate.js";
+import { CreateFixedAssetSchema, UpdateFixedAssetSchema } from "../finance.schemas.js";
 
 const router = Router();
 
@@ -18,14 +20,14 @@ router.post("/post-it-depreciation",      verifyJWT, verifyPermission("finance",
 router.get ("/dual-depreciation-report",  verifyJWT, verifyPermission("finance", "fixed_assets", "read"),   getDualDepreciationReport);
 
 router.get ("/list",                      verifyJWT, verifyPermission("finance", "fixed_assets", "read"),   getList);
-router.post("/create",                    verifyJWT, verifyPermission("finance", "fixed_assets", "create"), create);
+router.post("/create",                    verifyJWT, verifyPermission("finance", "fixed_assets", "create"), validate(CreateFixedAssetSchema), create);
 
 router.get ("/:id/schedule",              verifyJWT, verifyPermission("finance", "fixed_assets", "read"),   getSchedule);
 router.post("/:id/depreciate",            verifyJWT, verifyPermission("finance", "fixed_assets", "edit"),   postDepreciationOne);
 router.post("/:id/it-depreciate",         verifyJWT, verifyPermission("finance", "fixed_assets", "edit"),   postItDepreciationOne);
 router.post("/:id/dispose",               verifyJWT, verifyPermission("finance", "fixed_assets", "edit"),   dispose);
 
-router.patch ("/update/:id",              verifyJWT, verifyPermission("finance", "fixed_assets", "edit"),   update);
+router.patch ("/update/:id",              verifyJWT, verifyPermission("finance", "fixed_assets", "edit"),   validate(UpdateFixedAssetSchema), update);
 router.patch ("/:id/archive",             verifyJWT, verifyPermission("finance", "fixed_assets", "edit"),   archive);
 
 router.get ("/:id",                       verifyJWT, verifyPermission("finance", "fixed_assets", "read"),   getById);

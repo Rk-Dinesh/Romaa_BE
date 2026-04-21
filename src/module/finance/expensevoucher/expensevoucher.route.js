@@ -11,6 +11,8 @@ import {
   approve,
 } from "./expensevoucher.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
+import { validate } from "../../../common/validate.js";
+import { CreateExpenseVoucherSchema, UpdateExpenseVoucherSchema } from "../finance.schemas.js";
 
 const expenseVoucherRouter = Router();
 
@@ -51,6 +53,7 @@ expenseVoucherRouter.post(
   "/create",
   verifyJWT,
   verifyPermission("finance", "expense_voucher", "create"),
+  validate(CreateExpenseVoucherSchema),
   create,
 );
 
@@ -67,6 +70,7 @@ expenseVoucherRouter.patch(
   "/update/:id",
   verifyJWT,
   verifyPermission("finance", "expense_voucher", "edit"),
+  validate(UpdateExpenseVoucherSchema),
   update,
 );
 

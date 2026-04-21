@@ -159,6 +159,13 @@ const JournalEntrySchema = new mongoose.Schema(
       default: "pending",
     },
 
+    // ── Multi-currency ────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
+
     // ── Audit trail ───────────────────────────────────────────────────
     approved_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
     approved_at:  { type: Date, default: null },
@@ -171,6 +178,9 @@ const JournalEntrySchema = new mongoose.Schema(
 
 // ── Pre-save: compute totals ──────────────────────────────────────────────────
 JournalEntrySchema.pre("save", function (next) {
+  // Optimistic locking: increment _version on every update (not on initial create)
+  if (!this.isNew) this._version += 1;
+
   this.total_debit  = Math.round(this.lines.reduce((s, l) => s + (l.debit_amt  || 0), 0) * 100) / 100;
   this.total_credit = Math.round(this.lines.reduce((s, l) => s + (l.credit_amt || 0), 0) * 100) / 100;
   next();

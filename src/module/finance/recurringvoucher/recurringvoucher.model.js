@@ -75,9 +75,22 @@ const RecurringVoucherSchema = new mongoose.Schema(
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     is_deleted: { type: Boolean, default: false },
+
+    // ── Multi-currency ────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
+
+// ── Pre-save: version increment ──────────────────────────────────────────────
+RecurringVoucherSchema.pre("save", function (next) {
+  if (!this.isNew) this._version += 1;
+  next();
+});
 
 RecurringVoucherSchema.index({ status: 1, next_run_date: 1 });
 

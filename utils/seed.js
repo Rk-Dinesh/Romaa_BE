@@ -2,6 +2,7 @@ import EmployeeModel from "../src/module/hr/employee/employee.model.js";
 import EmployeeService from "../src/module/hr/employee/employee.service.js";
 import RoleModel from "../src/module/role/role.model.js";
 import RoleService from "../src/module/role/role.service.js";
+import CurrencyModel from "../src/module/finance/currency/currency.model.js";
 
 // --- 1. Smart Permission Generator ---
 const getFullPermissions = () => {
@@ -95,7 +96,38 @@ export const seedDatabase = async () => {
       console.log(`🚀 Created User: ${newUser.name} (${newUser.employeeId})`);
     }
 
+    // --- C. Seed default currencies ---
+    await seedCurrencies();
+
   } catch (error) {
     console.error("❌ Seeding Failed:", error.message);
+  }
+};
+
+// ── Default currency seed ─────────────────────────────────────────────────────
+// Runs only if the CurrencyMaster collection is empty.
+// INR is the company base currency (is_base: true).
+const DEFAULT_CURRENCIES = [
+  { code: "INR", name: "Indian Rupee",         symbol: "₹",  decimals: 2, is_base: true,  is_active: true },
+  { code: "USD", name: "US Dollar",             symbol: "$",  decimals: 2, is_base: false, is_active: true },
+  { code: "EUR", name: "Euro",                  symbol: "€",  decimals: 2, is_base: false, is_active: true },
+  { code: "GBP", name: "British Pound Sterling",symbol: "£",  decimals: 2, is_base: false, is_active: true },
+  { code: "AED", name: "UAE Dirham",            symbol: "د.إ",decimals: 2, is_base: false, is_active: true },
+  { code: "SGD", name: "Singapore Dollar",      symbol: "S$", decimals: 2, is_base: false, is_active: true },
+];
+
+const seedCurrencies = async () => {
+  try {
+    const count = await CurrencyModel.countDocuments();
+    if (count > 0) {
+      console.log("✅ Currencies already seeded.");
+      return;
+    }
+
+    console.log("⚠️ Seeding default currencies...");
+    await CurrencyModel.insertMany(DEFAULT_CURRENCIES);
+    console.log(`🚀 Seeded ${DEFAULT_CURRENCIES.length} currencies (INR as base).`);
+  } catch (error) {
+    console.error("❌ Currency seeding failed:", error.message);
   }
 };

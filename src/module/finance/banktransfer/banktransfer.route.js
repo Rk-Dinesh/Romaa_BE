@@ -9,6 +9,8 @@ import {
   deleteDraft,
   approve,
 } from "./banktransfer.controller.js";
+import { validate } from "../../../common/validate.js";
+import { CreateBankTransferSchema, UpdateBankTransferSchema } from "../finance.schemas.js";
 
 const router = Router();
 
@@ -28,12 +30,14 @@ router.post(
   "/create",
   verifyJWT,
   verifyPermission("finance", "internal_transfer", "create"),
+  validate(CreateBankTransferSchema),
   create,
 );
 router.patch(
   "/update/:id",
   verifyJWT,
   verifyPermission("finance", "internal_transfer", "edit"),
+  validate(UpdateBankTransferSchema),
   update,
 );
 router.delete(

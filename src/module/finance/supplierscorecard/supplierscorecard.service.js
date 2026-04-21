@@ -72,6 +72,7 @@ class SupplierScorecardService {
     }
     const bills = await PurchaseBillModel.find(q)
       .select("vendor_id vendor_name net_amount due_date paid_status amount_paid cn_amount dn_amount payment_refs doc_date line_items")
+      .limit(500)
       .lean();
 
     // Build market (all-vendor) avg unit price per material_id over the window
@@ -188,6 +189,7 @@ class SupplierScorecardService {
     }
     const bills = await WeeklyBillingModel.find(q)
       .select("contractor_id contractor_name total_amount net_payable paid_status amount_paid cn_amount dn_amount approved_at to_date")
+      .limit(500)
       .lean();
 
     const byC = {};
@@ -263,6 +265,7 @@ class SupplierScorecardService {
     const bills = await PurchaseBillModel.find(q)
       .select("doc_id doc_date due_date net_amount paid_status amount_paid cn_amount dn_amount")
       .sort({ doc_date: -1 })
+      .limit(500)
       .lean();
 
     return { vendor: v, scorecard: row || null, bills };
@@ -287,6 +290,7 @@ class SupplierScorecardService {
     const bills = await WeeklyBillingModel.find(q)
       .select("bill_no bill_date from_date to_date total_amount net_payable paid_status approved_at cn_amount dn_amount")
       .sort({ bill_date: -1 })
+      .limit(500)
       .lean();
 
     return { contractor: c, scorecard: row || null, bills };

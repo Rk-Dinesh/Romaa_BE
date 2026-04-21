@@ -178,6 +178,11 @@ class BudgetService {
     if (!doc) throw new Error("Budget not found");
     if (doc.status === "approved") throw new Error("Approved budgets cannot be edited; archive and re-create");
 
+    // Optimistic locking: reject stale updates
+    if (payload._version !== undefined && doc._version !== payload._version) {
+      throw new Error("Document was modified by another user. Please refresh and try again.");
+    }
+
     const allowed = ["lines", "narration"];
     for (const f of allowed) {
       if (payload[f] !== undefined) doc[f] = payload[f];

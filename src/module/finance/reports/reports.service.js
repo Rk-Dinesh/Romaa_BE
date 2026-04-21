@@ -36,6 +36,14 @@ const TDS_PAYABLE_CODE = GL.TDS_PAYABLE;
 
 const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
+// ── Current financial year helper ────────────────────────────────────────────
+// Returns "YY-YY" for the current date (e.g. "25-26" from April 2025 onward).
+const currentFY = () => {
+  const now  = new Date();
+  const year = now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${String(year).slice(2)}-${String(year + 1).slice(2)}`;
+};
+
 // Sign of opening_balance for running-balance math:
 //   "Dr" → +opening on a Dr-normal account, −opening on a Cr-normal account
 //   "Cr" → opposite

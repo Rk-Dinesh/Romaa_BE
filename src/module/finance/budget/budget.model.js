@@ -66,11 +66,21 @@ const BudgetSchema = new mongoose.Schema(
     approved_by: { type: String, default: "" },
     approved_at: { type: Date,   default: null },
     is_deleted:  { type: Boolean, default: false },
+
+    // ── Multi-currency ────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
   },
   { timestamps: true }
 );
 
 BudgetSchema.pre("save", function (next) {
+  // Optimistic locking: increment _version on every update (not on initial create)
+  if (!this.isNew) this._version += 1;
+
   this.total_budget = round2(
     (this.lines || []).reduce((s, l) => s + (Number(l.budget_amount) || 0), 0)
   );

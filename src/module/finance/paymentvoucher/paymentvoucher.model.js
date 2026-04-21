@@ -97,6 +97,13 @@ const PaymentVoucherSchema = new mongoose.Schema(
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
 
+    // ── Multi-currency ────────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
+
     // ── Audit fields ──────────────────────────────────────────────────────────
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
@@ -107,6 +114,9 @@ const PaymentVoucherSchema = new mongoose.Schema(
 
 // ── Pre-save: compute TDS amount and net payment ──────────────────────────────
 PaymentVoucherSchema.pre("save", function (next) {
+  // Optimistic locking: increment _version on every update (not on initial create)
+  if (!this.isNew) this._version += 1;
+
   const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
   if (this.gross_amount > 0 && this.tds_pct > 0) {
     this.tds_amt = r2(this.gross_amount * this.tds_pct / 100);

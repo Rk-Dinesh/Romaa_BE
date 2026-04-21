@@ -1,6 +1,8 @@
 import { Router } from "express";
 import { getNextCnNo, getList, getBySupplier, getByTender, getById, create, approve, update, deleteDraft } from "./creditnote.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
+import { validate } from "../../../common/validate.js";
+import { CreateCreditNoteSchema, UpdateCreditNoteSchema } from "../finance.schemas.js";
 
 const creditNoteRouter = Router();
 
@@ -41,6 +43,7 @@ creditNoteRouter.post(
   "/create",
   verifyJWT,
   verifyPermission("finance", "debit_credit_note", "create"),
+  validate(CreateCreditNoteSchema),
   create
 );
 
@@ -57,6 +60,7 @@ creditNoteRouter.patch(
   "/update/:id",
   verifyJWT,
   verifyPermission("finance", "debit_credit_note", "edit"),
+  validate(UpdateCreditNoteSchema),
   update
 );
 

@@ -130,6 +130,13 @@ const ExpenseVoucherSchema = new mongoose.Schema(
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },
 
+    // ── Multi-currency ────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
+
     // ── Audit ─────────────────────────────────────────────────────────────
     created_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
     updated_by:  { type: mongoose.Schema.Types.ObjectId, ref: "Employee", default: null },
@@ -142,6 +149,9 @@ const ExpenseVoucherSchema = new mongoose.Schema(
 
 // ── Pre-save: compute line_total, subtotal, total_tax, gross_total, tds, net ──
 ExpenseVoucherSchema.pre("save", function (next) {
+  // Optimistic locking: increment _version on every update (not on initial create)
+  if (!this.isNew) this._version += 1;
+
   const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
 
   let subtotal = 0;

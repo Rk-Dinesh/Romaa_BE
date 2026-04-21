@@ -2,6 +2,16 @@ export const generateOtp = () => {
   return Math.floor(100000 + Math.random() * 900000).toString();
 };
 
+// Structured error logger — includes correlationId when set by upstream middleware
+export const logError = (logger, req, err, context = "") => {
+  logger.error({
+    correlationId: req?.correlationId,
+    context,
+    message: err.message,
+    stack: err.stack,
+  });
+};
+
 export const getUserToUserTokenDto = (user) => {
   return {
     id: user._id,

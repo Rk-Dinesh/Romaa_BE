@@ -91,6 +91,13 @@ const CreditNoteSchema = new mongoose.Schema(
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
 
+    // ── Multi-currency ────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
+
     // ── Audit fields ──────────────────────────────────────────────────────
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
@@ -101,6 +108,9 @@ const CreditNoteSchema = new mongoose.Schema(
 
 // ── Pre-save: compute tax amounts from taxable_amount × rate ──────────────────
 CreditNoteSchema.pre("save", function (next) {
+  // Optimistic locking: increment _version on every update (not on initial create)
+  if (!this.isNew) this._version += 1;
+
   const r2 = (n) => Math.round((n ?? 0) * 100) / 100;
   if (this.taxable_amount > 0 && (this.cgst_pct > 0 || this.sgst_pct > 0 || this.igst_pct > 0)) {
     this.cgst_amt  = r2(this.taxable_amount * this.cgst_pct  / 100);

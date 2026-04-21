@@ -93,6 +93,13 @@ const ReceiptVoucherSchema = new mongoose.Schema(
     je_ref: { type: mongoose.Schema.Types.ObjectId, ref: "JournalEntry", default: null },
     je_no:  { type: String, default: "" },   // snapshot: JE/25-26/0001
 
+    // ── Multi-currency ────────────────────────────────────────────────────
+    currency:      { type: String, default: "INR", uppercase: true, trim: true },
+    exchange_rate: { type: Number, default: 1 },  // rate to INR at transaction date
+
+    // ── Optimistic locking ────────────────────────────────────────────────
+    _version: { type: Number, default: 0 },
+
     // ── Audit fields ──────────────────────────────────────────────────────
     created_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
     updated_by: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
@@ -100,6 +107,12 @@ const ReceiptVoucherSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// ── Pre-save: version increment ──────────────────────────────────────────────
+ReceiptVoucherSchema.pre("save", function (next) {
+  if (!this.isNew) this._version += 1;
+  next();
+});
 
 // ── Indexes ───────────────────────────────────────────────────────────────────
 ReceiptVoucherSchema.index({ supplier_id: 1, rv_date: -1 });       // supplier receipt history
