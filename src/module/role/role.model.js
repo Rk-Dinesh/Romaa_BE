@@ -6,7 +6,7 @@ const Actions = {
   create: { type: Boolean, default: false },
   edit: { type: Boolean, default: false },
   delete: { type: Boolean, default: false },
-  _id: false // Disable ID for sub-documents to save space
+  _id: false, // Disable ID for sub-documents to save space
 };
 
 const RoleSchema = new mongoose.Schema(
@@ -14,7 +14,7 @@ const RoleSchema = new mongoose.Schema(
     role_id: { type: String, required: true, unique: true },
     roleName: { type: String, required: true, unique: true, uppercase: true },
     description: String,
-    
+
     permissions: {
       // --- Dashboard (Simple Read) ---
       dashboard: { read: { type: Boolean, default: false } },
@@ -26,7 +26,7 @@ const RoleSchema = new mongoose.Schema(
         dlp: Actions,
         emd: Actions,
         security_deposit: Actions,
-        project_penalty: Actions
+        project_penalty: Actions,
       },
 
       // --- Projects Module ---
@@ -42,7 +42,7 @@ const RoleSchema = new mongoose.Schema(
         work_progress: Actions,
         material_quantity: Actions,
         stocks: Actions,
-        assets: Actions
+        assets: Actions,
       },
 
       // --- Purchase Module ---
@@ -55,7 +55,7 @@ const RoleSchema = new mongoose.Schema(
         bill: Actions,
         machinery_tracking: Actions,
         stocks: Actions,
-        assets: Actions
+        assets: Actions,
       },
 
       // --- Site Module ---
@@ -74,7 +74,7 @@ const RoleSchema = new mongoose.Schema(
         site_assets: Actions,
         weekly_billing: Actions,
         reconciliation: Actions,
-        planned_vs_achieved: Actions
+        planned_vs_achieved: Actions,
       },
 
       // --- HR Module ---
@@ -87,73 +87,77 @@ const RoleSchema = new mongoose.Schema(
         nmr: Actions,
         nmr_attendance: Actions,
         geofence: Actions,
-        scorecard: Actions
+        scorecard: Actions,
       },
 
       // --- Finance Module ---
       finance: {
-    // Core Billing                                                
-    client_billing: Actions,                                       
-    purchase_bill: Actions,
-    contractor_bill: Actions,
-    supplier_outstanding: Actions,                                 
-    // Banking & Setup
-    banks: Actions,                                                
-    company_bank_details: Actions,
-    bank_transaction: Actions,
-    internal_transfer: Actions,                                    
-    // Ledger & Accounting
-    ledger_entry: Actions,                                         
-    journal_entry: Actions,
-    cash_entry: Actions,
-    // Adjustments & Compliance
-    debit_credit_note: Actions,                                    
-    overall_expenses: Actions,
-    // Finance Reports                                             
-    trial_balance: Actions,
-    profit_loss: Actions,
-    balance_sheet: Actions,                                        
-    general_ledger: Actions,
-    cash_flow: Actions,                                            
-    gstr1: Actions,
-    gstr2b: Actions,
-    gstr3b: Actions,
-    itc_reversal: Actions,
-    tds_register: Actions,
-    // Finance Tier 2                                              
-    bank_reconciliation: Actions,
-    recurring_vouchers: Actions,                                   
-    budgets: Actions,
-    aging_reports: Actions,
-    fixed_assets: Actions,                                         
-    form_26q: Actions,
-    // Finance Tier 3                                              
-    einvoice: Actions,
-    ewaybill: Actions,
-    gst_matcher: Actions,
-    advance_allocation: Actions,
-    retention: Actions,                                            
-    audit_trail: Actions,
-    form_24q: Actions,                                             
-    form_16: Actions,
-    form_16a: Actions,
-    gstr9: Actions,
-    // Finance Tier 4
-    consolidation: Actions,                                        
-    tender_profitability: Actions,
-    cash_flow_forecast: Actions,                                   
-    fund_flow: Actions,
-    ratio_analysis: Actions,
-    contract_poc: Actions,
-    supplier_scorecard: Actions,
-    approval: Actions,
-    statutory_deadline: Actions,
-    form_26as: Actions,
-    ledger_seal: Actions,
-    year_end_close: Actions,
-    finance_attachment: Actions,
-    expense_voucher: Actions,
-
+        // Core Billing
+        client_billing: Actions,
+        purchase_bill: Actions,
+        contractor_bill: Actions,
+        supplier_outstanding: Actions,
+        // Banking & Setup
+        banks: Actions,
+        company_bank_details: Actions,
+        bank_transaction: Actions,
+        internal_transfer: Actions,
+        // Ledger & Accounting
+        ledger_entry: Actions,
+        journal_entry: Actions,
+        cash_entry: Actions,
+        // Adjustments & Compliance
+        debit_credit_note: Actions,
+        overall_expenses: Actions,
+        // Finance Reports
+        trial_balance: Actions,
+        profit_loss: Actions,
+        balance_sheet: Actions,
+        general_ledger: Actions,
+        cash_flow: Actions,
+        gstr1: Actions,
+        gstr2b: Actions,
+        gstr3b: Actions,
+        itc_reversal: Actions,
+        tds_register: Actions,
+        // Finance Tier 2
+        bank_reconciliation: Actions,
+        recurring_vouchers: Actions,
+        budgets: Actions,
+        aging_reports: Actions,
+        fixed_assets: Actions,
+        form_26q: Actions,
+        // Finance Tier 3
+        einvoice: Actions,
+        ewaybill: Actions,
+        gst_matcher: Actions,
+        advance_allocation: Actions,
+        retention: Actions,
+        audit_trail: Actions,
+        form_24q: Actions,
+        form_16: Actions,
+        form_16a: Actions,
+        gstr9: Actions,
+        // Finance Tier 4
+        consolidation: Actions,
+        tender_profitability: Actions,
+        cash_flow_forecast: Actions,
+        fund_flow: Actions,
+        ratio_analysis: Actions,
+        contract_poc: Actions,
+        supplier_scorecard: Actions,
+        approvals: Actions,
+        statutory_deadlines: Actions,
+        form26as: Actions,
+        ledger_seal: Actions,
+        year_end_close: Actions,
+        finance_attachment: Actions,
+        expense_voucher: Actions,
+        currency: Actions,
+        finance_settings: Actions,
+        webhooks: Actions,
+        bulk_import_export: Actions,
+        account_browser: Actions,
       },
 
       // --- Reports Module ---
@@ -172,7 +176,7 @@ const RoleSchema = new mongoose.Schema(
         planned_vs_actual: Actions,
         labour_productivity: Actions,
         machine_productivity: Actions,
-        collection_projection: Actions
+        collection_projection: Actions,
       },
 
       // --- Settings ---
@@ -181,14 +185,14 @@ const RoleSchema = new mongoose.Schema(
         roles: Actions,
         master: Actions,
         assets: Actions,
-        hsn_sac: Actions
-      }
+        hsn_sac: Actions,
+      },
     },
 
     isActive: { type: Boolean, default: true },
-    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" }
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: "Employee" },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 const RoleModel = mongoose.model("Role", RoleSchema);
