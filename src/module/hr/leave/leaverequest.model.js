@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const leaveRequestSchema = new mongoose.Schema(
   {
@@ -96,6 +97,8 @@ const leaveRequestSchema = new mongoose.Schema(
 leaveRequestSchema.index({ employeeId: 1, status: 1 }); // "My Pending Leaves"
 leaveRequestSchema.index({ status: 1, fromDate: 1 });   // "HR Dashboard: Who is on leave today?"
 leaveRequestSchema.index({ fromDate: 1, toDate: 1 });   // Overlap checks
+
+leaveRequestSchema.plugin(auditPlugin, { entity_type: "LeaveRequest" });
 
 const LeaveRequestModel = mongoose.model("LeaveRequest", leaveRequestSchema);
 

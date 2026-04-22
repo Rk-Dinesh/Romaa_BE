@@ -2,6 +2,7 @@ import mongoose, { Schema } from "mongoose";
 import bcrypt from "bcrypt";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 dotenv.config();
 
 const employeeSchema = new mongoose.Schema(
@@ -173,6 +174,8 @@ employeeSchema.methods.generateRefreshToken = function () {
 
 employeeSchema.index({ isDeleted: 1, status: 1 });
 employeeSchema.index({ isDeleted: 1, role: 1 });
+
+employeeSchema.plugin(auditPlugin, { entity_type: "Employee", entity_no_field: "employeeId" });
 
 const EmployeeModel = mongoose.model("Employee", employeeSchema);
 

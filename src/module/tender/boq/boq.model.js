@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const boqItemSchema = new mongoose.Schema(
   {
@@ -57,6 +58,8 @@ const boqSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+boqSchema.plugin(auditPlugin, { entity_type: "BOQ" });
 
 const BoqModel = mongoose.model("Boqs", boqSchema);
 

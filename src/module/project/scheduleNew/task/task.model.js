@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../../audit/auditlog.plugin.js";
 const { Schema } = mongoose;
 
 // A. Generic Metrics
@@ -120,6 +121,8 @@ const TaskSchema = new Schema(
 // Create Compound Index for faster queries
 // Example: "Find all tasks for Tender X inside Work Group Y"
 TaskSchema.index({ tender_id: 1, work_group_id: 1 });
+
+TaskSchema.plugin(auditPlugin, { entity_type: "Task", entity_no_field: "wbs_id" });
 
 const TaskModel = mongoose.model("Task", TaskSchema);
 export default TaskModel;

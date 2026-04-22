@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const bidItemSchema = new mongoose.Schema(
   {
@@ -50,6 +51,8 @@ const bidSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+bidSchema.plugin(auditPlugin, { entity_type: "Bid", entity_no_field: "bid_id" });
 
 const BidModel = mongoose.model("Bids", bidSchema);
 

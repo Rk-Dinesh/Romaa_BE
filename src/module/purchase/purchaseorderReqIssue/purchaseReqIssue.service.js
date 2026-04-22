@@ -4,6 +4,8 @@ import VendorPermittedModel from "../../tender/vendorpermitted/vendorpermitted.m
 import VendorModel from "../vendor/vendor.model.js";
 import PurchaseRequestModel from "./purchaseReqIssue.model.js";
 import NotificationService from "../../notifications/notification.service.js";
+import ApprovalService from "../../approval/approval.service.js";
+import logger from "../../../config/logger.js";
 
 
 class PurchaseRequestService {
@@ -359,7 +361,7 @@ class PurchaseRequestService {
     );
   }
 
-  static async approveVendorQuotation({ purchaseRequestId, quotationId }) {
+  static async approveVendorQuotation({ purchaseRequestId, quotationId, actor_id = null }) {
     // 1. Find the PurchaseRequest by the custom 'requestId' (e.g., POR011)
     // Changed from { _id: purchaseRequestId } to { requestId: purchaseRequestId }
     const purchaseRequest = await PurchaseRequestModel.findOne({ requestId: purchaseRequestId });
@@ -407,6 +409,24 @@ class PurchaseRequestService {
 
     // 7. Save changes
     await purchaseRequest.save();
+
+    // ── Approval engine: raise a PO approval for the approved amount ──────
+    // No-op if no rule is active for PurchaseOrder. Non-blocking by design —
+    // failure to initiate must never block the quotation approval itself.
+    if (actor_id) {
+      try {
+        await ApprovalService.initiate({
+          source_type:  "PurchaseOrder",
+          source_ref:   purchaseRequest._id,
+          source_no:    purchaseRequest.requestId,
+          amount:       vendorQuotation.totalQuotedValue || 0,
+          narration:    `PO for ${vendorQuotation.vendorName} (${vendorQuotation.quotationId})`,
+          initiator_id: actor_id,
+        });
+      } catch (err) {
+        logger.warn({ context: "purchaseOrder.approval.initiate", message: err.message });
+      }
+    }
 
     // Notify Finance + Purchase team about quotation approval
     const [financeRoles, purchaseRoles] = await Promise.all([

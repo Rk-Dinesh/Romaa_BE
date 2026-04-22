@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const NMRSchema = new mongoose.Schema(
   {
@@ -53,6 +54,8 @@ NMRSchema.pre("save", function (next) {
   this.total_payable_amount = amount;
   next();
 });
+
+NMRSchema.plugin(auditPlugin, { entity_type: "NmrAttendance" });
 
 const NMRAttendanceModel = mongoose.model("NMR_Attendance", NMRSchema);
 export default NMRAttendanceModel;

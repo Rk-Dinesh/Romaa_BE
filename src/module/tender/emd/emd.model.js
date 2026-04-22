@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const proposalSchema = new mongoose.Schema({
   proposal_id: { type: String, required: true },
@@ -46,6 +47,8 @@ const emdSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+emdSchema.plugin(auditPlugin, { entity_type: "EMD", entity_no_field: "emd_id" });
 
 const EmdModel = mongoose.model("Emds", emdSchema);
 export default EmdModel;

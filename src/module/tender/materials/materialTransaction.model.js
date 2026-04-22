@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 // Replaces the embedded inward_history / outward_history arrays that were growing
 // unboundedly inside the MaterialModel document (hitting the 16MB BSON limit on
@@ -53,6 +54,8 @@ const materialTransactionSchema = new mongoose.Schema(
 // 2. All transactions for a PO ref  → { tender_id, purchase_request_ref }
 materialTransactionSchema.index({ item_id: 1, date: -1 });
 materialTransactionSchema.index({ tender_id: 1, purchase_request_ref: 1 });
+
+materialTransactionSchema.plugin(auditPlugin, { entity_type: "MaterialTransaction" });
 
 const MaterialTransactionModel = mongoose.model("MaterialTransaction", materialTransactionSchema);
 export default MaterialTransactionModel;

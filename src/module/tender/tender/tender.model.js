@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const tenderProcessDataTemplate = [
   { label: "Site Investigation", key: "site_investigation" },
@@ -241,6 +242,8 @@ const tenderSchema = new mongoose.Schema(
 tenderSchema.index({ tender_status: 1 });
 tenderSchema.index({ client_id: 1 });
 tenderSchema.index({ createdAt: -1 });
+
+tenderSchema.plugin(auditPlugin, { entity_type: "Tender", entity_no_field: "tender_id" });
 
 const TenderModel = mongoose.model("Tenders", tenderSchema);
 export default TenderModel;

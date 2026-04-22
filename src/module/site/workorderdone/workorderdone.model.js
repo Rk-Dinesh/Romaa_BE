@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 // --- Sub-Schema: Individual Line Items (The Rows) ---
 const WorkItemSchema = new mongoose.Schema(
@@ -91,6 +92,8 @@ const WorkOrderDoneSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+WorkOrderDoneSchema.plugin(auditPlugin, { entity_type: "WorkOrderDone", entity_no_field: "workDoneId" });
 
 const WorkOrderDoneModel = mongoose.model("WorkOrderDone", WorkOrderDoneSchema);
 export default WorkOrderDoneModel;

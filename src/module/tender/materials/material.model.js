@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 // --- MAIN ITEM SCHEMA ---
 // NOTE: inward_history and outward_history arrays were removed.
@@ -78,6 +79,8 @@ materialSchema.pre("save", function (next) {
 });
 
 materialSchema.index({ tender_id: 1 });
+
+materialSchema.plugin(auditPlugin, { entity_type: "Material" });
 
 const MaterialModel = mongoose.model("materials", materialSchema);
 

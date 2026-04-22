@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const WorkOrderRequestSchema = new mongoose.Schema(
   {
@@ -125,6 +126,8 @@ const WorkOrderRequestSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+WorkOrderRequestSchema.plugin(auditPlugin, { entity_type: "WorkOrderRequest", entity_no_field: "requestId" });
 
 const WorkOrderRequestModel = mongoose.model(
   "WorkOrderRequest",

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 // Work Phase Breakdown Schema
 const WorkPhaseBreakdownSchema = new mongoose.Schema({
@@ -57,6 +58,8 @@ const MainSchema = new mongoose.Schema({
     detailed_estimate: { type: [DetailedEstimateSchema], default: [] },
    
 }, { timestamps: true });
+
+MainSchema.plugin(auditPlugin, { entity_type: "DetailedEstimate", entity_no_field: "tender_id" });
 
 const DetailedEstimateModel = mongoose.model("DetailedEstimates", MainSchema);
 

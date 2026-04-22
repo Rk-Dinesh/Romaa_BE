@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const userAttendanceSchema = new mongoose.Schema(
   {
@@ -155,6 +156,8 @@ const userAttendanceSchema = new mongoose.Schema(
 userAttendanceSchema.index({ employeeId: 1, date: 1 }, { unique: true }); // Prevent duplicates
 userAttendanceSchema.index({ date: 1, status: 1 }); // "Who is absent today?"
 userAttendanceSchema.index({ "flags.isLateEntry": 1 }); // "Late comers report"
+
+userAttendanceSchema.plugin(auditPlugin, { entity_type: "UserAttendance" });
 
 const UserAttendanceModel = mongoose.model("UserAttendance", userAttendanceSchema);
 export default UserAttendanceModel;

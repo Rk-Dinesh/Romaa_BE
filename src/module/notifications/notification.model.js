@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../audit/auditlog.plugin.js";
 
 // --- Recipient sub-schema for granular targeting ---
 const RecipientSchema = new mongoose.Schema(
@@ -118,6 +119,8 @@ NotificationSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0, partialFilte
 
 // Scheduled notifications pickup
 NotificationSchema.index({ scheduledAt: 1, isActive: 1 }, { partialFilterExpression: { scheduledAt: { $ne: null } } });
+
+NotificationSchema.plugin(auditPlugin, { entity_type: "Notification" });
 
 const NotificationModel = mongoose.model("Notification", NotificationSchema);
 

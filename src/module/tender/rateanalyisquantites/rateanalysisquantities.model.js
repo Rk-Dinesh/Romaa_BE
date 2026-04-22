@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const ItemSchema = new mongoose.Schema(
     {
@@ -40,6 +41,8 @@ const raQuantitySchema = new mongoose.Schema(
     },
     { timestamps: true }
 );
+
+raQuantitySchema.plugin(auditPlugin, { entity_type: "RateAnalysisQuantity" });
 
 const RAQuantityModel = mongoose.model("RAQuantity", raQuantitySchema);
 

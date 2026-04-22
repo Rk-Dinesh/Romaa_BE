@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const MaintenanceLogSchema = new mongoose.Schema(
     {
@@ -27,6 +28,8 @@ const MaintenanceLogSchema = new mongoose.Schema(
     },
     { timestamps: true }
 );
+
+MaintenanceLogSchema.plugin(auditPlugin, { entity_type: "MaintenanceLog", entity_no_field: "assetId" });
 
 const MaintenanceLog = mongoose.model("MaintenanceLog", MaintenanceLogSchema);
 export default MaintenanceLog;

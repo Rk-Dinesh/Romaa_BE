@@ -87,6 +87,9 @@ import einvoiceRouter from "./src/module/finance/einvoice/einvoice.route.js";
 import ewaybillRouter from "./src/module/finance/ewaybill/ewaybill.route.js";
 import contractPocRouter from "./src/module/finance/contractpoc/contractpoc.route.js";
 import approvalRouter from "./src/module/finance/approval/approval.route.js";
+import genericApprovalRouter from "./src/module/approval/approval.route.js";
+import appAuditRouter from "./src/module/audit/auditlog.route.js";
+import { runAllAuditArchives } from "./src/module/audit/auditlog.retention.js";
 import yearEndCloseRouter from "./src/module/finance/yearendclose/yearendclose.route.js";
 import ledgerSealRouter from "./src/module/finance/ledgerseal/ledgerseal.route.js";
 import statutoryDeadlineRouter from "./src/module/finance/statutorydeadline/statutorydeadline.route.js";
@@ -110,6 +113,8 @@ import archivalRouter from "./src/module/finance/archival/archival.route.js";
 import financeSettingsRouter from "./src/module/finance/settings/financesettings.route.js";
 import webhookRouter from "./src/module/finance/events/webhook.route.js";
 import { initWebhookListeners } from "./src/module/finance/events/webhook.service.js";
+import { initLeaveApprovalListener } from "./src/module/hr/leave/leave.approvalListener.js";
+import { initPurchaseOrderApprovalListener } from "./src/module/purchase/purchaseorderReqIssue/po.approvalListener.js";
 import metricsRouter from "./src/module/finance/metrics/metrics.route.js";
 import swaggerUi from "swagger-ui-express";
 import { swaggerSpec } from "./src/config/swagger.js";
@@ -121,6 +126,9 @@ const app = express();
 connectDB().then(() => {
   // Initialize webhook listeners AFTER DB is connected so subscriptions can be queried
   initWebhookListeners();
+  // Approval engine listeners — per-module finalizers
+  initLeaveApprovalListener();
+  initPurchaseOrderApprovalListener();
 }).catch(() => {
   // connectDB logs its own errors; webhook listeners will not be active if DB is unavailable
 });
@@ -144,6 +152,17 @@ cron.schedule("0 2 * * *", async () => {
     logger.info(`Recurring voucher cron: fired=${result.fired} failed=${result.failed}`);
   } catch (err) {
     logger.error("Recurring voucher cron error:", err.message);
+  }
+});
+
+// Daily 03:30: archive audit rows older than AUDIT_RETENTION_DAYS (default 90)
+// Moves both app_audit_logs and finance_audit_logs to *_archive siblings.
+cron.schedule("30 3 * * *", async () => {
+  try {
+    const result = await runAllAuditArchives();
+    logger.info(`Audit retention cron: app=${result.app.archived} finance=${result.finance.archived}`);
+  } catch (err) {
+    logger.error("Audit retention cron error:", err.message);
   }
 });
 
@@ -329,7 +348,9 @@ app.use("/finance/currency",    currencyRouter);
 app.use("/einvoice",           einvoiceRouter);
 app.use("/ewaybill",           ewaybillRouter);
 app.use("/contract-poc",       contractPocRouter);
-app.use("/approvals",          approvalRouter);
+app.use("/approvals",          approvalRouter);       // legacy finance-scoped route (kept for back-compat)
+app.use("/approval",           genericApprovalRouter); // new generic approval engine (all modules)
+app.use("/audit",              appAuditRouter);        // app-wide audit trail (non-finance). finance trail stays at /finance/audit
 app.use("/year-end-close",     yearEndCloseRouter);
 app.use("/ledger-seal",        ledgerSealRouter);
 app.use("/statutory-deadlines", statutoryDeadlineRouter);
@@ -378,7 +399,8 @@ v1.use("/finance/currency",     currencyRouter);
 v1.use("/einvoice",             einvoiceRouter);
 v1.use("/ewaybill",             ewaybillRouter);
 v1.use("/contract-poc",         contractPocRouter);
-v1.use("/approvals",            approvalRouter);
+v1.use("/approvals",            approvalRouter);        // legacy
+v1.use("/approval",             genericApprovalRouter); // new generic engine
 v1.use("/year-end-close",       yearEndCloseRouter);
 v1.use("/ledger-seal",          ledgerSealRouter);
 v1.use("/statutory-deadlines",  statutoryDeadlineRouter);

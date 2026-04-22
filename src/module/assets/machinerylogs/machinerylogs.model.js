@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const MachineDailyLogSchema = new mongoose.Schema(
   {
@@ -34,6 +35,8 @@ const MachineDailyLogSchema = new mongoose.Schema(
 
 MachineDailyLogSchema.index({ projectId: 1, logDate: 1 });
 MachineDailyLogSchema.index({ assetId: 1, logDate: -1 });
+
+MachineDailyLogSchema.plugin(auditPlugin, { entity_type: "MachineryLog" });
 
 const MachineDailyLog = mongoose.model("MachineDailyLog", MachineDailyLogSchema);
 export default MachineDailyLog;

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const penaltySchema = new mongoose.Schema({
   penalty_id: String,
@@ -14,6 +15,8 @@ const PenaltySchema = new mongoose.Schema({
   tender_id: String,
   listOfPenalties: [penaltySchema],
 });
+
+PenaltySchema.plugin(auditPlugin, { entity_type: "Penalty" });
 
 const PenaltyModel = mongoose.model("Penalty", PenaltySchema);
 

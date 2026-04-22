@@ -4,6 +4,8 @@ import UserAttendanceModel from "../userAttendance/userAttendance.model.js";
 import CalendarService from "../holidays/holiday.service.js";
 import NotificationService from "../../notifications/notification.service.js";
 import LeaveBalanceHistoryService from "./leaveBalanceHistory.service.js";
+import ApprovalService from "../../approval/approval.service.js";
+import logger from "../../../config/logger.js";
 
 class LeaveService {
   // --- HELPER: Auto-Fill Attendance on Approval ---
@@ -250,6 +252,26 @@ class LeaveService {
     });
 
     await newLeave.save();
+
+    // ── Approval engine integration ──────────────────────────────────────
+    // Kicks off a hierarchy-resolved approval request (source_type
+    // "LeaveRequest"). If no rule is active, this is a no-op and the legacy
+    // manager/HR action endpoints remain authoritative. If a rule IS active,
+    // the approval listener (leave.approvalListener.js) finalizes the leave
+    // when all required approvers sign.
+    try {
+      await ApprovalService.initiate({
+        source_type:  "LeaveRequest",
+        source_ref:   newLeave._id,
+        source_no:    `LV-${newLeave._id.toString().slice(-6).toUpperCase()}`,
+        amount:       calculatedDays,
+        narration:    `${leaveType} leave by ${employee.name}`,
+        initiator_id: employeeId,
+      });
+    } catch (err) {
+      // Never block leave creation on approval wiring — log and continue.
+      logger.warn({ context: "leave.approval.initiate", message: err.message });
+    }
 
     // Notify manager about new leave request
     if (employee.reportsTo) {

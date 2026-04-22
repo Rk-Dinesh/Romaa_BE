@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const documentSchema = new mongoose.Schema({
   code: { type: String, unique: true, required: true },
@@ -19,6 +20,8 @@ const tenderDocumentSchema = new mongoose.Schema({
   documents: [documentSchema], // Array of document objects
   updated_at: { type: Date, default: Date.now }, // Last modification timestamp
 });
+
+tenderDocumentSchema.plugin(auditPlugin, { entity_type: "TenderDocument", entity_no_field: "tender_id" });
 
 const TenderDocumentModel = mongoose.model(
   "TenderDocument",

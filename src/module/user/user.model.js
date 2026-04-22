@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../audit/auditlog.plugin.js";
 
 const UserSchema = new mongoose.Schema(
   {
@@ -23,6 +24,8 @@ const UserSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+UserSchema.plugin(auditPlugin, { entity_type: "User", entity_no_field: "user_id" });
 
 const UserModel = mongoose.model("User", UserSchema);
 

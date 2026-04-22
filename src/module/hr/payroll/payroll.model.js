@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const payrollSchema = new mongoose.Schema(
   {
@@ -66,6 +67,8 @@ const payrollSchema = new mongoose.Schema(
 
 // Compound Index: Ensures one payroll document per employee per month
 payrollSchema.index({ employeeId: 1, month: 1, year: 1 }, { unique: true });
+
+payrollSchema.plugin(auditPlugin, { entity_type: "Payroll" });
 
 export const PayrollModel = mongoose.model("Payroll", payrollSchema);
 

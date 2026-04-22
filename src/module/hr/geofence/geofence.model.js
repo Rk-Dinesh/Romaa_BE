@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const GeofenceSchema = new mongoose.Schema(
   {
@@ -26,6 +27,8 @@ const GeofenceSchema = new mongoose.Schema(
 );
 
 GeofenceSchema.index({ tenderId: 1 });
+
+GeofenceSchema.plugin(auditPlugin, { entity_type: "Geofence" });
 
 const Geofence = mongoose.model("Geofence", GeofenceSchema);
 export default Geofence;

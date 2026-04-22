@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const assignedProjectSchema = new mongoose.Schema(
   {
@@ -82,6 +83,8 @@ const contractorSchema = new mongoose.Schema(
 );
 
 contractorSchema.index({ isDeleted: 1, status: 1 });
+
+contractorSchema.plugin(auditPlugin, { entity_type: "Contractor", entity_no_field: "contractor_id" });
 
 const ContractorModel = mongoose.model("Contractors", contractorSchema);
 

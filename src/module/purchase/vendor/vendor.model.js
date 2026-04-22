@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const vendorSchema = new mongoose.Schema(
   {
@@ -40,6 +41,8 @@ const vendorSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+vendorSchema.plugin(auditPlugin, { entity_type: "Vendor", entity_no_field: "vendor_id" });
 
 const VendorModel = mongoose.model("Vendors", vendorSchema);
 

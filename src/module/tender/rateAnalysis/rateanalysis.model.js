@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const { Schema } = mongoose;
 
@@ -69,6 +70,8 @@ const MainSchema = new Schema(
   },
   { timestamps: true }
 );
+
+MainSchema.plugin(auditPlugin, { entity_type: "RateAnalysis", entity_no_field: "tender_id" });
 
 const WorkItemModel = mongoose.model("WorkItems", MainSchema);
 

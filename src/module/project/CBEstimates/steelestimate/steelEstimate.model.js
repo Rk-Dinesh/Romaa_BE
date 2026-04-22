@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../../audit/auditlog.plugin.js";
 
 
 // ---LEVEL 4: Measurement Details (The "Sub-Item") ---
@@ -76,6 +77,8 @@ const SteelEstimateSchema = new mongoose.Schema(
 
 
 SteelEstimateSchema.index({ tender_id: 1, bill_id: 1 }, { unique: true });
+
+SteelEstimateSchema.plugin(auditPlugin, { entity_type: "SteelEstimate", entity_no_field: "bill_id" });
 
 const SteelEstimateModel = mongoose.model("steelestimate", SteelEstimateSchema);
 export default SteelEstimateModel;

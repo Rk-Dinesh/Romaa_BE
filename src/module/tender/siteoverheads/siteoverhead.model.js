@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const { Schema } = mongoose;
 
@@ -51,6 +52,8 @@ const SiteOverheadsSchema = new Schema(
   },
   { collection: "site_overheads", timestamps: true }
 );
+
+SiteOverheadsSchema.plugin(auditPlugin, { entity_type: "SiteOverhead", entity_no_field: "tenderId" });
 
 const SiteOverheads = mongoose.model("SiteOverheads", SiteOverheadsSchema);
 export default SiteOverheads;

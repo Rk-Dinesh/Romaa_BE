@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const MachineryAssetSchema = new mongoose.Schema(
   {
@@ -90,6 +91,8 @@ const MachineryAssetSchema = new mongoose.Schema(
 // Index for expiry alerts
 MachineryAssetSchema.index({ "compliance.insuranceExpiry": 1 });
 MachineryAssetSchema.index({ "compliance.fitnessCertExpiry": 1 });
+
+MachineryAssetSchema.plugin(auditPlugin, { entity_type: "MachineryAsset", entity_no_field: "assetId" });
 
  const MachineryAsset = mongoose.model("MachineryAsset", MachineryAssetSchema);
  export default MachineryAsset;

@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../audit/auditlog.plugin.js";
 
 // --- Standard Action Schema (Repeated for every module) ---
 const Actions = {
@@ -146,9 +147,9 @@ const RoleSchema = new mongoose.Schema(
         ratio_analysis: Actions,
         contract_poc: Actions,
         supplier_scorecard: Actions,
-        approvals: Actions,
-        statutory_deadlines: Actions,
-        form26as: Actions,
+        approval: Actions,
+        statutory_deadline: Actions,
+        form_26as: Actions,
         ledger_seal: Actions,
         year_end_close: Actions,
         finance_attachment: Actions,
@@ -158,6 +159,19 @@ const RoleSchema = new mongoose.Schema(
         webhooks: Actions,
         bulk_import_export: Actions,
         account_browser: Actions,
+      },
+
+      // --- Audit Log (app-wide, non-finance) ---
+      audit: {
+        trail: Actions,   // view/search cross-module audit trail
+      },
+
+      // --- Approval Module (generic, cross-cutting) ---
+      approval: {
+        requests:   Actions,   // view / act on approval requests
+        my_pending: Actions,   // personal inbox of pending approvals
+        rules:      Actions,   // configure rules in Settings (admin)
+        simulator:  Actions,   // dry-run "who approves what" simulator
       },
 
       // --- Reports Module ---
@@ -186,6 +200,9 @@ const RoleSchema = new mongoose.Schema(
         master: Actions,
         assets: Actions,
         hsn_sac: Actions,
+        approval_config: Actions,   // gates the Settings > Approval Rules UI
+        audit_trail: Actions,
+        audit_retention: Actions,
       },
     },
 
@@ -194,6 +211,8 @@ const RoleSchema = new mongoose.Schema(
   },
   { timestamps: true },
 );
+
+RoleSchema.plugin(auditPlugin, { entity_type: "Role", entity_no_field: "role_id" });
 
 const RoleModel = mongoose.model("Role", RoleSchema);
 

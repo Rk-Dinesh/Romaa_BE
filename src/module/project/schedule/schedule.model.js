@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const { Schema } = mongoose;
 
@@ -81,6 +82,8 @@ const ScheduleSchema = new Schema(
   },
   { timestamps: true }
 );
+
+ScheduleSchema.plugin(auditPlugin, { entity_type: "Schedule", entity_no_field: "tender_id" });
 
 const ScheduleModel = mongoose.model("Schedule", ScheduleSchema);
 

@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const PurchaseRequestSchema = new mongoose.Schema(
   {
@@ -137,6 +138,8 @@ const PurchaseRequestSchema = new mongoose.Schema(
 PurchaseRequestSchema.index({ requestId: 1 });
 PurchaseRequestSchema.index({ projectId: 1 });
 PurchaseRequestSchema.index({ projectId: 1, status: 1 });
+
+PurchaseRequestSchema.plugin(auditPlugin, { entity_type: "PurchaseRequest", entity_no_field: "requestId" });
 
 const PurchaseRequestModel = mongoose.model(
   "PurchaseRequest",

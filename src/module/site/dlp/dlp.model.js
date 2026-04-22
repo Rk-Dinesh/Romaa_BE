@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 // 1. Work Progress (The "What" was done)
 const workEntrySchema = new mongoose.Schema({
@@ -87,6 +88,8 @@ DailyLabourReportSchema.pre("save", function (next) {
   
   next();
 });
+
+DailyLabourReportSchema.plugin(auditPlugin, { entity_type: "DLP" });
 
 const DLRModel = mongoose.model("DailyLabourReport", DailyLabourReportSchema);
 export default DLRModel;

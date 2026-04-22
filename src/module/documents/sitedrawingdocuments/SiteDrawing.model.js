@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const documentSchema = new mongoose.Schema({
   code: { type: String, unique: true, required: true },
@@ -19,6 +20,8 @@ const SiteDrawingSchema = new mongoose.Schema({
   documents: [documentSchema], // Array of document objects
   updated_at: { type: Date, default: Date.now }, // Last modification timestamp
 });
+
+SiteDrawingSchema.plugin(auditPlugin, { entity_type: "SiteDrawing", entity_no_field: "tender_id" });
 
 const SiteDrawingModel = mongoose.model(
   "SiteDrawing",

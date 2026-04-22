@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const permittedcontractWorkerSchema = new mongoose.Schema({
   tender_id: String,
@@ -13,6 +14,8 @@ const permittedcontractWorkerSchema = new mongoose.Schema({
     },
   ],
 });
+
+permittedcontractWorkerSchema.plugin(auditPlugin, { entity_type: "TenderContractWorker", entity_no_field: "tender_id" });
 
 const PermiitedcontractWorkerModel = mongoose.model(
   "PermittedcontractWorker",

@@ -1,0 +1,388 @@
+================================================================================
+ ROMAA — APP AUDIT TRAIL FRONTEND INTEGRATION GUIDE
+================================================================================
+
+ Version      : 1.0
+ Backend base : /audit                 (app-wide, non-finance)
+ Finance base : /finance/audit         (finance module, separate store — use
+                                         the finance team's guide for this)
+ Auth         : JWT cookie or Authorization: Bearer <token>
+ Response fmt : { status: true|false, data?, pagination?, message? }
+
+================================================================================
+ 1. WHAT THIS IS
+================================================================================
+
+Every create / update / delete across the app (HR, tender, project, purchase,
+site, assets, documents, master, role, user, approval — 47 models) now writes
+a row to the `app_audit_logs` collection via a Mongoose plugin. The row
+captures actor, timestamp, before→after diff, IP, and correlation id.
+
+Finance has its own store (`finance_audit_logs`) for retention/compliance
+reasons — the two are never merged.
+
+================================================================================
+ 2. PERMISSIONS
+================================================================================
+
+Role.permissions.audit:
+  trail   { read, create, edit, delete }
+
+  read    → see all admin endpoints (/audit, /audit/counts, /audit/:type/:id)
+  edit    → trigger retention run   (/audit/retention/run)
+  (create / delete are unused by this module — audit is write-only from code,
+   no UI-driven creation or deletion of rows is permitted by design)
+
+/audit/me requires ONLY a valid JWT — every authenticated user can see their
+own actions. This is self-service and not gated by `audit.trail`.
+
+Grant patterns:
+  DEV, CEO, CFO, COO      → audit.trail (all actions)
+  Auditor / Compliance    → audit.trail.read
+  Any employee            → /audit/me (no permission needed)
+
+================================================================================
+ 3. API REFERENCE
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+ GET /audit
+────────────────────────────────────────────────────────────────────────────────
+ Admin-only cross-module trail with filters and pagination.
+
+ Query params:
+   entity_type    string   e.g. "Tender", "LeaveRequest", "Role"
+   action         string   "create" | "update" | "delete" | "approve" | "reject"
+   actor_id       string   employee _id
+   from_date      ISO date
+   to_date        ISO date
+   q              string   matches entity_no OR actor_name (case-insensitive)
+   page           number   default 1
+   limit          number   default 50, max 500
+
+ Response:
+   {
+     "status": true,
+     "data": [ AuditRow, ... ],
+     "pagination": { "page": 1, "limit": 50, "total": 1234, "pages": 25 }
+   }
+
+────────────────────────────────────────────────────────────────────────────────
+ GET /audit/me
+────────────────────────────────────────────────────────────────────────────────
+ Self-service: returns the caller's own actions across all modules.
+
+ Query params: from_date, to_date, action
+ Response: { status, count, data: [ AuditRow, ... ] }  (capped at 500)
+
+────────────────────────────────────────────────────────────────────────────────
+ GET /audit/counts
+────────────────────────────────────────────────────────────────────────────────
+ Aggregated counts by (entity_type, action) for dashboard tiles.
+
+ Query params: from_date, to_date
+
+ Response: data: [ { _id: { entity_type, action }, count }, ... ]
+ Use this to render:
+   "In the last 30 days:  234 creates, 1,850 updates, 42 deletes"
+   "Most edited modules:  Tender (412), LeaveRequest (280), Employee (190)"
+
+────────────────────────────────────────────────────────────────────────────────
+ GET /audit/:entity_type/:entity_id
+────────────────────────────────────────────────────────────────────────────────
+ Full timeline for ONE record. Use on any entity-detail page.
+
+ Example: /audit/Tender/6643ab…
+
+ Response: { status, count, data: [ AuditRow, ... ] }  (newest first, no pagination)
+
+────────────────────────────────────────────────────────────────────────────────
+ POST /audit/retention/run
+────────────────────────────────────────────────────────────────────────────────
+ Manually trigger an archive. Cron runs daily at 03:30 automatically.
+
+ Body: { "retention_days": 90 }   (optional; defaults to AUDIT_RETENTION_DAYS)
+ Response: { status, data: { app: {...}, finance: {...} } }
+ Archived rows remain queryable via MongoDB (collections `<name>_archive`) but
+ are NOT returned by the read endpoints above.
+
+================================================================================
+ 4. DATA MODEL (TypeScript)
+================================================================================
+
+ interface AuditRow {
+   _id: string;
+   entity_type:    string;              // "Tender", "LeaveRequest", "Role", …
+   entity_id:      string | null;       // ObjectId of the affected record
+   entity_no:      string;              // human code (TND-042, EMP-001). "" when none.
+   action:         "create" | "update" | "delete" | "approve" | "reject";
+   actor_id:       string | null;       // who did it
+   actor_name:     string;              // denormalized for UI display
+   changes:        { [field: string]: { from: any; to: any } } | null;
+   meta:           any | null;          // query/update/snapshot for bulk ops
+   correlation_id: string;              // ties to the HTTP request
+   ip_address:     string;
+   tenant_id:      string;              // forward-compat for SaaS
+   createdAt:      string;              // ISO
+   updatedAt:      string;
+ }
+
+================================================================================
+ 5. SCREENS TO BUILD
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+ 5.1  Admin > Audit Trail (cross-module search)
+────────────────────────────────────────────────────────────────────────────────
+ Route: /admin/audit
+ Gate:  permissions.audit.trail.read
+
+ Layout — filter bar + paginated table:
+
+   ┌─────────────────────────────────────────────────────────────────────┐
+   │ Module: [All ▾]   Action: [All ▾]   Actor: [Search ▾]               │
+   │ From: [date]  To: [date]   Q: [entity no / actor name]    [Apply]   │
+   ├─────────────────────────────────────────────────────────────────────┤
+   │ Time           Actor       Module     #         Action   [View]     │
+   │ 2 min ago      Ramesh      Tender     TND-042   update   [→]        │
+   │ 2 hrs ago      Priya       Employee   EMP-013   create   [→]        │
+   │ Yesterday      Suresh      Role       ROL-002   update   [→]        │
+   └─────────────────────────────────────────────────────────────────────┘
+
+ Row click → slide-in drawer with the diff renderer (§5.4).
+
+ Row density: keep it tight — auditors scan fast. Relative timestamps
+ ("2 min ago") with hover-tooltip of absolute UTC timestamp.
+
+────────────────────────────────────────────────────────────────────────────────
+ 5.2  Entity Timeline (embeds on every detail page)
+────────────────────────────────────────────────────────────────────────────────
+ Pattern: anywhere you show a record (tender detail, employee profile, PO
+ view, leave request detail) — add an "Activity" tab.
+
+ Data: GET /audit/:entity_type/:entity_id
+
+ Layout — vertical timeline:
+
+   ●  Priya updated this       2 hours ago
+   │    status:         Pending  →  Manager Approved
+   │    totalDays:      3        →  5
+   │
+   ●  Ramesh approved          Yesterday 14:22
+   │    (no field changes — approval action)
+   │
+   ●  Employee created         15 Apr · via signup
+   │    initial values stored in snapshot
+
+ Pulled from meta.snapshot on action=delete to show "final state before
+ deletion."
+
+────────────────────────────────────────────────────────────────────────────────
+ 5.3  My Activity
+────────────────────────────────────────────────────────────────────────────────
+ Route: /me/activity
+ Gate:  any authenticated user
+ Data:  GET /audit/me
+
+ Same layout as §5.1 but scoped to the caller. Filters: action, date range.
+ Copy: "Everything you've done on Romaa over the last 500 actions."
+
+────────────────────────────────────────────────────────────────────────────────
+ 5.4  Diff Renderer (shared component)
+────────────────────────────────────────────────────────────────────────────────
+ Core UX primitive — used in §5.1 drawer and §5.2 timeline.
+
+ For each field in `row.changes`:
+
+   name:         "ORIG"              →  "CHANGED"
+                 [red-strikethrough]     [green]
+
+   totalDays:    3                   →  5
+   status:       "Pending"           →  "HR Approved"
+   leaveBalance: { CL: 8, SL: 6 }    →  { CL: 7, SL: 6 }
+                 [JSON diff, pretty-printed]
+
+ Rules:
+   • Scalar values side-by-side.
+   • Nested objects → pretty-print both sides with a monospace font and
+     highlight changed keys (use a diff library or roll a simple recursive
+     renderer).
+   • Null "from" means either a newly-added field or a create-time snapshot
+     wasn't captured (pre-plugin data). Show as "(not tracked)".
+   • If `changes` is null and action="create" — render "(initial creation)".
+   • If `changes` is null and action="delete" — render "(record removed)"
+     and show `meta.snapshot` as a collapsible "Final state" block.
+   • If `meta.bulk === true` (updateMany/deleteMany) — show the query +
+     affected count, no per-row diff.
+
+ Accessibility: reading a diff table by screen-reader should make sense:
+ prefix each field with "Changed [field name] from X to Y."
+
+────────────────────────────────────────────────────────────────────────────────
+ 5.5  Audit Overview Tile (dashboard)
+────────────────────────────────────────────────────────────────────────────────
+ Route: /dashboard (admin)
+ Data:  GET /audit/counts?from_date=<30 days ago>
+ Gate:  permissions.audit.trail.read
+
+ One card on the admin dashboard:
+
+   Audit Activity (Last 30d)
+   ──────────────────────────
+   2,340 actions   |  42 users
+   1,850 updates   |  320 creates   |  170 deletes
+
+   Top modules:
+     LeaveRequest  ▓▓▓▓▓▓▓▓   412
+     Tender        ▓▓▓▓▓▓     280
+     Employee      ▓▓▓▓       190
+     Role          ▓          22
+
+   [Open full trail →]
+
+────────────────────────────────────────────────────────────────────────────────
+ 5.6  Retention Settings (admin)
+────────────────────────────────────────────────────────────────────────────────
+ Route: /settings/audit-retention
+ Gate:  permissions.audit.trail.edit
+
+ Two pieces:
+   1) Read-only info: "Rows older than <N> days are auto-archived every
+      night at 03:30. Configured via AUDIT_RETENTION_DAYS env var."
+   2) [Run Archive Now] button → POST /audit/retention/run (confirm modal
+      since it's a potentially long operation).
+      Response toast: "Archived {app} app rows and {finance} finance rows."
+
+================================================================================
+ 6. ENTITY TYPES YOU CAN FILTER BY
+================================================================================
+
+ HR
+   Employee, LeaveRequest, LeaveBalanceHistory, Payroll, Holiday, Geofence,
+   Contractor, ContractEmployee, NmrAttendance, UserAttendance
+
+ Tender
+   Tender, BOQ, Bid, EMD, Material, MaterialTransaction, RateAnalysis,
+   RateAnalysisQuantity, Penalty, DetailedEstimate, SiteOverhead,
+   TenderContractWorker
+
+ Project
+   Schedule, ScheduleLite, Task, WorkOrderRequest, DrawingVsBOQ,
+   BillingEstimate, SteelEstimate
+
+ Purchase / Site / Assets / Documents
+   Vendor, PurchaseRequest, WorkDone, WorkOrderDone, DLP, MachineryAsset,
+   MachineryLog, MaintenanceLog, TenderDocument, WorkOrderDocument,
+   SiteDrawing
+
+ Identity / Master / Approval
+   Role, User, Client, Notification, HsnSac, ApprovalRule, ApprovalRequest
+
+ Finance entities live in the SEPARATE `/finance/audit` endpoint, not here.
+
+================================================================================
+ 7. UI COPY & FORMATTING
+================================================================================
+
+ Action chips (consistent colours everywhere):
+   create   → green   "Created"
+   update   → amber   "Updated"
+   delete   → red     "Deleted"
+   approve  → blue    "Approved"
+   reject   → red     "Rejected"
+
+ Time formatting:
+   < 1 hour   → "23 min ago"
+   < 24 hours → "5 hours ago"
+   < 7 days   → "Mon at 14:22"
+   else       → "15 Apr 2026 · 14:22"
+   (always show absolute UTC on hover for auditors)
+
+ Actor display:
+   Show actor_name. If blank → "(system)". If actor_id present but name
+   missing → fetch once, cache, fall back to "Employee <id6chars>".
+
+ Entity link:
+   Clicking entity_no should deep-link to the entity's detail page:
+     LeaveRequest  → /hr/leave/<id>
+     Tender        → /tender/<id>
+     Role          → /settings/roles/<id>
+     PurchaseRequest → /purchase/pr/<id>
+     ...
+   Maintain a client-side map (entity_type → url template).
+
+================================================================================
+ 8. PERFORMANCE NOTES
+================================================================================
+
+ • /audit (admin list) — backed by compound indexes on entity_type + date,
+   actor + date, action + date. Always pass at least one filter for large
+   datasets; unfiltered queries scan the whole hot collection.
+
+ • Rows older than AUDIT_RETENTION_DAYS (default 90) are archived — if an
+   auditor needs older data, they'll need to query the archive collection
+   directly (no API yet; follow-up work).
+
+ • /audit/:entity_type/:entity_id returns the FULL history of one record —
+   no pagination. For a record with > 500 events (very rare), consider
+   adding paging.
+
+ • Diff payloads can be large for entities with long array fields (BOQ,
+   materialsRequired, workflowLogs). The plugin uses shallow diff — nested
+   array changes show as whole-array replace. Render as collapsed by default.
+
+================================================================================
+ 9. ERROR HANDLING
+================================================================================
+
+ HTTP:
+   200  OK
+   401  Unauthenticated
+   403  Missing permission (audit.trail.read/edit)
+   500  Server error
+
+ Business errors are thin (this module is read-mostly); most failures surface
+ as generic 500 with message. Show a toast "Could not load audit trail" and
+ a retry button.
+
+================================================================================
+ 10. CHECKLIST FOR GO-LIVE
+================================================================================
+
+ [ ] Admin audit trail table with filters + pagination
+ [ ] Entity timeline tab on Tender, Employee, Leave, PO, Role detail pages
+ [ ] My Activity self-service page
+ [ ] Dashboard overview tile
+ [ ] Diff renderer handles scalar, nested-object, array, null cases
+ [ ] Retention settings page with manual-trigger button
+ [ ] Entity-type → detail-URL map for deep-links
+ [ ] Permission gating on admin screens (audit.trail.read)
+ [ ] i18n strings for actions, modules, time relative labels
+
+================================================================================
+ 11. TROUBLESHOOTING
+================================================================================
+
+ "Why doesn't this update show `from` value, only `to`?"
+   → The record was loaded via `.lean()` earlier or created pre-plugin.
+     The plugin caches originals in a post-init hook; records never loaded
+     through Mongoose won't have originals cached. Expected edge case.
+
+ "Why are there audit rows with `meta.bulk: true` and no entity_id?"
+   → Caller used updateMany/deleteMany. We log the filter + counts rather
+     than N per-row diffs. Render meta.query and meta.modified/deleted.
+
+ "An approval action is missing from the entity timeline."
+   → Approval events go through `/approval/requests/:id/approve`, which
+     logs the APPROVAL REQUEST record, not the underlying source doc. Check
+     the audit trail for entity_type="ApprovalRequest" and filter by
+     source_ref in meta.
+
+ "I edited a doc but no audit row appears."
+   → The write went through Mongoose native driver (e.g., a raw
+     `collection.updateOne`). The plugin only intercepts Mongoose model
+     methods. Convert the call to use the model.
+
+================================================================================
+ END
+================================================================================

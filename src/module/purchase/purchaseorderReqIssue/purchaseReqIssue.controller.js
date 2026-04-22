@@ -179,6 +179,7 @@ export const approveVendorQuotation = async (req, res) => {
     const updatedPurchaseRequest = await PurchaseRequestService.approveVendorQuotation({
       purchaseRequestId,
       quotationId,
+      actor_id: req.user?._id || req.user?.id || null,
     });
 
     res.status(200).json({

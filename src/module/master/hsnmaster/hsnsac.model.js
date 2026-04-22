@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const hsnSacMasterSchema = new Schema(
   {
@@ -69,6 +70,8 @@ const hsnSacMasterSchema = new Schema(
 
 // ⚡ Compound index for searching active codes of a specific type
 hsnSacMasterSchema.index({ type: 1, isActive: 1 });
+
+hsnSacMasterSchema.plugin(auditPlugin, { entity_type: "HsnSac", entity_no_field: "code" });
 
 const HsnSacMasterModel = mongoose.model("HsnSacMaster", hsnSacMasterSchema);
 export default HsnSacMasterModel;

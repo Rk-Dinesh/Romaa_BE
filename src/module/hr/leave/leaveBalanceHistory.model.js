@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 // Tracks every mutation to an employee's leave balance.
 // Written by: leave approval, cancellation, year-end reset, manual HR adjustment.
@@ -57,6 +58,8 @@ const leaveBalanceHistorySchema = new mongoose.Schema(
 
 leaveBalanceHistorySchema.index({ employeeId: 1, leaveType: 1, createdAt: -1 });
 leaveBalanceHistorySchema.index({ employeeId: 1, createdAt: -1 });
+
+leaveBalanceHistorySchema.plugin(auditPlugin, { entity_type: "LeaveBalanceHistory" });
 
 const LeaveBalanceHistoryModel = mongoose.model("LeaveBalanceHistory", leaveBalanceHistorySchema);
 export default LeaveBalanceHistoryModel;

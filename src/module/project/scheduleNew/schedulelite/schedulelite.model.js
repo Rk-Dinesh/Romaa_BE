@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../../audit/auditlog.plugin.js";
 const { Schema } = mongoose;
 
 // A. Generic Metrics
@@ -137,6 +138,8 @@ const ScheduleLiteSchema = new Schema({
     }
   ]
 });
+ScheduleLiteSchema.plugin(auditPlugin, { entity_type: "ScheduleLite", entity_no_field: "tender_id" });
+
 const ScheduleLiteModel = mongoose.model("Schedulelite", ScheduleLiteSchema);
 
 export default ScheduleLiteModel;

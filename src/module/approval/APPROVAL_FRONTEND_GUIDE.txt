@@ -1,0 +1,443 @@
+================================================================================
+ ROMAA — APPROVAL ENGINE FRONTEND INTEGRATION GUIDE
+================================================================================
+
+ Version      : 1.0
+ Backend base : /approval  (also exposed at /api/v1/approval)
+ Legacy base  : /approvals (finance-scoped, still works — do not use for new UI)
+ Auth         : JWT cookie (accessToken) OR Authorization: Bearer <token>
+ Response fmt : { status: true|false, data?, message? }
+
+================================================================================
+ 1. WHAT CHANGED
+================================================================================
+
+The approval engine is now a shared, config-driven module used across HR,
+Purchase, Finance, and (soon) Project. Admins configure WHO approves WHAT at
+runtime — no backend deploys needed.
+
+Three major capabilities:
+  • Module-wise rules — per source_type (LeaveRequest, PurchaseOrder, etc.)
+  • Four approver strategies — USERS, ROLE, REPORTS_TO, DEPARTMENT_HEAD
+  • Simulator — dry-run "who would approve ₹Y if X initiates?"
+
+The old /approvals endpoints keep working for back-compat; new screens should
+use /approval/*.
+
+================================================================================
+ 2. PERMISSIONS (RBAC)
+================================================================================
+
+Role.permissions.approval:
+  requests    { read, create, edit, delete }   // view/act on requests
+  my_pending  { read, create, edit, delete }   // personal inbox
+  rules       { read, create, edit, delete }   // configure rules (admin)
+  simulator   { read, create, edit, delete }   // dry-run simulator
+
+Role.permissions.settings.approval_config { read, create, edit, delete }
+  — gate the Settings > Approval Rules screen with this.
+
+Who gets what:
+  CEO/MD/CFO           → all approval.* actions
+  FINANCE_HEAD         → requests, my_pending, simulator (no rules edit)
+  Any employee         → my_pending (read, edit)
+  Admin/DEV            → everything incl. rules + approval_config
+
+================================================================================
+ 3. API REFERENCE
+================================================================================
+
+All endpoints require JWT. Permissions gate each route (see section 2).
+
+────────────────────────────────────────────────────────────────────────────────
+ RULE CRUD (Settings > Approval Rules screen)
+────────────────────────────────────────────────────────────────────────────────
+
+ GET  /approval/rules                   → list all rules
+ GET  /approval/rules?source_type=X     → filter by module
+ GET  /approval/rules/:source_type      → get one rule
+
+ POST /approval/rules
+   Body:
+   {
+     "source_type":  "LeaveRequest",
+     "module_label": "HR › Leave",
+     "amount_field": "days",                 // "days" | "amount" | "qty"
+     "is_active":    true,
+     "thresholds": [
+       {
+         "min_amount": 0,
+         "max_amount": 2,
+         "approver_strategy": "REPORTS_TO",  // USERS | ROLE | REPORTS_TO | DEPARTMENT_HEAD
+         "levels": 1,
+         "any_of": false,
+         "label": "L1: Reporting Manager"
+       },
+       {
+         "min_amount": 2,
+         "max_amount": 5,
+         "approver_strategy": "REPORTS_TO",
+         "levels": 2,
+         "label": "L1 + L2"
+       },
+       {
+         "min_amount": 5,
+         "max_amount": 9999,
+         "approver_strategy": "ROLE",
+         "roles": ["HR_HEAD", "CEO"],
+         "any_of": false,
+         "label": "HR Head + CEO"
+       }
+     ]
+   }
+
+ DELETE /approval/rules/:source_type    → soft-deactivate (sets is_active:false)
+
+Strategy-specific field requirements:
+   USERS            → approvers[]  (employee _ids)
+   ROLE             → roles[]      (role names, uppercase: "CFO","HR_HEAD",…)
+   REPORTS_TO       → levels       (1..3 typical)
+   DEPARTMENT_HEAD  → no extra fields (reads initiator.department → finds *_HEAD role)
+
+────────────────────────────────────────────────────────────────────────────────
+ SIMULATOR (test a rule before saving / or for "who will approve" preview)
+────────────────────────────────────────────────────────────────────────────────
+
+ POST /approval/rules/simulate
+   Body:
+   {
+     "source_type":   "PurchaseOrder",
+     "amount":        350000,
+     "initiator_id":  "64f..."        // optional; defaults to current user
+   }
+   Response data:
+   {
+     "rule":  { "source_type":"PurchaseOrder", "module_label":"Purchase › Order", "amount_field":"amount" },
+     "band":  { "min_amount": 0, "max_amount": 500000, "approver_strategy":"ROLE", ... },
+     "approvers": [
+       { "_id":"...", "name":"Ramesh", "email":"...", "role": { "roleName":"PROCUREMENT_HEAD" }, "department":"Procurement" }
+     ],
+     "reason": "ok"
+   }
+
+   "reason" values:
+     "ok"                → approvers resolved
+     "no_rule"           → no active rule for source_type
+     "no_band_match"     → amount outside all bands
+     "empty_resolution"  → band matched but 0 approvers (misconfig)
+
+────────────────────────────────────────────────────────────────────────────────
+ REQUEST LIFECYCLE
+────────────────────────────────────────────────────────────────────────────────
+
+ POST /approval/requests                 → initiate a request (usually called
+                                           by backend, not frontend — see §6)
+ GET  /approval/requests/pending-for-me  → approver inbox
+      ?source_type=LeaveRequest&page=1&limit=20
+ GET  /approval/requests                 → admin list, supports
+      ?source_type=X&status=pending&page=1&limit=20
+ GET  /approval/requests/:id             → full request detail (includes
+                                           approval_log[] and rule_snapshot)
+
+ POST /approval/requests/:id/approve     Body: { "comment": "OK, proceed" }
+ POST /approval/requests/:id/reject      Body: { "comment": "Out of budget" }
+ POST /approval/requests/:id/comment     Body: { "comment": "Need invoice" }
+ POST /approval/requests/:id/withdraw    Body: { "comment": "Submitted wrong amt" }
+                                         (only the initiator can withdraw)
+
+================================================================================
+ 4. SCREENS TO BUILD
+================================================================================
+
+────────────────────────────────────────────────────────────────────────────────
+ 4.1  Settings > Approval Rules  (admin only)
+────────────────────────────────────────────────────────────────────────────────
+
+ Route suggestion: /settings/approval-rules
+ Gate by: permissions.settings.approval_config.read
+
+ Layout:
+   Left pane  — module picker:
+     LeaveRequest, PurchaseRequest, PurchaseOrder, WorkOrder,
+     PaymentVoucher, WeeklyBilling, BankTransfer, ClientBilling, JournalEntry
+     (source_type values — fetch from GET /approval/rules)
+
+   Right pane — selected module's bands as an ordered list:
+     [Band 1: 0 – 2 days]
+        Strategy: REPORTS_TO  (levels: 1)
+        Mode: Serial
+        Label: "L1: Reporting Manager"
+        [Edit] [Delete]
+
+     [+ Add Band]  [Simulate]  [Save Rule]  [Toggle Active]
+
+   Band editor modal:
+     • min_amount, max_amount  (numeric)
+     • approver_strategy       (dropdown)
+         → USERS:  multi-select employees (search employees API)
+         → ROLE:   multi-select roles (role names, uppercase)
+         → REPORTS_TO: numeric "levels" (1-3)
+         → DEPARTMENT_HEAD: no inputs
+     • any_of                  (toggle: "Any approver" vs "All in sequence")
+     • label                   (free-text)
+
+ Save flow: collect all bands into thresholds[], POST /approval/rules.
+
+ Validation (client-side):
+   - Bands don't overlap (sort by min_amount)
+   - Gaps allowed but warn
+   - For USERS: approvers[] ≥ 1
+   - For ROLE: roles[] ≥ 1
+
+────────────────────────────────────────────────────────────────────────────────
+ 4.2  Settings > Approval Rules > Simulator
+────────────────────────────────────────────────────────────────────────────────
+
+ Form:
+   • Module      (dropdown of source_types)
+   • Initiator   (employee search; default = current user)
+   • Amount      (number; label shifts: "Days" for Leave, "₹" for others)
+   [Simulate]
+
+ Result card:
+   • Band matched: "₹ 0 – 5,00,000 · Procurement Head"
+   • Approvers (ordered chips):
+       1. Ramesh (PROCUREMENT_HEAD)
+       2. Suresh (CFO)
+   • If reason ≠ "ok" → amber banner with explanation.
+
+────────────────────────────────────────────────────────────────────────────────
+ 4.3  My Pending Approvals  (every logged-in user)
+────────────────────────────────────────────────────────────────────────────────
+
+ Route: /approvals/inbox
+ Data:  GET /approval/requests/pending-for-me
+ Gate:  permissions.approval.my_pending.read
+
+ List columns:
+   • source_type  (pill: "Leave", "PO", "Payment Voucher")
+   • source_no
+   • initiator    (populate from initiated_by → Employee)
+   • amount + amount_field-aware formatting (₹ / days)
+   • createdAt (relative: "3 hours ago")
+   • [Review]
+
+ Detail drawer:
+   • Request header (source_type, source_no, amount, narration)
+   • Timeline (approval_log[] — show actor_name, action, comment, acted_at)
+   • Rule snapshot (which band matched, all required approvers, green-tick the
+     ones who've already signed)
+   • Action buttons:
+       [Approve] [Reject] [Comment]
+     — each opens a modal for the comment, then POST /approval/requests/:id/<action>
+
+ UX note: the first required_approver whose id ∉ approved_by is the "active
+ approver". Show "Awaiting you" badge only when current user === next_approver_id
+ (serial) OR user is in required_approvers + any_of=true.
+
+────────────────────────────────────────────────────────────────────────────────
+ 4.4  Request Detail (read-only, links from anywhere)
+────────────────────────────────────────────────────────────────────────────────
+
+ Route: /approvals/:id
+ Data:  GET /approval/requests/:id
+ Gate:  permissions.approval.requests.read
+
+ Same as §4.3 detail drawer but full-page, no action buttons unless this user
+ is an approver. "Withdraw" only shown if current user === initiated_by AND
+ status === "pending".
+
+────────────────────────────────────────────────────────────────────────────────
+ 4.5  Admin > All Approval Requests (auditors)
+────────────────────────────────────────────────────────────────────────────────
+
+ Route: /admin/approvals
+ Data:  GET /approval/requests?source_type=X&status=Y
+ Gate:  permissions.approval.requests.read
+
+ Filters: source_type, status (pending/approved/rejected/withdrawn), date range.
+ Columns: source_no, source_type, initiator, amount, status, completed_at.
+
+================================================================================
+ 5. DATA MODELS (for typescript interfaces)
+================================================================================
+
+ ApprovalRule {
+   _id: ObjectId;
+   source_type: string;                     // "LeaveRequest", "PurchaseOrder", ...
+   module_label: string;                    // "HR › Leave"
+   amount_field: "amount" | "days" | "qty";
+   is_active: boolean;
+   thresholds: Threshold[];
+   createdAt: string; updatedAt: string;
+ }
+
+ Threshold {
+   min_amount: number;
+   max_amount: number;
+   approver_strategy: "USERS" | "ROLE" | "REPORTS_TO" | "DEPARTMENT_HEAD";
+   approvers?: string[];   // USERS
+   roles?: string[];       // ROLE — uppercase role names
+   levels?: number;        // REPORTS_TO
+   any_of: boolean;
+   label: string;
+ }
+
+ ApprovalRequest {
+   _id: ObjectId;
+   source_type: string;
+   source_ref: ObjectId;        // id of the underlying doc (leave, PO, etc.)
+   source_no: string;           // human code (LV-A1B2C3, POR-001)
+   amount: number;
+   narration: string;
+   required_approvers: string[];
+   any_of: boolean;
+   approved_by: string[];
+   rejected_by: string;
+   status: "pending" | "approved" | "rejected" | "withdrawn";
+   next_approver_id: string;
+   initiated_by: string;
+   completed_at: string | null;
+   approval_log: ApprovalLog[];
+   rule_snapshot: {
+     min_amount: number; max_amount: number; label: string;
+     approver_strategy: string; roles: string[]; levels: number;
+   };
+   createdAt: string; updatedAt: string;
+ }
+
+ ApprovalLog {
+   action: "approved" | "rejected" | "commented" | "withdrawn" | "escalated";
+   actor_id: string;
+   actor_name: string;
+   comment: string;
+   acted_at: string;
+ }
+
+================================================================================
+ 6. HOW EXISTING MODULES HOOK IN (you USUALLY don't call initiate from FE)
+================================================================================
+
+Backend now auto-initiates approval for these flows — the frontend does NOT
+need to call POST /approval/requests. Just show the resulting request in the
+approver's inbox and in the source doc's detail page.
+
+  • Leave (POST /leave/apply)
+      → After leave is saved, server calls ApprovalService.initiate with
+        source_type "LeaveRequest", amount = totalDays.
+      → Frontend impact: the leave shows up in approvers' inboxes.
+        When the engine approves, backend auto-finalises (balance debit +
+        attendance fill), mirroring the old manual flow.
+
+  • Purchase Order (POST /purchaseorderrequest/.../approve-quotation)
+      → After a quotation is approved, server initiates a PO approval using
+        totalQuotedValue as amount.
+      → Frontend impact: PO detail should show "Pending engine approval"
+        banner when ApprovalRequest status = pending.
+
+If you need to show approval state on a source doc:
+    GET /approval/requests?source_type=LeaveRequest
+    (filter client-side by source_ref == leave._id)
+  — or ask backend to expose a `getRequestFor(source_type, source_ref)` helper.
+
+================================================================================
+ 7. UI PATTERNS & COPY
+================================================================================
+
+Status chips:
+  pending   → amber  "Pending approval"
+  approved  → green  "Approved"
+  rejected  → red    "Rejected"
+  withdrawn → grey   "Withdrawn"
+
+Strategy badges (on rule cards):
+  USERS            → "Named approvers (N)"
+  ROLE             → "Role-based (N)"
+  REPORTS_TO       → "Reporting chain (N level)"
+  DEPARTMENT_HEAD  → "Department head"
+
+Amount formatting by amount_field:
+  "days"   → "{n} day(s)"
+  "amount" → "₹ {n.toLocaleString('en-IN')}"
+  "qty"    → "{n} units"
+
+Self-approval: the backend auto-strips the initiator from resolved approvers.
+If the remaining list is empty, you'll see reason="empty_resolution" in the
+simulator — flag this to admins with a fix hint.
+
+================================================================================
+ 8. ERROR HANDLING
+================================================================================
+
+HTTP codes from approval endpoints:
+  200  OK
+  201  Request created
+  400  Validation error (bad payload, missing strategy fields, already
+       acted, not authorized to act on this request)
+  401  Unauthenticated
+  403  Missing permission
+  404  Rule/request not found
+  500  Server error
+
+Common business errors (400 body.message):
+  "source_type and source_ref are required"
+  "amount must be numeric"
+  "You are not authorized to act on this request"
+  "Request already approved|rejected|withdrawn"
+  "You have already approved this request"
+  "Only the initiator can withdraw"
+  "Approval rule for X matched a band but resolved to 0 approvers (check
+   role holders / reportsTo chain)"   ← show admin fix hint
+
+================================================================================
+ 9. CHECKLIST FOR GO-LIVE
+================================================================================
+
+ [ ] Settings > Approval Rules screen wired
+ [ ] Simulator works and shows resolved approvers
+ [ ] "My Pending Approvals" inbox reads pending-for-me
+ [ ] Approve / Reject / Comment / Withdraw actions call new endpoints
+ [ ] Source-doc details (leave, PO) show approval status chip + link to
+     request detail
+ [ ] Permission-gated: approval.rules.create hides admin screens for users
+     without it
+ [ ] i18n strings for the 4 strategies and the 4 statuses
+
+================================================================================
+ 10. DEFAULT RULES SHIPPED (seed, idempotent — won't overwrite customisations)
+================================================================================
+
+ LeaveRequest     days    0-2 | REPORTS_TO L1 | Manager
+                          2-5 | REPORTS_TO L2 | Mgr + Dept Head
+                          5+  | ROLE           | HR_HEAD + CEO
+
+ PurchaseRequest  ₹       0-25k    | DEPARTMENT_HEAD
+                          25k-2L   | ROLE: PROJECT_MANAGER
+                          2L+      | ROLE: PROJECT_HEAD + CFO
+
+ PurchaseOrder    ₹       0-5L     | ROLE: PROCUREMENT_HEAD
+                          5L+      | ROLE: CFO + CEO
+
+ WorkOrder        ₹       0-10L    | ROLE: PROJECT_MANAGER
+                          10L+     | ROLE: PROJECT_HEAD + MD
+
+ PaymentVoucher   ₹       0-50k    | ROLE: ACCOUNTS_HEAD
+                          50k-5L   | ROLE: FINANCE_HEAD
+                          5L+      | ROLE: CFO + MD
+
+ WeeklyBilling    ₹       all      | ROLE: SITE_MANAGER + PROJECT_HEAD
+
+ BankTransfer     ₹       0-1L     | ROLE: FINANCE_HEAD
+                          1L+      | ROLE: CFO + MD
+
+ ClientBilling    ₹       all      | ROLE: PROJECT_HEAD
+
+ JournalEntry     ₹       50k+     | ROLE: ACCOUNTS_HEAD
+
+ Seeded named roles (for ROLE strategy):
+   CEO, MD, CFO, FINANCE_HEAD, ACCOUNTS_HEAD, HR_HEAD, PROJECT_HEAD,
+   PROJECT_MANAGER, PROCUREMENT_HEAD, SITE_MANAGER, DEPT_HEAD, SUPERVISOR
+
+================================================================================
+ END
+================================================================================

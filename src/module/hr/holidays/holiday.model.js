@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const holidaySchema = new mongoose.Schema(
   {
@@ -17,6 +18,8 @@ const holidaySchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+
+holidaySchema.plugin(auditPlugin, { entity_type: "Holiday" });
 
 const HolidayModel = mongoose.model("Holiday", holidaySchema);
 export default HolidayModel;

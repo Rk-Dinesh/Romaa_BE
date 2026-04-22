@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { auditPlugin } from "../../../audit/auditlog.plugin.js";
 
 
 // ---LEVEL 4: Measurement Details (The "Sub-Item") ---
@@ -68,6 +69,8 @@ const BillingSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+
+BillingSchema.plugin(auditPlugin, { entity_type: "BillingEstimate", entity_no_field: "bill_id" });
 
 const BillingEstimateModel = mongoose.model("billingestimate", BillingSchema);
 
