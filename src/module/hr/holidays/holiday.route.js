@@ -13,9 +13,9 @@ CalendarRoute.get("/list",    getHolidays);
 CalendarRoute.get("/listall", getHolidaysList);
 
 // HR admin writes
-CalendarRoute.post("/add",          verifyJWT, verifyPermission("hr", "holidays", "create"), addHoliday);
-CalendarRoute.put("/update/:id",    verifyJWT, verifyPermission("hr", "holidays", "edit"),   updateHoliday);
-CalendarRoute.delete("/delete/:id", verifyJWT, verifyPermission("hr", "holidays", "delete"), deleteHoliday);
-CalendarRoute.post("/uploadcsv",    verifyJWT, verifyPermission("hr", "holidays", "create"), diskUpload.single("file"), bulkInsertHolidaysController);
+CalendarRoute.post("/add",          verifyJWT, verifyPermission("hr", "attendance", "create"), addHoliday);
+CalendarRoute.put("/update/:id",    verifyJWT, verifyPermission("hr", "attendance", "edit"),   updateHoliday);
+CalendarRoute.delete("/delete/:id", verifyJWT, verifyPermission("hr", "attendance", "delete"), deleteHoliday);
+CalendarRoute.post("/uploadcsv",    verifyJWT, verifyPermission("hr", "attendance", "create"), diskUpload.single("file"), bulkInsertHolidaysController);
 
 export default CalendarRoute;

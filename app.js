@@ -42,6 +42,8 @@ import billingRouter from "./src/module/finance/clientbilling/clientbilling/clie
 import clientCNRouter from "./src/module/finance/clientcreditnote/clientcreditnote.route.js";
 import steelestimaterouter from "./src/module/project/CBEstimates/steelestimate/steelestimate.route.js";
 import machinerylogrouter from "./src/module/assets/machinerylogs/machinerylogs.route.js";
+import fuelTelemetryRouter from "./src/module/assets/fueltelemetry/fueltelemetry.route.js";
+import { startFuelSyncCron } from "./utils/fuelSyncCron.js";
 import AttendanceRoute from "./src/module/hr/userAttendance/userAttendance.route.js";
 import CalendarRoute from "./src/module/hr/holidays/holiday.route.js";
 import LeaveRoute from "./src/module/hr/leave/leaverequest.route.js";
@@ -134,6 +136,7 @@ connectDB().then(() => {
 });
 startAbsenteeismCron();
 startYearEndLeaveResetCron();
+startFuelSyncCron();
 
 // Daily: process journal entries scheduled for auto-reversal
 cron.schedule("0 1 * * *", async () => {
@@ -208,7 +211,14 @@ app.use(
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Idempotency-Key",   // consumed by idempotencyMiddleware on POSTs
+      "X-Correlation-Id",    // consumed by correlationIdMiddleware
+      "If-None-Match",       // ETag conditional GETs
+    ],
+    exposedHeaders: ["X-Correlation-Id", "ETag"],
   }),
 );
 
@@ -286,6 +296,7 @@ app.use("/clientcreditnote", clientCNRouter);
 app.use("/clientbilling", billingRouter);
 app.use("/steelestimate", steelestimaterouter);
 app.use("/machinerylogs", machinerylogrouter);
+app.use("/fueltelemetry", fuelTelemetryRouter);
 app.use("/attendance", AttendanceRoute);
 app.use("/calendar", CalendarRoute);
 app.use("/leave", LeaveRoute);

@@ -59,6 +59,19 @@ const MachineryAssetSchema = new mongoose.Schema(
     lastReadingDate: { type: Date },
     totalFuelConsumed: { type: Number, default: 0 },
 
+    // --- Fuel telemetry summary (auto-updated by fuelSync cron) ---
+    fuelTelemetry: {
+      lastSyncAt:      { type: Date },
+      lastFuelReading: { type: Number },
+      lastTankCapacity:{ type: Number },
+      lastFuelPercent: { type: Number },
+      lastStatus:      { type: String },   // IDLE / MOVING / etc
+      lastIgnition:    { type: String },
+      lastLocation:    { type: String },
+      lastReadingAt:   { type: Date },     // datetime from provider
+      lastError:       { type: String },   // last fetch error message, if any
+    },
+
     // --- 6. Compliance & Certificates (Critical for Alerts) ---
     // Storing dates here allows easy queries like: "Find assets with Insurance expiring in 30 days"
     compliance: {

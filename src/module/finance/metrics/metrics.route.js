@@ -8,7 +8,7 @@ const metricsRouter = Router();
 metricsRouter.get(
   "/metrics",
   verifyJWT,
-  verifyPermission("finance", "settings", "read"),
+  verifyPermission("finance", "finance_settings", "read"),
   (_req, res) => {
     res.status(200).json({ status: true, data: getAll() });
   },
