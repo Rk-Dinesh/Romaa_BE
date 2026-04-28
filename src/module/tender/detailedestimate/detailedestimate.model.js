@@ -49,7 +49,8 @@ const DetailedEstimateSchema = new mongoose.Schema({
     generalabstract: { type: Array, default: [] },
     billofqty: { type: Array, default: [] },
     customheadings: { type: [HeadingSchema], default: [] }, // any number of user-defined headings
-    total_spent: { type: Object, default: {} }
+    total_spent: { type: Object, default: {} },
+    is_freeze: { type: Boolean, default: false }
 }, { _id: false });
 
 // Main Document Schema

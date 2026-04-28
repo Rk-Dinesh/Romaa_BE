@@ -32,17 +32,39 @@ export const detailedEstimateCustomHeading = async (req, res) => {
 export const extractHeadingInpairs = async (req, res) => {
   try {
     const { tender_id } = req.query;
-    const result =
+    const { headingPairs, is_freeze } =
       await detailedestimateService.extractHeadingsInPairs({ tender_id });
-    res
-      .status(200)
-      .json({
-        status: true,
-        message: "Detailed Estimate heading pairs retrieved successfully.",
-        data: result,
-      });
+    res.status(200).json({
+      status: true,
+      is_freeze,
+      message: "Detailed Estimate heading pairs retrieved successfully.",
+      data: headingPairs,
+    });
   } catch (error) {
     res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+export const freezeDetailedEstimateController = async (req, res) => {
+  try {
+    const { tender_id } = req.query;
+    const { is_freeze } = req.body;
+    const doc = await detailedestimateService.freezeDetailedEstimate({ tender_id, is_freeze });
+    return res.status(200).json({ status: true, message: "Frozen successfully", data: doc });
+  } catch (error) {
+    const code = error.message.includes("not found") ? 404 : 400;
+    return res.status(code).json({ status: false, message: error.message });
+  }
+};
+
+export const deleteHeadingController = async (req, res) => {
+  try {
+    const { tender_id, heading } = req.query;
+    const doc = await detailedestimateService.deleteHeading({ tender_id, heading });
+    return res.status(200).json({ status: true, message: "Heading deleted successfully", data: doc });
+  } catch (error) {
+    const code = error.message.includes("not found") ? 404 : 400;
+    return res.status(code).json({ status: false, message: error.message });
   }
 };
 
@@ -109,7 +131,7 @@ export const bulkInsertCustomHeadingsControllerNew = async (req, res, next) => {
   let filePath = null;
   try {
     if (!req.file) return res.status(400).json({ status: false, message: "No file uploaded. Please attach a valid CSV or Excel file." });
-    const { tender_id } = req.query;
+    const { tender_id, replace } = req.query;
     const { nametype } = req.body;
     if (!tender_id)
       return res.status(400).json({ status: false, message: "Tender ID is required." });
@@ -123,6 +145,10 @@ export const bulkInsertCustomHeadingsControllerNew = async (req, res, next) => {
 
     if (dataRows.length === 0) {
       return res.status(400).json({ status: false, message: "The uploaded file is empty. Please provide a file with valid Detailed Estimate data." });
+    }
+
+    if (replace === "true") {
+      await detailedestimateService.deleteAbstractDataByNametype(tender_id, nametype);
     }
 
     const result =
@@ -141,7 +167,6 @@ export const bulkInsertCustomHeadingsControllerNew = async (req, res, next) => {
   } catch (error) {
     res.status(400).json({ status: false, message: error.message });
   } finally {
-    // 5. Cleanup: Delete file after processing
     if (filePath && fs.existsSync(filePath)) {
       try {
         fs.unlinkSync(filePath);
@@ -218,6 +243,17 @@ export const addPhaseBreakdownToAbstractController = async (req, res) => {
       });
   } catch (error) {
     return res.status(400).json({ status: false, message: error.message });
+  }
+};
+
+export const deleteAbstractDataByNametypeController = async (req, res) => {
+  try {
+    const { tender_id, nametype } = req.query;
+    await detailedestimateService.deleteAbstractDataByNametype(tender_id, nametype);
+    return res.status(200).json({ status: true, message: "Data deleted successfully" });
+  } catch (error) {
+    const code = error.message.includes("not found") ? 404 : 400;
+    return res.status(code).json({ status: false, message: error.message });
   }
 };
 

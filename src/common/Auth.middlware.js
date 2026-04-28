@@ -37,38 +37,32 @@ export const verifyJWT = async (req, res, next) => {
 
 // --- 2. Authorization Middleware (Are you allowed to do this?) ---
 // Usage: verifyPermission('tender', 'tenders', 'create')
+//        verifyPermission('dashboard', null, 'read')   // simple module
+//
+// Delegates to RoleSchema.methods.can() — see role.model.js. Keeping the
+// authorization logic in one place ensures middleware, crons, and any other
+// caller all answer "can this role do X?" the same way.
 export const verifyPermission = (module, subModule, action = "read") => {
   return (req, res, next) => {
     try {
-      if (!req.user || !req.user.role) {
+      const role = req.user?.role;
+      if (!role) {
         return res.status(403).json({ status: false, message: "Access Denied: No Role Assigned" });
       }
 
-      const permissions = req.user.role.permissions;
+      // role is populated by verifyJWT, so .can() is on the Mongoose document.
+      // Defensive fallback: if someone calls this without populate(), check raw.
+      const ok =
+        typeof role.can === "function"
+          ? role.can(module, subModule, action)
+          : !!(subModule
+              ? role.permissions?.[module]?.[subModule]?.[action]
+              : role.permissions?.[module]?.[action]);
 
-      // 1. Check if Module exists
-      if (!permissions[module]) {
-        return res.status(403).json({ status: false, message: "Access Denied: Module Restricted" });
-      }
-
-      // 2. Check Permission Logic
-      let hasAccess = false;
-
-      if (!subModule) {
-        // Simple Module (e.g. Dashboard)
-        hasAccess = permissions[module][action] === true;
-      } else {
-        // Nested Module (e.g. Tender -> Clients)
-        // Check if submodule exists first
-        if (permissions[module][subModule]) {
-          hasAccess = permissions[module][subModule][action] === true;
-        }
-      }
-
-      if (!hasAccess) {
-        return res.status(403).json({ 
-          status: false, 
-          message: `Access Denied: You do not have '${action}' permission for ${module}/${subModule || ""}` 
+      if (!ok) {
+        return res.status(403).json({
+          status: false,
+          message: `Access Denied: You do not have '${action}' permission for ${module}/${subModule || ""}`,
         });
       }
 

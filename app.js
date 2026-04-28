@@ -43,6 +43,13 @@ import clientCNRouter from "./src/module/finance/clientcreditnote/clientcreditno
 import steelestimaterouter from "./src/module/project/CBEstimates/steelestimate/steelestimate.route.js";
 import machinerylogrouter from "./src/module/assets/machinerylogs/machinerylogs.route.js";
 import fuelTelemetryRouter from "./src/module/assets/fueltelemetry/fueltelemetry.route.js";
+import taggedAssetRouter from "./src/module/assets/taggedasset/taggedasset.route.js";
+import bulkInventoryRouter from "./src/module/assets/bulkinventory/bulkinventory.route.js";
+import assetIssuanceRouter from "./src/module/assets/assetissuance/assetissuance.route.js";
+import assetCalibrationRouter from "./src/module/assets/assetcalibration/assetcalibration.route.js";
+import AssetIssuanceService from "./src/module/assets/assetissuance/assetissuance.service.js";
+import AssetCalibrationService from "./src/module/assets/assetcalibration/assetcalibration.service.js";
+import NotificationService from "./src/module/notifications/notification.service.js";
 import { startFuelSyncCron } from "./utils/fuelSyncCron.js";
 import AttendanceRoute from "./src/module/hr/userAttendance/userAttendance.route.js";
 import CalendarRoute from "./src/module/hr/holidays/holiday.route.js";
@@ -53,6 +60,7 @@ import { startAbsenteeismCron } from "./utils/dailyAbsenteeism.js";
 import { startYearEndLeaveResetCron } from "./utils/yearEndLeaveReset.js";
 import cron from "node-cron";
 import hsnSacRouter from "./src/module/master/hsnmaster/hsnsac.router.js";
+import assetCategoryRouter from "./src/module/master/assetcategory/assetcategory.route.js";
 import notificationRoute from "./src/module/notifications/notification.route.js";
 import dashboardRoute from "./src/module/dashboard/dashboard.route.js";
 import dlpRouter from "./src/module/site/dlp/dlp.route.js";
@@ -182,6 +190,72 @@ cron.schedule("0 3 1 * *", async () => {
   }
 });
 
+// Daily 06:00: flip ISSUED → OVERDUE for any asset issuance past its expected
+// return date, and notify the asset.issuance audience about the new overdue list.
+cron.schedule("0 6 * * *", async () => {
+  try {
+    const sweep = await AssetIssuanceService.markOverdue();
+    logger.info(`Asset issuance overdue sweep: marked=${sweep.modified}`);
+
+    if (sweep.modified > 0) {
+      const overdue = await AssetIssuanceService.getOverdue();
+      const roleIds = await NotificationService.getRoleIdsByPermission("asset", "issuance", "read");
+      if (roleIds.length > 0) {
+        await NotificationService.notify({
+          title: `${overdue.length} asset issuance(s) overdue`,
+          message: `Issuances past their expected return date were just flagged. Please follow up with custodians.`,
+          audienceType: "role",
+          roles: roleIds,
+          category: "alert",
+          priority: "high",
+          module: "asset",
+          actionUrl: "/assetissuance/overdue",
+          actionLabel: "View overdue issuances",
+        });
+      }
+    }
+  } catch (err) {
+    logger.error("Asset issuance overdue cron error:", err.message);
+  }
+});
+
+// Daily 06:30: notify asset.calibration audience about calibrations due in the
+// next 30 days (or already overdue). Uses upsert-by-day in NotificationService —
+// safe to run daily; duplicate banners aren't a concern at this volume.
+cron.schedule("30 6 * * *", async () => {
+  try {
+    const due = await AssetCalibrationService.getDueReport(30);
+    if (!due || due.length === 0) {
+      logger.info("Calibration-due cron: nothing due in next 30 days");
+      return;
+    }
+    const roleIds = await NotificationService.getRoleIdsByPermission("asset", "calibration", "read");
+    if (roleIds.length === 0) {
+      logger.info("Calibration-due cron: no roles with asset.calibration.read — skipping");
+      return;
+    }
+    const now = Date.now();
+    const overdueCount = due.filter((d) => new Date(d.next_due_date).getTime() < now).length;
+    const upcomingCount = due.length - overdueCount;
+    await NotificationService.notify({
+      title: `Calibration due: ${due.length} asset(s)`,
+      message:
+        `${overdueCount} overdue, ${upcomingCount} due within 30 days. ` +
+        `Review the calibration due report and schedule with your accreditation agency.`,
+      audienceType: "role",
+      roles: roleIds,
+      category: "reminder",
+      priority: overdueCount > 0 ? "high" : "medium",
+      module: "asset",
+      actionUrl: "/assetcalibration/due-report",
+      actionLabel: "View calibration due report",
+    });
+    logger.info(`Calibration-due cron: notified roles=${roleIds.length} overdue=${overdueCount} upcoming=${upcomingCount}`);
+  } catch (err) {
+    logger.error("Calibration-due cron error:", err.message);
+  }
+});
+
 //middleware
 
 // app.use(
@@ -297,12 +371,17 @@ app.use("/clientbilling", billingRouter);
 app.use("/steelestimate", steelestimaterouter);
 app.use("/machinerylogs", machinerylogrouter);
 app.use("/fueltelemetry", fuelTelemetryRouter);
+app.use("/taggedasset", taggedAssetRouter);
+app.use("/bulkinventory", bulkInventoryRouter);
+app.use("/assetissuance", assetIssuanceRouter);
+app.use("/assetcalibration", assetCalibrationRouter);
 app.use("/attendance", AttendanceRoute);
 app.use("/calendar", CalendarRoute);
 app.use("/leave", LeaveRoute);
 app.use("/geofence", GeofenceRoute);
 app.use("/payroll", PayrollRoute);
 app.use("/hsn", hsnSacRouter);
+app.use("/assetcategory", assetCategoryRouter);
 app.use("/notification", notificationRoute);
 app.use("/dashboard", dashboardRoute);
 app.use("/dlp", dlpRouter);

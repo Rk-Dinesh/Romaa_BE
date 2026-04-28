@@ -23,6 +23,7 @@ const WorkOrderRequestSchema = new mongoose.Schema(
       {
         materialName: String,
         detailedDescription: String,
+        boqDescription: { type: String, default: "" },
         quantity: Number,
         unit: String,
         ex_quantity: Number,

@@ -5,38 +5,43 @@ import RoleService from "../src/module/role/role.service.js";
 import CurrencyModel from "../src/module/finance/currency/currency.model.js";
 import FinanceSettingsModel from "../src/module/finance/settings/financesettings.model.js";
 import ApprovalRuleModel, { APPROVER_STRATEGY } from "../src/module/approval/approvalrule.model.js";
+import AssetCategoryService from "../src/module/master/assetcategory/assetcategory.service.js";
+import IdcodeServices from "../src/module/idcode/idcode.service.js";
 
 // --- 1. Smart Permission Generator ---
+// Derives the "all-true" permission tree directly from RoleModel.schema.
+// The Role schema is the single source of truth — adding a new module or
+// sub-module there is the only place to update. The seed picks it up
+// automatically on next boot, so drift between schema and seed is impossible.
+const ACTION_KEYS = ["read", "create", "edit", "delete"];
+
 const getFullPermissions = () => {
-  const allActions = { read: true, create: true, edit: true, delete: true };
-  
-  // Define the structure matching your Role Schema
-  const schemaStructure = {
-    tender: ["clients", "tenders", "dlp", "emd", "security_deposit", "project_penalty"],
-    project: ["boq_cost", "detailed_estimate", "drawing_boq", "wbs", "schedule", "wo_issuance", "client_billing", "work_progress", "material_quantity", "stocks", "assets"],
-    purchase: ["vendor_supplier", "request", "enquiry", "order", "goods_receipt", "bill", "machinery_tracking", "stocks", "assets"],
-    site: ["boq_site", "detailed_estimate", "site_drawing", "purchase_request", "material_received", "material_issued", "stock_register", "work_done", "daily_labour_report", "machinery_entry", "site_assets", "weekly_billing", "reconciliation", "planned_vs_achieved"],
-    hr: ["employee", "attendance", "leave", "payroll", "holidays", "geofence", "contract_nmr", "nmr", "nmr_attendance"],
-    finance: ["client_billing", "purchase_bill", "contractor_bill", "debit_credit_note", "internal_transfer", "bank_transaction", "journal_entry", "banks", "tds", "cash_entry", "ledger_entry", "supplier_outstanding", "overall_expenses", "company_bank_details", "trial_balance", "profit_loss", "general_ledger", "balance_sheet", "cash_flow", "gstr1", "gstr2b", "gstr3b", "itc_reversal", "tds_register", "bank_reconciliation", "recurring_vouchers", "budgets", "aging_reports", "fixed_assets", "form_26q", "einvoice", "ewaybill", "gst_matcher", "advance_allocation", "retention", "audit_trail", "form_16", "form_16a", "form_24q", "gstr9", "contract_poc", "approval", "consolidation", "expense_voucher", "ledger_seal", "retention_ledger", "statutory_deadline", "supplier_scorecard", "year_end_close", "form_26as", "finance_attachment"],
-    report: ["project_dashboard", "work_analysis", "client_billing", "financial_report", "pnl", "cash_flow", "expenses_report", "vendor_report", "reconciliation", "actual_vs_billed", "cost_to_complete", "planned_vs_actual", "labour_productivity", "machine_productivity", "collection_projection"],
-    approval: ["requests", "my_pending", "rules", "simulator"],
-    audit:    ["trail"],
-    settings: ["user", "roles", "master", "assets", "hsn_sac", "approval_config"]
-  };
+  const schemaTree = RoleModel.schema.tree.permissions;
+  const allTrue = { read: true, create: true, edit: true, delete: true };
+  const out = {};
 
-  const permissions = {
-    dashboard: { read: true } // Simple module
-  };
+  for (const [moduleName, moduleDef] of Object.entries(schemaTree)) {
+    if (!moduleDef || typeof moduleDef !== "object") continue;
 
-  // Loop through structure to generate "All True" permissions
-  for (const [moduleName, subModules] of Object.entries(schemaStructure)) {
-    permissions[moduleName] = {};
-    subModules.forEach(sub => {
-      permissions[moduleName][sub] = allActions;
-    });
+    // Sub-module names = keys that aren't action keys or Mongoose internals.
+    const subKeys = Object.keys(moduleDef).filter(
+      (k) => !ACTION_KEYS.includes(k) && k !== "_id"
+    );
+
+    if (subKeys.length === 0) {
+      // Simple module like `dashboard` — only direct action keys.
+      out[moduleName] = {};
+      for (const action of ACTION_KEYS) {
+        if (moduleDef[action]) out[moduleName][action] = true;
+      }
+    } else {
+      // Nested module — each sub-key gets all four actions.
+      out[moduleName] = {};
+      for (const sub of subKeys) out[moduleName][sub] = { ...allTrue };
+    }
   }
 
-  return permissions;
+  return out;
 };
 
 // --- 2. Seed Execution Function ---
@@ -44,24 +49,30 @@ export const seedDatabase = async () => {
   try {
     console.log("🌱 Checking Database Seeds...");
 
-    // --- A. Check & Create DEV Role ---
+    // --- A. Check & Create/Refresh DEV Role ---
+    // DEV is the super-admin role — its permissions are always "everything in
+    // the schema." We backfill on every boot so that adding a new module to
+    // RoleSchema instantly grants DEV access without a manual migration.
+    const devPermissions = getFullPermissions();
     let devRole = await RoleModel.findOne({ roleName: "DEV" });
 
     if (devRole) {
-      console.log("✅ DEV Role already exists.");
+      // Atomically replace permissions with the freshly-derived all-true tree.
+      // findByIdAndUpdate avoids change-detection issues with deeply-nested paths.
+      devRole = await RoleModel.findByIdAndUpdate(
+        devRole._id,
+        { permissions: devPermissions },
+        { new: true, runValidators: true }
+      );
+      console.log("✅ DEV Role exists — permissions refreshed from schema.");
     } else {
       console.log("⚠️ DEV Role not found. Creating...");
-      
-      // 🔥 FIX: Actually calling the function now
-      const devPermissions = getFullPermissions();
-
       // Use RoleService to ensure 'ROL-XXX' ID generation works
       devRole = await RoleService.createRole({
         roleName: "DEV",
         description: "System Developer / Super Admin",
-        permissions: devPermissions 
+        permissions: devPermissions,
       });
-      
       console.log(`🚀 Created DEV Role: ${devRole.roleName} (${devRole.role_id})`);
     }
 
@@ -111,6 +122,12 @@ export const seedDatabase = async () => {
 
     // --- F. Seed default approval rule matrix (idempotent) ---
     await seedApprovalRules();
+
+    // --- G. Seed asset category master (idempotent) ---
+    await seedAssetCategories();
+
+    // --- H. Register ID code prefixes for new asset modules (idempotent) ---
+    await seedAssetIdCodes();
 
   } catch (error) {
     console.error("❌ Seeding Failed:", error.message);
@@ -300,6 +317,37 @@ const seedApprovalRules = async () => {
     console.log(`✅ Approval rules seeded (${created} new, ${DEFAULT_APPROVAL_RULES.length - created} existing).`);
   } catch (error) {
     console.error("❌ Approval rules seed failed:", error.message);
+  }
+};
+
+// IdcodeServices.addIdCode is idempotent — it returns the existing entry
+// rather than creating a duplicate. Safe to call on every boot.
+const seedAssetIdCodes = async () => {
+  try {
+    const idCodes = [
+      { name: "TAGGED_ASSET",      prefix: "TGA" },
+      { name: "BULK_INVENTORY",    prefix: "BLK" },
+      { name: "BULK_INV_TXN",      prefix: "BIT" },
+      { name: "ASSET_ISSUANCE",    prefix: "ISS" },
+      { name: "ASSET_CALIBRATION", prefix: "CAL" },
+    ];
+    for (const c of idCodes) {
+      await IdcodeServices.addIdCode(c.name, c.prefix);
+    }
+    console.log(`✅ Asset ID codes registered (${idCodes.length}).`);
+  } catch (error) {
+    console.error("❌ Asset ID code seed failed:", error.message);
+  }
+};
+
+const seedAssetCategories = async () => {
+  try {
+    const result = await AssetCategoryService.seedDefaults();
+    console.log(
+      `✅ Asset categories seeded (${result.inserted} new, ${result.existing} existing of ${result.totalSeed}).`
+    );
+  } catch (error) {
+    console.error("❌ Asset category seed failed:", error.message);
   }
 };
 

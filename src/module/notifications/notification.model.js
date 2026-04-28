@@ -62,6 +62,7 @@ const NotificationSchema = new mongoose.Schema(
         "finance",
         "report",
         "settings",
+        "asset",
         "system",
       ],
     },

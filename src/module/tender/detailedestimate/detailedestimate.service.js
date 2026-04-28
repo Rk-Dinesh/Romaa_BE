@@ -43,7 +43,7 @@ class detailedestimateService {
   static async extractHeadingsInPairs({ tender_id }) {
     const detailedEstimate = await DetailedEstimateModel.findOne({ tender_id });
     if (!detailedEstimate || detailedEstimate.detailed_estimate.length === 0) {
-      return [];
+      return { headingPairs: [], is_freeze: false };
     }
 
     const customHeadings = detailedEstimate.detailed_estimate[0].customheadings;
@@ -57,7 +57,30 @@ class detailedestimateService {
       };
     });
 
-    return headingPairs;
+    return { headingPairs, is_freeze: detailedEstimate.is_freeze };
+  }
+
+  static async freezeDetailedEstimate({ tender_id, is_freeze }) {
+    if (!tender_id) throw new Error("Tender ID is required.");
+    const doc = await DetailedEstimateModel.findOneAndUpdate(
+      { tender_id },
+      { is_freeze },
+      { new: true },
+    );
+    if (!doc) throw new Error("Detailed Estimate record not found for the specified Tender ID.");
+    return doc;
+  }
+
+  static async deleteHeading({ tender_id, heading }) {
+    if (!tender_id) throw new Error("Tender ID is required.");
+    if (!heading) throw new Error("Heading name is required.");
+    const doc = await DetailedEstimateModel.findOneAndUpdate(
+      { tender_id },
+      { $pull: { "detailed_estimate.0.customheadings": { heading } } },
+      { new: true },
+    );
+    if (!doc) throw new Error("Detailed Estimate record not found for the specified Tender ID.");
+    return doc;
   }
 
   static async bulkInsertCustomHeadingsFromCsv(tender_id, nametype, csvRows) {
@@ -767,6 +790,57 @@ class detailedestimateService {
       balance_quantity: abstractItem.balance_quantity,
       balance_amount: abstractItem.balance_amount,
     };
+  }
+
+  static async deleteAbstractDataByNametype(tender_id, nametype) {
+    if (!tender_id) throw new Error("Tender ID is required.");
+    if (!nametype) throw new Error("Nametype is required.");
+
+    const baseHeading = nametype.toLowerCase();
+    const abstractKey = `${baseHeading}abstract`;
+    const detailedKey = `${baseHeading}detailed`;
+
+    const doc = await DetailedEstimateModel.findOne({ tender_id });
+    if (!doc) throw new Error("Detailed Estimate record not found for the specified Tender ID.");
+    if (!doc.detailed_estimate.length) throw new Error("No Detailed Estimate records found.");
+
+    const estimate = doc.detailed_estimate[0];
+    const headingIdx = estimate.customheadings?.findIndex((h) => h.heading === baseHeading) ?? -1;
+
+    const setOps = {};
+    if (headingIdx !== -1) {
+      setOps[`detailed_estimate.0.customheadings.${headingIdx}.${abstractKey}`] = [];
+      setOps[`detailed_estimate.0.customheadings.${headingIdx}.${detailedKey}`] = [];
+    }
+
+    // Clear the heading's contribution from BOQ and total_spent using MongoDB operators
+    await DetailedEstimateModel.updateOne(
+      { tender_id },
+      {
+        ...(Object.keys(setOps).length && { $set: setOps }),
+        $unset: {
+          [`detailed_estimate.0.total_spent.${baseHeading}`]: "",
+          [`detailed_estimate.0.billofqty.$[].${baseHeading}quantity`]: "",
+          [`detailed_estimate.0.billofqty.$[].${baseHeading}amount`]: "",
+        },
+        $pull: { "detailed_estimate.0.generalabstract": { heading: baseHeading } },
+      },
+    );
+
+    // Recalculate BOQ totals now that the dynamic columns are removed
+    const updated = await DetailedEstimateModel.findOne({ tender_id });
+    const updatedEstimate = updated.detailed_estimate[0];
+
+    if (Array.isArray(updatedEstimate.billofqty) && updatedEstimate.billofqty.length > 0) {
+      const boqSetOps = {};
+      updatedEstimate.billofqty.forEach((item, idx) => {
+        const quantityKeys = Object.keys(item).filter((k) => k.endsWith("quantity") && k !== "total_quantity");
+        const amountKeys = Object.keys(item).filter((k) => k.endsWith("amount") && k !== "total_amount");
+        boqSetOps[`detailed_estimate.0.billofqty.${idx}.total_quantity`] = quantityKeys.reduce((sum, k) => sum + (Number(item[k]) || 0), 0);
+        boqSetOps[`detailed_estimate.0.billofqty.${idx}.total_amount`] = amountKeys.reduce((sum, k) => sum + (Number(item[k]) || 0), 0);
+      });
+      await DetailedEstimateModel.updateOne({ tender_id }, { $set: boqSetOps });
+    }
   }
 
   static async addPhaseBreakdownToDetailedService(

@@ -6,14 +6,15 @@ const MachineryAssetSchema = new mongoose.Schema(
     // --- 1. Basic Identity ---
     assetId: { type: String, required: true, unique: true, index: true }, // e.g., "EX-01"
     assetName: { type: String, required: true }, // e.g., "Hitachi Zaxis 220"
-    assetCategory: {
-      type: String,
-      enum: ["Heavy Earthmover", "Transport Vehicle", "Stationary Equipment", "Lifting"],
-      required: true
-    },
+    // Free-string category — driven by AssetCategoryMaster (settings module).
+    // Existing rows with legacy values ("Heavy Earthmover" etc.) remain valid.
+    assetCategory: { type: String, required: true },
+    // Optional link to the master record so admin-defined metadata
+    // (trackingMode, requiresCompliance, requiresFuel, etc.) is reachable.
+    assetCategoryRef: { type: Schema.Types.ObjectId, ref: "AssetCategoryMaster", default: null },
     assetType: { type: String,
        enum: ["OWN ASSET", "RENTAL ASSET"],
-       required: true }, 
+       required: true },
 
     vendorId: { type: String },
     vendorName: { type: String },

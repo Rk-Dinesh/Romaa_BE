@@ -1,6 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
-import { addPhaseBreakdownToAbstractController, addPhaseBreakdownToDetailedController, bulkInsertCustomHeadingsController, bulkInsertCustomHeadingsControllerNew, detailedEstimateCustomHeading, extractHeadingInpairs, getBillOfQtyController, getCustomHeadingsByTenderAndNameTypeController, getGeneralAbstractController } from "./detailedestimate.controller.js";
+import { addPhaseBreakdownToAbstractController, addPhaseBreakdownToDetailedController, bulkInsertCustomHeadingsController, bulkInsertCustomHeadingsControllerNew, deleteAbstractDataByNametypeController, deleteHeadingController, detailedEstimateCustomHeading, extractHeadingInpairs, freezeDetailedEstimateController, getBillOfQtyController, getCustomHeadingsByTenderAndNameTypeController, getGeneralAbstractController } from "./detailedestimate.controller.js";
 
 const upload = multer({ dest: "uploads/" });
 
@@ -15,5 +15,8 @@ detailedestrouter.get("/getgeneralabstract", getGeneralAbstractController);
 detailedestrouter.get("/getbillofqty", getBillOfQtyController);
 detailedestrouter.post("/addphasebreakdown", addPhaseBreakdownToAbstractController);
 detailedestrouter.post("/addphasebreakdowndetailed", addPhaseBreakdownToDetailedController);
+detailedestrouter.put("/freeze", freezeDetailedEstimateController);
+detailedestrouter.delete("/deleteheading", deleteHeadingController);
+detailedestrouter.delete("/deletedatacustomhead", deleteAbstractDataByNametypeController);
 
 export default detailedestrouter;

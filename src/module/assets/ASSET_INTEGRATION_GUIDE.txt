@@ -1,0 +1,1177 @@
+================================================================================
+  ROMAA — ASSET MODULE
+  Full Backend → Frontend Integration Guide & UI Specification
+================================================================================
+
+Audience      : Frontend Engineering, Product, QA, DevOps
+Backend module: src/module/assets/  +  src/module/master/assetcategory/
+Status        : Production-ready (post-asset-module restructure, April 2026)
+Maintainer    : Backend team
+
+This document is the single source of truth for integrating the Asset module
+end-to-end. It covers the architecture, data models, every API endpoint, RBAC
+mapping, UI screens to build, common workflows, and edge cases.
+
+If something on the backend changes, this file changes with it.
+
+--------------------------------------------------------------------------------
+  CONTENTS
+--------------------------------------------------------------------------------
+
+  1.  Module Architecture
+  2.  Data Models (cheat sheet)
+  3.  API Reference
+        3.1  AssetCategoryMaster  (/assetcategory)
+        3.2  MachineryAsset       (/machineryasset)        — pre-existing
+        3.3  MachineryLogs        (/machinerylogs)         — pre-existing
+        3.4  FuelTelemetry        (/fueltelemetry)         — pre-existing
+        3.5  TaggedAsset          (/taggedasset)
+        3.6  BulkInventory        (/bulkinventory)
+        3.7  AssetIssuance        (/assetissuance)
+        3.8  AssetCalibration     (/assetcalibration)
+  4.  RBAC & Permissions
+  5.  UI Screens & Component Spec
+  6.  End-to-End Workflows
+  7.  Backend Cron Jobs
+  8.  Response Format & Error Conventions
+  9.  Edge Cases, Gotchas & Things You Should Not Do On The Frontend
+  10. Frontend Integration Checklist
+  11. Glossary
+
+
+
+================================================================================
+  1.  MODULE ARCHITECTURE
+================================================================================
+
+The Asset module is split by *behavioural class*, not by department. Each
+collection has a single responsibility, and a polymorphic Issuance log
+stitches them into a unified custody trail.
+
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │                       ASSET MODULE — HIGH LEVEL                          │
+  └──────────────────────────────────────────────────────────────────────────┘
+
+      AssetCategoryMaster  (Settings master — drives dropdowns + capability
+                            flags like requiresCompliance, requiresFuel,
+                            requiresGps, isConsumable, defaultUnit)
+                  │
+                  │  category_ref   (denormalized class/category onto each asset)
+                  │
+       ┌──────────┼──────────┬──────────────┬──────────────┐
+       ▼          ▼          ▼              ▼              ▼
+  MachineryAsset │   TaggedAsset    │    BulkInventory    │
+  (heavy: GPS/   │   (per-unit serial│   (qty-tracked     │
+   fuel/HMR/KMs) │    Tools/IT/Survey│    Formwork/PPE/   │
+                 │    Furniture/Site │    Fencing/Tarps)  │
+                 │    cabins)        │                    │
+       │                              │                    │
+       │ MachineDailyLog              │  BulkInventoryTxn  │
+       │ MaintenanceLog               │  (append-only      │
+       │ FuelTelemetry                │   stock ledger)    │
+       │                              │                    │
+       └──────────────┐               │                    │
+                       └──────┬────────┘                    │
+                              │                             │
+                              ▼                             ▼
+                       ┌──────────────────────────────────────────┐
+                       │           AssetIssuance                  │
+                       │   (polymorphic custody log)              │
+                       │   asset_kind = TAGGED | BULK | MACHINERY │
+                       └──────────────────────────────────────────┘
+
+                       AssetCalibration  ← writes back to TaggedAsset.compliance
+
+
+  Five collections you'll actually CRUD against from the frontend:
+
+    1. AssetCategoryMaster   — settings; admin-managed
+    2. MachineryAsset        — heavy machinery / vehicles
+    3. TaggedAsset           — small per-unit assets
+    4. BulkInventory         — quantity-based stock
+    5. AssetIssuance         — custody (cross-cutting)
+    6. AssetCalibration      — certificates (Survey/Lab only)
+
+  Two append-only ledgers that the frontend READS but should never write to
+  directly (the service layer posts these atomically as side-effects):
+
+    A. BulkInventoryTransaction
+    B. MaintenanceLog                (existing)
+
+
+
+================================================================================
+  2.  DATA MODELS — CHEAT SHEET
+================================================================================
+
+  AssetCategoryMaster                       (collection: assetcategorymasters)
+  -------------------------------------------------------------------------
+    code                    Unique business code  (e.g. "MAC-EARTHMOVING-EXCAVATOR")
+    assetClass              "Machinery" | "Vehicle" | "StationaryPlant" |
+                            "Tool" | "Formwork" | "SiteInfra" |
+                            "SafetyEquipment" | "Survey" | "IT" |
+                            "Furniture" | "Other"
+    category, subCategory   Display-friendly grouping (e.g. "Earthmoving" / "Excavator")
+    trackingMode            "HOURS" | "KILOMETERS" | "UNITS" | "QUANTITY" | "NONE"
+    defaultUnit             "Nos" | "Pair" | "Mtr" | "Sqm" | "Set" ...
+    requiresCompliance      Boolean — Insurance/FC/PUC mandatory? (vehicles)
+    requiresFuel            Boolean — fuel logging applicable?
+    requiresGps             Boolean — GPS telemetry expected?
+    requiresOperator        Boolean — skilled operator needed?
+    isConsumable            Boolean — PPE / single-use items
+    isActive                Boolean
+
+
+  MachineryAsset                                 (collection: machineryassets)
+  -------------------------------------------------------------------------
+    assetId                 "EX-01" (custom string ID, NOT ObjectId)
+    assetName               "Hitachi Zaxis 220"
+    assetCategory           Free string (legacy values still valid)
+    assetCategoryRef        ObjectId → AssetCategoryMaster   (NEW; optional)
+    assetType               "OWN ASSET" | "RENTAL ASSET"
+    serialNumber, modelNumber, chassisNumber, engineNumber, manufacturingYear
+    fuelType                "Diesel" | "Petrol" | "Electric"
+    fuelTankCapacity        Number (litres)
+    trackingMode            "HOURS" | "KILOMETERS" | "UNITS"
+    gps                     { isInstalled, deviceId, provider, lastPingDate,
+                              lastKnownLocation: {lat, lng, address} }
+    currentSite, projectId
+    currentStatus           "Active" | "Idle" | "Maintenance" | "Breakdown" | "Scrapped"
+    lastReading, lastReadingDate, totalFuelConsumed
+    fuelTelemetry           { lastSyncAt, lastFuelReading, lastFuelPercent, ... }
+    compliance              { insurancePolicyNo, insuranceExpiry, fitnessCertExpiry,
+                              pollutionCertExpiry, roadTaxExpiry, permitExpiry }
+    documents               [{ docType, docNumber, expiryDate, fileUrl, uploadedAt }]
+    purchaseDate, purchaseCost, supplierName, invoiceNumber
+
+
+  TaggedAsset                                       (collection: taggedassets)
+  -------------------------------------------------------------------------
+    asset_id                Auto: "TGA001", "TGA002", ...
+    asset_name              Free text
+    asset_category_ref      ObjectId → AssetCategoryMaster (REQUIRED)
+    asset_class             Denormalized from master ("Tool" | "IT" | ...)
+    category, sub_category  Denormalized from master
+    ownership               "OWNED" | "RENTED" | "LEASED"
+    vendor_id, vendor_name, rental_per_day, rental_start_date, rental_end_date
+    serial_number, model_number, manufacturer, manufacturing_year
+    specifications          Mixed (free-form: color/size/voltage/...)
+    purchase_date, purchase_cost, supplier_name, invoice_number
+    warranty                { starts_on, expires_on, vendor, coverage }
+    current_location_type   "SITE" | "STORE" | "ASSIGNED" | "TRANSIT" | "VENDOR"
+    current_site_id, current_site_name, current_store_name
+    assigned_to_employee_id, assigned_to_employee_name
+    status                  "ACTIVE" | "IN_STORE" | "ISSUED" | "UNDER_REPAIR" |
+                            "LOST" | "SCRAPPED"
+    condition               "NEW" | "GOOD" | "FAIR" | "POOR" | "DAMAGED"
+    compliance              { requires_calibration, last_calibration_date,
+                              next_calibration_due, last_certificate_number,
+                              last_certificate_url }
+    documents               [{ doc_type, doc_number, expiry_date, file_url }]
+    photos                  [String]  (S3 URLs)
+    qr_code, rfid_tag       String — for scan-based check-in/out
+    is_deleted              Boolean (soft-delete)
+
+
+  BulkInventory                                  (collection: bulkinventories)
+  -------------------------------------------------------------------------
+    item_id                 Auto: "BLK001", ...
+    item_name, brand, model, size, color
+    asset_category_ref, asset_class, category, sub_category
+    unit_of_measure         "Nos" | "Pair" | "Mtr" | "Sqm" | "Set" — REQUIRED
+    stock_locations         [{ location_type ("SITE"|"STORE"), location_id,
+                                location_name,
+                                qty_available, qty_in_use, qty_damaged }]
+    total_qty_available     Rollup (auto-recomputed on every txn) — read-only
+    total_qty_in_use        Rollup
+    total_qty_damaged       Rollup
+    min_stock_level         For low-stock alerting
+    reorder_qty
+    standard_cost           Per-unit cost
+    is_reusable             Formwork=true, PPE=false
+    is_consumable
+    has_expiry, shelf_life_months
+    certifications          [String]  (e.g. ["IS 2925", "EN 397"])
+    is_active
+
+
+  BulkInventoryTransaction                (collection: bulkinventorytransactions)
+  -------------------------------------------------------------------------
+    txn_id                  "BIT001"
+    item_ref                ObjectId → BulkInventory
+    item_id_label, item_name (denormalized)
+    txn_type                "RECEIPT" | "ISSUE" | "RETURN" | "TRANSFER" |
+                            "DAMAGE" | "SCRAP" | "ADJUSTMENT"
+    txn_date                Default now()
+    quantity                Always positive — direction inferred from txn_type
+    from_location_*, to_location_*  (type/id/name)
+    recipient_kind          "EMPLOYEE" | "CONTRACTOR" | "SITE" | null
+    recipient_id, recipient_name
+    reference_type, reference_number, reference_url
+    unit_cost, total_cost
+    linked_txn_ref          ObjectId → original ISSUE txn (for RETURN)
+    performed_by            ObjectId → Employee
+
+
+  AssetIssuance                                   (collection: assetissuances)
+  -------------------------------------------------------------------------
+    issue_id                Auto: "ISS001"
+    asset_kind              "TAGGED" | "BULK" | "MACHINERY"     ← polymorphic
+    asset_ref               ObjectId — points into one of the three collections
+    asset_id_label          "TGA001" | "BLK001" | "EX-01"  (denormalized)
+    asset_name              (denormalized)
+    assigned_to_kind        "EMPLOYEE" | "CONTRACTOR" | "CONTRACT_WORKER" | "SITE"
+    assigned_to_id, assigned_to_name, contractor_id
+    project_id, site_name
+    quantity                1 for TAGGED/MACHINERY, N for BULK
+    issue_date, expected_return_date, actual_return_date
+    condition_on_issue      "NEW" | "GOOD" | "FAIR" | "POOR" | "DAMAGED"
+    condition_on_return     same enum, nullable until returned
+    damage_charge           Set if returned damaged
+    quantity_returned       For BULK partial returns
+    status                  "ISSUED" | "PARTIALLY_RETURNED" | "RETURNED" |
+                            "OVERDUE" | "LOST" | "DAMAGED"
+    purpose
+    handover_signature_url, handover_photo_url
+    return_signature_url,   return_photo_url
+
+
+  AssetCalibration                            (collection: assetcalibrations)
+  -------------------------------------------------------------------------
+    calibration_id          Auto: "CAL001"
+    asset_ref               ObjectId → TaggedAsset (Survey / Lab only)
+    asset_id_label, asset_name, asset_class  (denormalized)
+    calibration_date, next_due_date          (REQUIRED)
+    agency_name, agency_accreditation, agency_contact
+    certificate_number, certificate_url      (REQUIRED)
+    result                  "PASS" | "FAIL" | "ADJUSTED" | "OUT_OF_TOLERANCE"
+    measurements            [{ parameter, expected, actual, deviation,
+                                within_tolerance }]
+    cost, invoice_number, performed_by, notes
+
+
+
+================================================================================
+  3.  API REFERENCE
+================================================================================
+
+  All endpoints:
+    • Send/expect JSON
+    • Use cookie-based JWT (`accessToken`) OR `Authorization: Bearer <token>`
+    • Return the canonical Romaa shape:
+          { status: true,  data: ...,    message: "...", meta: {...} }
+          { status: false, message: "..." }
+    • Are guarded by `verifyJWT` + `verifyPermission("asset", <sub>, <action>)`
+      — see §4 for the action mapping.
+
+  Idempotency: POSTs that create a new resource accept an optional
+  `X-Idempotency-Key` header (handled by global middleware).
+
+--------------------------------------------------------------------------------
+  3.1  AssetCategoryMaster   /assetcategory                  (asset.category_master)
+--------------------------------------------------------------------------------
+
+  POST   /assetcategory/                Create one category
+                                        Body: { assetClass, category, subCategory,
+                                                trackingMode, defaultUnit,
+                                                requiresCompliance, ... }
+                                        Returns the created record (auto-generated `code`).
+
+  POST   /assetcategory/seed            Idempotent seed of the built-in 120+ taxonomy.
+                                        Run once on first deploy; safe to re-run.
+
+  GET    /assetcategory/getall          Paginated list.
+                                        Query: page, limit, search, assetClass, isActive
+
+  GET    /assetcategory/grouped         Tree-shaped output for cascading dropdowns:
+                                            { Machinery: { Earthmoving: [...], ... }, ... }
+                                        Use this on the asset-create form.
+
+  GET    /assetcategory/getbyid/:id
+  GET    /assetcategory/getbycode/:code
+
+  PUT    /assetcategory/update/:id      Edit. Pass any subset of fields.
+  PATCH  /assetcategory/toggle-status/:id   Activate/deactivate.
+  DELETE /assetcategory/delete/:id      Hard delete.
+
+--------------------------------------------------------------------------------
+  3.2  MachineryAsset   /machineryasset                            (asset.machinery)
+--------------------------------------------------------------------------------
+
+  Pre-existing module — see src/module/assets/machinery/apidocs.txt for full details.
+
+  POST   /machineryasset/createasset
+  GET    /machineryasset/getbyid/:assetId
+  PUT    /machineryasset/update/:assetId
+  GET    /machineryasset/dashboard/:assetId    Returns asset + recent daily logs +
+                                                maintenance history
+  PUT    /machineryasset/transfer/:assetId
+  PUT    /machineryasset/status/:assetId
+  GET    /machineryasset/getall/assets
+  GET    /machineryasset/expiry-alerts          Compliance expiring in next 30 days
+  GET    /machineryasset/getbyproject/:projectId
+  GET    /machineryasset/getbyprojectselect/:projectId   Lightweight (id+name only)
+
+  NOTE: This route currently does NOT enforce verifyPermission. The schema
+  slot `asset.machinery` is reserved for when auth is wired on. FE should
+  treat it as if `asset.machinery.read/edit` is required.
+
+--------------------------------------------------------------------------------
+  3.3  MachineryLogs   /machinerylogs                          (asset.machinery_logs)
+--------------------------------------------------------------------------------
+
+  Pre-existing — daily HMR/KMs entries with shift, operator, fuel, trips.
+  See src/module/assets/machinerylogs/.
+
+  Same auth caveat as §3.2.
+
+--------------------------------------------------------------------------------
+  3.4  FuelTelemetry   /fueltelemetry                          (asset.fuel_telemetry)
+--------------------------------------------------------------------------------
+
+  Pre-existing — third-party GPS/fuel sync for vehicles. Cron-driven.
+
+  GET   /fueltelemetry/asset/:assetId/latest    Latest snapshot
+  GET   /fueltelemetry/asset/:assetId/history   Time-series
+  POST  /fueltelemetry/sync/:assetId            Manual sync trigger
+  POST  /fueltelemetry/sync-all                 Manual batch sync
+
+  See src/module/assets/fueltelemetry/FRONTEND_INTEGRATION.md for the full FE
+  guide including the live-fuel-widget spec.
+
+--------------------------------------------------------------------------------
+  3.5  TaggedAsset   /taggedasset                                (asset.tagged_asset)
+--------------------------------------------------------------------------------
+
+  POST   /taggedasset/create
+         Body: {
+           asset_name: "Bosch GBH 200 Drill",
+           asset_category_ref: "<ObjectId of AssetCategoryMaster>",
+           ownership: "OWNED",
+           serial_number: "BSH-A12345",
+           purchase_date: "2025-08-12",
+           purchase_cost: 12500,
+           current_location_type: "STORE",
+           current_store_name: "Main Tool Store",
+           condition: "NEW",
+           specifications: { voltage: "220V", power: "800W" }
+         }
+
+  GET    /taggedasset/getall                  Paginated list with rich filters.
+         Query: page, limit, search, asset_class, status, condition,
+                ownership, current_site_id, assigned_to_employee_id,
+                include_deleted (default false)
+
+  GET    /taggedasset/summary                 Aggregation: count + total_value
+                                              grouped by class & status.
+                                              Use on the asset dashboard.
+
+  GET    /taggedasset/calibration-due?days=30 Assets with calibration due
+                                              within N days (default 30).
+
+  GET    /taggedasset/getbyid/:assetId        :assetId is the human ID "TGA001",
+                                              NOT the Mongo _id.
+
+  PUT    /taggedasset/update/:assetId         Pass any subset to update.
+                                              If asset_category_ref changes,
+                                              denormalized fields auto-update.
+
+  PATCH  /taggedasset/status/:assetId         Body: { status, notes }
+
+  PUT    /taggedasset/transfer/:assetId       Body: { current_site_id,
+                                              current_site_name, current_store_name,
+                                              current_location_type }
+                                              Clears any active custodian.
+
+  DELETE /taggedasset/delete/:assetId         Soft delete; sets is_deleted=true,
+                                              status="SCRAPPED". Item still
+                                              queryable via include_deleted=true.
+
+--------------------------------------------------------------------------------
+  3.6  BulkInventory   /bulkinventory                          (asset.bulk_inventory)
+--------------------------------------------------------------------------------
+
+  ITEM CRUD
+  ---------
+  POST   /bulkinventory/create
+         Body: {
+           item_name: "Safety Helmet — Yellow",
+           asset_category_ref: "<oid>",
+           unit_of_measure: "Nos",        // overrides master default if set
+           brand: "Karam", model: "PN-501",
+           size: "Adjustable", color: "Yellow",
+           min_stock_level: 50, reorder_qty: 100,
+           standard_cost: 350,
+           certifications: ["IS 2925"],
+           has_expiry: false
+         }
+
+  GET    /bulkinventory/getall              Filters:
+                                              search, asset_class, is_active,
+                                              location_id, low_stock=true
+
+  GET    /bulkinventory/low-stock           Items where total_qty_available <
+                                              min_stock_level. Use on dashboard.
+
+  GET    /bulkinventory/getbyid/:itemId     :itemId is "BLK001".
+
+  PUT    /bulkinventory/update/:itemId
+  PATCH  /bulkinventory/toggle-active/:itemId
+
+
+  STOCK MOVEMENTS  (each posts a BulkInventoryTransaction + updates rollup
+                    atomically inside a Mongo transaction)
+  ----------------------------------------------------------------
+  POST   /bulkinventory/movement/receive
+         Body: { item_ref, quantity, to_location_type:"STORE",
+                 to_location_id, to_location_name,
+                 unit_cost, reference_type:"GRN", reference_number, notes }
+
+  POST   /bulkinventory/movement/issue
+         Body: { item_ref, quantity, from_location_type, from_location_id,
+                 from_location_name, recipient_kind:"EMPLOYEE",
+                 recipient_id, recipient_name, reference_number, notes }
+         IMPORTANT: prefer creating an AssetIssuance instead — it auto-posts
+         the matching ISSUE transaction so custody and stock stay in sync.
+
+  POST   /bulkinventory/movement/return     (mirror of issue)
+  POST   /bulkinventory/movement/transfer   site→site / store→site movement
+  POST   /bulkinventory/movement/damage     reclassify available → damaged
+  POST   /bulkinventory/movement/scrap      remove from damaged stock entirely
+  POST   /bulkinventory/movement/adjustment free-form correction
+
+
+  LEDGER QUERY
+  ------------
+  GET    /bulkinventory/transactions
+         Query: page, limit, item_id_label, txn_type, from, to (dates)
+         Read-only ledger view. Never edit a transaction; post a reverse
+         ADJUSTMENT instead.
+
+--------------------------------------------------------------------------------
+  3.7  AssetIssuance   /assetissuance                              (asset.issuance)
+--------------------------------------------------------------------------------
+
+  POST   /assetissuance/create
+         Body: {
+           asset_kind: "TAGGED",          // or "BULK" | "MACHINERY"
+           asset_ref: "<Mongo _id>",      // of the underlying asset
+           assigned_to_kind: "EMPLOYEE",  // or "CONTRACTOR" / "SITE" / "CONTRACT_WORKER"
+           assigned_to_id: "EMP-021",
+           assigned_to_name: "Ravi K.",
+           project_id: "TND-007",
+           site_name: "Ariyalur",
+           quantity: 1,                   // for BULK: actual quantity to issue
+           issue_date: "2026-04-28",
+           expected_return_date: "2026-05-15",
+           condition_on_issue: "GOOD",
+           purpose: "Concrete vibration during pour",
+           handover_signature_url: "<S3 url>",
+           handover_photo_url: "<S3 url>"
+         }
+
+         SIDE EFFECTS the FE must NOT replicate:
+           • TAGGED  — backend flips TaggedAsset.status="ISSUED",
+                        sets assigned_to_employee_id/_name on the asset.
+           • BULK    — backend posts a BulkInventoryTransaction (txn_type=ISSUE)
+                        and updates the BulkInventory rollup.
+           • MACHINERY — no side effect on MachineryAsset (operator handover).
+
+  GET    /assetissuance/getall              Filters:
+                                              status, asset_kind, assigned_to_id,
+                                              project_id, overdue=true
+
+  GET    /assetissuance/overdue             ISSUED + past expected_return_date
+  POST   /assetissuance/sweep-overdue       Manual trigger of the daily sweep
+                                            (also runs automatically at 06:00).
+
+  GET    /assetissuance/getbyid/:issueId    :issueId is "ISS001"
+
+  POST   /assetissuance/return/:issueId
+         Body: {
+           quantity: 1,                   // for BULK: how many returning now
+                                          // (omit to return full open balance)
+           condition_on_return: "GOOD",
+           damage_charge: 0,
+           actual_return_date: "2026-05-10",
+           return_signature_url, return_photo_url,
+           notes,
+           // for BULK:
+           to_location_type: "STORE",
+           to_location_id: "MAIN_STORE",
+           to_location_name: "Main Store"
+         }
+
+         Status transitions:
+           open balance > 0 after return  →  PARTIALLY_RETURNED
+           open balance == 0              →  RETURNED
+           condition_on_return == DAMAGED →  DAMAGED  (also auto-posts a
+                                                       BulkInventory DAMAGE txn)
+
+  POST   /assetissuance/lost/:issueId
+         Body: { notes }
+         Sets issuance.status="LOST". For TAGGED, also flips the
+         TaggedAsset.status="LOST".
+
+--------------------------------------------------------------------------------
+  3.8  AssetCalibration   /assetcalibration                     (asset.calibration)
+--------------------------------------------------------------------------------
+
+  POST   /assetcalibration/create
+         Body: {
+           asset_ref: "<TaggedAsset _id>",
+           calibration_date: "2026-04-20",
+           next_due_date: "2027-04-20",
+           agency_name: "Spectro Calibration Pvt Ltd",
+           agency_accreditation: "NABL",
+           certificate_number: "SCP-2026-04-1147",
+           certificate_url: "<S3>",
+           result: "PASS",
+           measurements: [
+             { parameter: "Distance ±5m", expected: "0.0",
+               actual: "+0.2", deviation: "+0.2",
+               within_tolerance: true }
+           ],
+           cost: 4500,
+           invoice_number: "INV-1147",
+           performed_by: "K. Suresh"
+         }
+
+         SIDE EFFECT: backend writes
+           TaggedAsset.compliance.last_calibration_date  = calibration_date
+           TaggedAsset.compliance.next_calibration_due   = next_due_date
+           TaggedAsset.compliance.last_certificate_*     = certificate_*
+         …so the asset detail page can show the latest cert without a join.
+
+  GET    /assetcalibration/getall           Filters:
+                                              asset_ref, asset_id_label,
+                                              result, from, to (dates)
+
+  GET    /assetcalibration/due-report?days=30
+                                            One row per asset (the latest
+                                            calibration per asset_ref) where
+                                            next_due_date is within N days.
+
+  GET    /assetcalibration/getbyid/:calibrationId
+  GET    /assetcalibration/history/:assetIdLabel
+                                            Full calibration history of a
+                                            single tagged asset.
+  PUT    /assetcalibration/update/:calibrationId
+  DELETE /assetcalibration/delete/:calibrationId
+                                            Refreshes the asset's compliance
+                                            summary after delete.
+
+
+
+================================================================================
+  4.  RBAC & PERMISSIONS
+================================================================================
+
+  All asset endpoints are guarded by:
+      verifyJWT  +  verifyPermission("asset", <sub_module>, <action>)
+
+  Action mapping per endpoint type:
+      Create / movement-post           → "create"
+      Read  / list / get / report      → "read"
+      Update / status / transfer / return / lost / sweep → "edit"
+      Delete                            → "delete"
+
+  Asset module sub-module → route mapping:
+
+      asset.category_master   →  /assetcategory/*
+      asset.machinery         →  /machineryasset/*       (auth pending)
+      asset.machinery_logs    →  /machinerylogs/*        (auth pending)
+      asset.maintenance       →  reserved (no public route yet)
+      asset.fuel_telemetry    →  /fueltelemetry/*        (verifyJWT only)
+      asset.tagged_asset      →  /taggedasset/*
+      asset.bulk_inventory    →  /bulkinventory/*
+      asset.issuance          →  /assetissuance/*
+      asset.calibration       →  /assetcalibration/*
+
+  DEV role  — auto-grants every action on every sub-module on every boot.
+  Other roles — admin must explicitly grant via the role-edit UI.
+
+  See FRONTEND_PERMISSION_CHANGES.txt (in src/module/role/) for the full
+  set of permission key changes from the recent restructure.
+
+
+
+================================================================================
+  5.  UI SCREENS & COMPONENT SPEC
+================================================================================
+
+  Below is the recommended IA. Follow the existing Romaa design system; this
+  spec describes content + behaviour, not pixels.
+
+--------------------------------------------------------------------------------
+  5.1  Asset Module Landing — /assets
+--------------------------------------------------------------------------------
+
+  Permission to view: any of asset.tagged_asset.read |
+                              asset.machinery.read |
+                              asset.bulk_inventory.read
+
+  Components:
+    • KPI Tile Strip (4-6 tiles)
+        - Total Machinery (count)         → asset.machinery
+        - Total Tagged Assets (count)     → asset.tagged_asset
+        - Bulk Inventory Items (count)    → asset.bulk_inventory
+        - Open Issuances (count)          → asset.issuance
+        - Overdue Issuances (count, RED)  → asset.issuance / overdue endpoint
+        - Calibration Due (count, AMBER)  → asset.calibration / due-report
+    • Quick Actions
+        - "Register New Asset" → /assets/new (modal: pick class first)
+        - "Issue an Asset"     → /assets/issue/new
+        - "Receive Stock"      → /assets/inventory/receive
+    • Compliance Alert Cards (3 cards, dismissible per session)
+        - Insurance/FC/PUC expiring (from /machineryasset/expiry-alerts)
+        - Calibration overdue/upcoming (from /assetcalibration/due-report)
+        - Low stock alert (from /bulkinventory/low-stock)
+    • Recent Activity Feed (last 20 events)
+        Pull from: BulkInventoryTransaction + AssetIssuance + AssetCalibration
+        Most recent at top.
+
+--------------------------------------------------------------------------------
+  5.2  Asset Category Master — /settings/asset-categories
+--------------------------------------------------------------------------------
+
+  Permission: asset.category_master
+
+  Layout: split-pane
+    • Left: tree (use GET /assetcategory/grouped) — collapsible by
+            assetClass → category → subCategory entries.
+    • Right: detail/edit form for the selected node.
+
+  Top bar:
+    • [+ New Category] button → form
+    • [Seed Defaults] button (admin only — confirm dialog;
+      calls POST /assetcategory/seed; idempotent)
+
+  Form fields (left → right, top → bottom):
+    [Asset Class*]        dropdown (10 options)
+    [Category*]           text
+    [Sub-category]        text
+    [Description]         textarea
+    [Tracking Mode]       dropdown (HOURS/KILOMETERS/UNITS/QUANTITY/NONE)
+    [Default Unit]        text (Nos, Pair, ...)
+    [☐] Requires Compliance     (Insurance/FC/PUC mandatory on assets)
+    [☐] Requires Fuel
+    [☐] Requires GPS
+    [☐] Requires Operator
+    [☐] Is Consumable
+    [☐] Is Active
+
+  Validation: code is auto-derived from class+category+subCategory; show as
+  read-only preview, server generates the canonical value.
+
+--------------------------------------------------------------------------------
+  5.3  Machinery List — /assets/machinery       (existing, minor enhancements)
+--------------------------------------------------------------------------------
+
+  Permission: asset.machinery
+
+  Existing list page. Add:
+    • Compliance Expiry chip per row (red if < 30d, amber if < 60d)
+        Source: machineryasset.compliance.*
+    • Fuel widget on the detail page (already documented in
+      src/module/assets/fueltelemetry/FRONTEND_INTEGRATION.md)
+    • "Issue Operator" action → opens AssetIssuance form pre-filled with
+      asset_kind="MACHINERY", asset_ref=<this machine>
+
+--------------------------------------------------------------------------------
+  5.4  Tagged Asset List — /assets/tagged
+--------------------------------------------------------------------------------
+
+  Permission: asset.tagged_asset
+
+  Filters (sticky, top of list):
+    • Class           dropdown: Tool / IT / Survey / Furniture / SiteInfra / SafetyEquipment
+    • Status          dropdown: ACTIVE / IN_STORE / ISSUED / UNDER_REPAIR / LOST / SCRAPPED
+    • Condition       dropdown
+    • Ownership       dropdown
+    • Site            dropdown of projects
+    • Custodian       employee picker
+    • Search          text (asset_id, asset_name, serial_number, qr_code)
+    • [☐] Show retired (sets include_deleted=true)
+
+  Columns:
+    Asset ID | Name | Class | Status | Condition | Location/Custodian
+    | Calibration Due | Actions
+
+  Row actions:
+    • View detail
+    • Status quick-change (Active / Under Repair / Scrapped)
+    • Transfer
+    • Issue → AssetIssuance form
+    • Soft-delete (with confirm)
+
+  Bulk actions:
+    • QR/Barcode scan-in (open camera; on scan, navigate to detail)
+    • Export CSV
+
+--------------------------------------------------------------------------------
+  5.5  Tagged Asset Detail — /assets/tagged/:assetId
+--------------------------------------------------------------------------------
+
+  Permission: asset.tagged_asset
+
+  Header: Asset ID, Name, Class chip, Status chip, Condition chip
+          [Edit] [Transfer] [Status] [Soft Delete]
+
+  Tabs:
+    1. Overview          — specs, ownership, purchase, warranty, photos
+    2. Documents         — Invoice / Warranty / Manual / Certificate uploads
+    3. Custody History   — list of AssetIssuance records for this asset
+    4. Calibration       — only if asset_class == "Survey" or category requires it
+                            • Latest cert card (from compliance summary on the asset)
+                            • Full history table (call /assetcalibration/history/:assetIdLabel)
+                            • [+ Record Calibration] button → form
+
+  Show a "Calibration Overdue" red banner if compliance.next_calibration_due
+  is in the past.
+
+--------------------------------------------------------------------------------
+  5.6  Bulk Inventory List — /assets/inventory
+--------------------------------------------------------------------------------
+
+  Permission: asset.bulk_inventory
+
+  Filters:
+    • Class               (Formwork / SafetyEquipment / SiteInfra / Tool)
+    • Active/Inactive
+    • Location
+    • [☐] Low stock only
+
+  Columns:
+    Item ID | Name | Class | UoM | Qty Available | Qty In-Use | Qty Damaged
+    | Min Level | Cost/Unit | Status | Actions
+
+  Row badges:
+    Available qty < min_stock_level → LOW STOCK pill (red)
+    Has damaged stock                 → DAMAGED pill (amber)
+
+  Row actions:
+    • View detail
+    • Receive   → movement form
+    • Issue     → recommend AssetIssuance form (it cascades to stock)
+    • Transfer
+
+--------------------------------------------------------------------------------
+  5.7  Bulk Inventory Detail — /assets/inventory/:itemId
+--------------------------------------------------------------------------------
+
+  Header: Item ID, Name, Brand/Model, Class, UoM, total available
+          [Receive] [Issue] [Transfer] [Damage] [Scrap] [Adjust] [Edit]
+
+  Body:
+    • Stock-by-Location card grid (one card per stock_locations entry):
+        Location, qty_available, qty_in_use, qty_damaged
+    • Reorder banner if total_qty_available < min_stock_level
+    • Movement Ledger (paginated table)
+        Date | Type chip | Qty | From → To | Recipient | Ref | Notes | By
+        Type chip color:
+          RECEIPT=green, ISSUE=blue, RETURN=teal, TRANSFER=grey,
+          DAMAGE=amber, SCRAP=red, ADJUSTMENT=purple
+        Filter chips: All / Receipts / Issues / Returns / etc.
+
+  Movement form (used by all 7 actions, fields shown conditionally):
+    [Quantity*]       number (validate ≤ available qty for ISSUE/TRANSFER/DAMAGE/SCRAP)
+    [From Location]   conditional
+    [To Location]     conditional
+    [Recipient]       conditional (ISSUE/RETURN only)
+    [Reference]       Type/Number/URL
+    [Unit Cost]       conditional (RECEIPT)
+    [Notes]
+    [Submit]          → POSTs to /bulkinventory/movement/<type>
+
+--------------------------------------------------------------------------------
+  5.8  Issuance List — /assets/issuance
+--------------------------------------------------------------------------------
+
+  Permission: asset.issuance
+
+  Top tabs:  All  |  Issued  |  Partially Returned  |  Returned  |
+             Overdue  |  Lost  |  Damaged
+
+  Filters:
+    • Asset kind (TAGGED / BULK / MACHINERY)
+    • Custodian (employee/contractor picker)
+    • Project / Site
+    • Date range
+
+  Columns:
+    Issue ID | Asset (kind chip + ID + name) | Custodian | Site
+    | Issued | Expected Return | Status | Actions
+
+  Row actions:
+    • View detail
+    • [Quick Return] inline → modal: condition + photo + signature
+    • [Mark Lost] (confirm)
+
+  Header KPI strip: Open / Overdue / Returned today (from /overdue and /getall).
+
+--------------------------------------------------------------------------------
+  5.9  Issuance Create — /assets/issuance/new
+--------------------------------------------------------------------------------
+
+  Step 1: Pick the asset
+    • Toggle: TAGGED / BULK / MACHINERY
+    • Asset picker (typeahead) — calls the matching getall endpoint
+    • Show selected asset's snapshot: photo, name, current location/condition
+
+  Step 2: Pick the custodian
+    • Recipient kind: EMPLOYEE / CONTRACTOR / CONTRACT_WORKER / SITE
+    • Recipient picker (employee/contractor master)
+    • Project & site (autoload from recipient if available)
+
+  Step 3: Issue details
+    • Quantity (only enabled for BULK; default 1; cap to available)
+    • Issue date (default today)
+    • Expected return (REQUIRED — used for overdue sweep)
+    • Condition on issue
+    • Purpose (textarea)
+
+  Step 4: Handover proof
+    • Photo upload  (handover_photo_url)
+    • Signature pad (handover_signature_url)
+    • [Submit] → POST /assetissuance/create
+
+  Confirmation page: shows the new ISS-id, link to detail, and a "Print
+  Issuance Slip" button (PDF generated client-side from the issuance JSON).
+
+--------------------------------------------------------------------------------
+  5.10  Calibration List — /assets/calibration
+--------------------------------------------------------------------------------
+
+  Permission: asset.calibration
+
+  Top KPI strip: Total | Pass | Fail/Adjusted | Overdue | Due in 30d
+
+  Filters: Asset, Result, Date range
+
+  Columns: Cert # | Asset | Date | Next Due | Result chip | Agency | Cost
+           | Actions
+
+  Row actions: View, Edit (if recent), Delete (admin)
+
+  [+ Record Calibration] button → form (see 5.11)
+
+--------------------------------------------------------------------------------
+  5.11  Calibration Create / Edit — /assets/calibration/new
+--------------------------------------------------------------------------------
+
+  Form:
+    [Asset*]                  TaggedAsset picker (filter to Survey/Lab classes)
+    [Calibration Date*]
+    [Next Due Date*]          (default = calibration_date + 1 year; user editable)
+    [Agency Name*]
+    [Agency Accreditation]    (NABL / ISO 17025 / ...)
+    [Certificate Number*]
+    [Certificate Upload*]     (PDF/JPG → S3)
+    [Result*]                 dropdown
+    [Measurements]            dynamic table:
+                                Parameter | Expected | Actual | Deviation | Within Tolerance ☐
+                                [+ Add row]
+    [Cost] [Invoice #] [Performed By] [Notes]
+    [Submit]
+
+
+
+================================================================================
+  6.  END-TO-END WORKFLOWS
+================================================================================
+
+  6.1  Onboard a new excavator
+  -------------------------------------------------------------------------
+    1. Settings → Asset Categories → ensure "Earthmoving / Excavator" exists
+       (it does, from the seed). Note its `code` and capability flags
+       (requiresCompliance: true, requiresFuel: true, requiresGps: true).
+    2. Assets → Machinery → "+ Register"
+    3. Fill: assetId="EX-12", name, model, manufacturing year, fuel type,
+       tank capacity, GPS device, current site/project, purchase info
+    4. Upload Insurance/RC/Invoice/Fitness docs (each goes into documents[])
+    5. Save. Backend validates, generates audit log entry.
+
+  6.2  Issue a drill to a site engineer
+  -------------------------------------------------------------------------
+    1. Find drill (Assets → Tagged → search "Bosch GBH 200" or scan QR)
+    2. From detail or list, click "Issue"
+    3. Picker pre-fills asset_kind=TAGGED, asset_ref=<this drill>
+    4. Pick employee, project, site, expected return date, condition
+    5. Capture signature + photo handover proof
+    6. Submit
+    7. Backend simultaneously:
+         • Creates AssetIssuance record (ISS-id)
+         • Sets TaggedAsset.status=ISSUED, assigned_to_employee_*
+         • Sets TaggedAsset.current_location_type=ASSIGNED
+         • Writes audit log
+    8. FE shows confirmation; print slip option.
+
+  6.3  Receive a batch of 200 helmets
+  -------------------------------------------------------------------------
+    1. Assets → Inventory → find item "Safety Helmet — Yellow" (or "+ New
+       Item" if first time)
+    2. Click "Receive" on the detail page
+    3. Fill quantity=200, to_location=Main Store, unit_cost=350,
+       reference_type=GRN, reference_number=GRN-2026-104
+    4. Submit
+    5. Backend posts a RECEIPT BulkInventoryTransaction inside a Mongo
+       transaction; rollups update atomically.
+    6. List view's "Available" quantity updates by 200.
+
+  6.4  Record calibration of a Total Station
+  -------------------------------------------------------------------------
+    1. Assets → Tagged → open the Total Station detail
+    2. Calibration tab → "Record Calibration"
+    3. Fill agency, cert number, upload PDF, result=PASS, add measurement
+       rows, cost
+    4. Submit
+    5. Backend creates AssetCalibration record AND updates
+       TaggedAsset.compliance.{last_calibration_date, next_calibration_due,
+       last_certificate_*}
+    6. The "Calibration Overdue" banner on the asset detail clears
+       automatically.
+
+  6.5  Stock transfer 50 acrow props from Site A to Site B
+  -------------------------------------------------------------------------
+    1. Inventory detail → "Transfer"
+    2. quantity=50, from_location=Site A store, to_location=Site B store
+    3. Submit → backend posts a TRANSFER txn; rollups updated
+    4. Per-location stock cards reflect the change immediately.
+
+  6.6  Mark a tool as lost
+  -------------------------------------------------------------------------
+    1. Assets → Issuance → find the open issuance
+    2. Row action "Mark Lost"
+    3. Confirm + add notes
+    4. Backend sets issuance.status=LOST and (for TAGGED)
+       TaggedAsset.status=LOST
+    5. Asset shows up in the Lost filter on both screens.
+
+  6.7  Daily admin routine (automated; no FE action)
+  -------------------------------------------------------------------------
+    Each morning the backend cron:
+      • 06:00 — flips ISSUED → OVERDUE for past-due issuances; if any were
+                flipped, sends an in-app notification to all roles with
+                asset.issuance.read.
+      • 06:30 — sends a calibration-due notification (overdue + due in 30d)
+                to all roles with asset.calibration.read.
+
+    FE shows these in the existing Notification feed. Action buttons deep-link
+    to /assets/issuance?status=OVERDUE and /assets/calibration?due=30 .
+
+
+
+================================================================================
+  7.  BACKEND CRON JOBS
+================================================================================
+
+  All registered in app.js:
+
+    0  6  * * *   AssetIssuanceService.markOverdue()  → in-app notification
+                                                          (audience: asset.issuance.read)
+    30 6  * * *   AssetCalibrationService.getDueReport(30) → in-app notification
+                                                          (audience: asset.calibration.read)
+    */15 (dev) /
+    0 */6 (prod)  fuelSyncCron — pulls third-party GPS/fuel for active machinery
+
+  Failures are logged to logs/apps-*.log and Sentry (if SENTRY_DSN is set).
+  Notification dispatch is fail-soft — a notification failure does not
+  prevent the rest of the cron from completing.
+
+
+
+================================================================================
+  8.  RESPONSE FORMAT & ERROR CONVENTIONS
+================================================================================
+
+  Success
+    HTTP 200 / 201
+    { status: true, data: <payload>, message?: "Created", meta?: { pagination } }
+
+  Validation / Business error
+    HTTP 400
+    { status: false, message: "Quantity must be positive" }
+
+  Auth missing
+    HTTP 401
+    { status: false, message: "Unauthorized request" }
+
+  Permission denied
+    HTTP 403
+    { status: false, message: "Access Denied: You do not have 'create' permission for asset/tagged_asset" }
+
+  Not found
+    HTTP 404
+    { status: false, message: "Tagged asset not found" }
+
+  Server error
+    HTTP 500
+    { status: false, message: "Internal server error", correlation_id: "..." }
+
+  FE display rules:
+    • status==false → toast `message` text directly to the user
+    • Pagination always under `meta` — never inline in `data`
+    • Always include the X-Correlation-Id response header in bug reports
+
+
+
+================================================================================
+  9.  EDGE CASES, GOTCHAS & THINGS YOU SHOULD NOT DO ON THE FRONTEND
+================================================================================
+
+  9.1  DO NOT compute BulkInventory rollups on the frontend.
+       The server is the single source of truth. Always re-fetch the item
+       after a movement; never patch the rollup locally.
+
+  9.2  DO NOT create BulkInventoryTransaction records directly through any
+       client-facing API. The /movement/* endpoints are the only sanctioned
+       way to mutate stock. Issuance also flows through them automatically.
+
+  9.3  Asset IDs are CUSTOM STRINGS, not ObjectIds.
+         "EX-01", "TGA001", "BLK001", "ISS001", "CAL001"
+       URLs use these. ObjectIds are still required for asset_ref fields
+       inside Issuance/Calibration creation — that's intentional, since the
+       FE has the _id from the picker dropdown.
+
+  9.4  AssetIssuance is polymorphic. asset_ref is an ObjectId pointing into
+       one of three different collections. The `asset_kind` field tells you
+       which collection. NEVER try to populate asset_ref blindly via Mongoose
+       on the FE — the API responses already include denormalized
+       asset_id_label and asset_name.
+
+  9.5  Soft-deleted TaggedAssets remain queryable.
+       List endpoints filter is_deleted by default. Pass include_deleted=true
+       only on admin/audit screens.
+
+  9.6  Existing MachineryAsset records may have legacy assetCategory values
+       like "Heavy Earthmover" — these are still valid (the enum was relaxed).
+       New records should use assetCategoryRef → AssetCategoryMaster.
+
+  9.7  Calibration writes back to the asset.
+       After POST /assetcalibration/create, the TaggedAsset's
+       compliance.next_calibration_due is updated. Re-fetch the asset
+       before re-rendering its detail page.
+
+  9.8  Mongo transactions require a replica set. Atlas works by default;
+       local standalone Mongo will throw on every BulkInventory movement.
+       This is a backend deploy concern; the FE just needs to surface the
+       resulting 500 error gracefully.
+
+  9.9  Issuance returns can be partial for BULK only.
+       For TAGGED/MACHINERY, the system always returns the full quantity (1).
+
+  9.10 Quantity must be positive on every BulkInventory movement.
+       Direction is implied by the txn_type. Never pass a negative number.
+
+  9.11 Corrections to past stock movements MUST be done via ADJUSTMENT.
+       The ledger is append-only. No edit / delete endpoints exist for
+       BulkInventoryTransaction records — that is by design.
+
+  9.12 Notifications fired by the cron use module="asset". If your FE
+       filters the notification feed by module, include "asset" in the
+       allow-list.
+
+
+
+================================================================================
+  10.  FRONTEND INTEGRATION CHECKLIST
+================================================================================
+
+  Phase 0 — Setup
+  -----------------
+  [ ] Create permission constants file mirroring §4 mapping
+  [ ] Add module="asset" to the notification module filter dropdown
+  [ ] Confirm JWT/cookie auth works on all /assetcategory|taggedasset|
+        bulkinventory|assetissuance|assetcalibration endpoints
+  [ ] Add the 9 new asset.* sub-modules to the Role-edit checkbox matrix
+        (see FRONTEND_PERMISSION_CHANGES.txt §1)
+
+  Phase 1 — Settings
+  -------------------
+  [ ] Build /settings/asset-categories (§5.2) — wire to /assetcategory/*
+  [ ] Add "Seed Defaults" admin action (idempotent)
+
+  Phase 2 — Tagged Asset
+  -----------------------
+  [ ] /assets/tagged list  (§5.4)
+  [ ] /assets/tagged/:assetId detail with 4 tabs (§5.5)
+  [ ] Asset register form (uses /assetcategory/grouped for cascading dropdown)
+  [ ] QR scan integration
+
+  Phase 3 — Bulk Inventory
+  -------------------------
+  [ ] /assets/inventory list with low-stock filter (§5.6)
+  [ ] /assets/inventory/:itemId detail with stock-by-location grid (§5.7)
+  [ ] Movement form (single component, conditional fields)
+  [ ] Movement ledger table
+
+  Phase 4 — Issuance
+  -------------------
+  [ ] /assets/issuance list with tabs (§5.8)
+  [ ] Issuance create wizard (§5.9)
+  [ ] Quick-return modal
+  [ ] Print issuance slip (PDF)
+
+  Phase 5 — Calibration
+  ----------------------
+  [ ] /assets/calibration list (§5.10)
+  [ ] Calibration form with measurements table (§5.11)
+  [ ] Hook the "Calibration" tab on the TaggedAsset detail to history endpoint
+
+  Phase 6 — Dashboard
+  --------------------
+  [ ] /assets landing (§5.1) with KPI tiles + alert cards + activity feed
+  [ ] Compliance / due-report banners on relevant detail pages
+
+  Phase 7 — Polish
+  -----------------
+  [ ] Empty states, skeleton loaders, error toasts (using `message` field)
+  [ ] CSV export on each list (mirror filters)
+  [ ] Responsive: must work on tablet (site engineers use iPads)
+  [ ] Search/filter state in URL query params for shareable links
+  [ ] Audit trail link on every detail page (→ /audit?entity_type=...)
+
+
+
+================================================================================
+  11.  GLOSSARY
+================================================================================
+
+  Asset Class     — Top-level taxonomy bucket (Machinery, Vehicle, Tool,
+                     Formwork, etc.).
+  Category Master — The settings collection that defines what asset classes
+                     and sub-categories exist; admins manage it.
+  Tagged Asset    — A per-unit serial-tracked asset. Has a single asset_id
+                     (e.g. "TGA001") and a single custodian at any time.
+  Bulk Inventory  — Quantity-tracked stock. Many units share one item record;
+                     stock is split across multiple sites/stores.
+  Issuance        — A single hand-over event. For tagged: 1 unit. For bulk:
+                     N units, possibly with partial returns.
+  Custodian       — The person currently holding an issued asset. Could be
+                     an Employee, Contractor, Contract Worker, or a Site (the
+                     site itself, e.g. installed equipment).
+  Calibration     — Periodic accuracy verification by an accredited agency,
+                     producing a certificate. Required for survey + lab
+                     instruments + safety detection devices.
+  Telemetry       — Live (or cron-pulled) data from third-party GPS/fuel
+                     trackers. Stored in FuelTelemetry collection.
+  Movement        — Any change to BulkInventory stock — receipt, issue,
+                     return, transfer, damage, scrap, adjustment. Each posts
+                     one BulkInventoryTransaction row.
+  Rollup          — Computed totals on the BulkInventory document
+                     (total_qty_available, etc.). Maintained server-side; the
+                     FE never recomputes them.
+  Soft Delete     — `is_deleted=true` on TaggedAsset. Record is retained for
+                     audit but excluded from default reads.
+  Polymorphic Ref — A reference (asset_ref) that points into different
+                     collections depending on a discriminator field
+                     (asset_kind). The FE reads denormalized labels rather
+                     than dereferencing.
+  DEV Role        — System super-admin. Auto-granted every permission on
+                     every server boot. Used for development; should NOT
+                     be assigned to a real human in production.
+
+================================================================================
+  END OF DOCUMENT
+================================================================================
