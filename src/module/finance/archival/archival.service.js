@@ -96,7 +96,7 @@ export default class ArchivalService {
           if (docs.length < BATCH_SIZE) break;
         }
 
-        archivedCollections.push({ collection: name, count });
+        archivedCollections.push({ collection_name: name, count });
         totalRecords += count;
         logger.info({ context: "ArchivalService", fin_year, collection: name, count });
       }

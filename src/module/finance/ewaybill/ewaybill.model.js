@@ -142,7 +142,6 @@ const EwayBillSchema = new mongoose.Schema(
 );
 
 EwayBillSchema.index({ source_type: 1, source_ref: 1 });
-EwayBillSchema.index({ ewb_no: 1 });
 EwayBillSchema.index({ status: 1, doc_date: -1 });
 
 const EwayBillModel = mongoose.model("EwayBill", EwayBillSchema);

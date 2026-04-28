@@ -47,8 +47,8 @@ const HeadingSchema = new mongoose.Schema({
 // Detailed Estimate Schema
 const DetailedEstimateSchema = new mongoose.Schema({
     generalabstract: { type: Array, default: [] },
-      billofqty: { type: Array, default: [] },
-    customheadings: { type: [HeadingSchema], default: [] } ,// any number of user-defined headings
+    billofqty: { type: Array, default: [] },
+    customheadings: { type: [HeadingSchema], default: [] }, // any number of user-defined headings
     total_spent: { type: Object, default: {} }
 }, { _id: false });
 

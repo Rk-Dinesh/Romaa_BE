@@ -7,7 +7,7 @@ const ArchivalJobSchema = new mongoose.Schema({
   completed_at:  { type: Date },
   total_records: { type: Number, default: 0 },
   archived_collections: [{
-    collection: String,
+    collection_name: String,
     count: Number,
   }],
   error:         { type: String, default: "" },

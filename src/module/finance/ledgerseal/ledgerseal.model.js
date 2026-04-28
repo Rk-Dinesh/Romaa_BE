@@ -35,7 +35,6 @@ const LedgerSealSchema = new mongoose.Schema(
 );
 
 LedgerSealSchema.index({ je_date: 1 });
-LedgerSealSchema.index({ sequence: 1 });
 
 const LedgerSealModel = mongoose.model("LedgerSeal", LedgerSealSchema);
 export default LedgerSealModel;

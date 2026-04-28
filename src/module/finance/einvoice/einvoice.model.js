@@ -128,7 +128,6 @@ const EInvoiceSchema = new mongoose.Schema(
 );
 
 EInvoiceSchema.index({ source_type: 1, source_ref: 1 });
-EInvoiceSchema.index({ source_no: 1 }, { unique: false });
 EInvoiceSchema.index({ status: 1, doc_date: -1 });
 
 const EInvoiceModel = mongoose.model("EInvoice", EInvoiceSchema);
