@@ -17,7 +17,8 @@ import {
   forgotPassword,
   resetPasswordWithOTP,
   mobileLogin,
-  getAssignedEmployees
+  getAssignedEmployees,
+  updateOnboardingStatus
 } from "./employee.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 import { createRateLimiter } from "../../../common/rateLimiter.js";
@@ -35,6 +36,7 @@ employeeRoute.post("/logout",       logout);
 employeeRoute.post("/forgot-password",        otpLimiter, forgotPassword);
 employeeRoute.post("/reset-password-with-otp", otpLimiter, resetPasswordWithOTP);
 employeeRoute.post("/reset-password", verifyJWT, resetPassword);
+employeeRoute.patch("/update-onboarding-status", verifyJWT, updateOnboardingStatus);
 
 // --- Employee CRUD (HR protected) ---
 employeeRoute.post("/register",  verifyJWT, verifyPermission("hr", "employee", "create"), createEmployee);

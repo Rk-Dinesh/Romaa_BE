@@ -1,0 +1,368 @@
+================================================================================
+  03 — TAGGED ASSET  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/taggedasset
+Phase     : 2 (Core Registers)
+RBAC key  : asset.tagged_asset   (read / create / edit / delete)
+Route base: /taggedasset
+ID prefix : TGA  (e.g. TGA001)
+
+> UI/VISUAL STYLE NOTE
+>   Mirror /vendor list+detail. The QR scan modal should match the
+>   existing barcode/QR scanner used elsewhere in the UI (if present);
+>   otherwise use a simple webcam-based html5-qrcode component, but
+>   match the rest of the modal chrome.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Per-unit serial-tracked assets that are NOT machinery/vehicles:
+Tools (drills, grinders, jack hammers), IT (laptops, phones, CCTV),
+Survey instruments (total stations, drones), Furniture, individual
+SiteInfra units (cabins, containers, watch towers), Safety singletons
+(fire extinguishers, gas detectors, first aid kits).
+
+Use:
+  • MachineryAsset for items needing GPS / fuel / HMR-tracking
+  • BulkInventory for quantity-based stock (formwork, PPE, scaffolding)
+  • TaggedAsset for everything else tracked one-by-one with a serial #
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: TaggedAsset
+
+  IDENTITY
+    asset_id           String UNIQUE INDEXED (e.g. "TGA001")
+    asset_name         String REQUIRED
+
+  CLASSIFICATION (denorm from master)
+    asset_category_ref ObjectId AssetCategoryMaster REQUIRED
+    asset_class        enum INDEXED:
+                         Tool | IT | Survey | Furniture | SiteInfra
+                         | SafetyEquipment | Other
+    category           String INDEXED
+    sub_category       String
+
+  OWNERSHIP
+    ownership          enum default OWNED INDEXED: OWNED | RENTED | LEASED
+    vendor_id          String
+    vendor_name        String
+    rental_per_day     Number
+    rental_start_date  Date
+    rental_end_date    Date
+
+  TECHNICAL SPECS
+    serial_number      String INDEXED
+    model_number       String
+    manufacturer       String
+    manufacturing_year Number 1900..2100
+    specifications     Mixed   (free-form: { color, capacity, voltage, ... })
+
+  PURCHASE / WARRANTY
+    purchase_date / purchase_cost / supplier_name / invoice_number
+    warranty.{starts_on, expires_on, vendor, coverage}
+
+  CURRENT CUSTODY / LOCATION
+    current_location_type   enum INDEXED default IN_STORE:
+                             SITE | STORE | ASSIGNED | TRANSIT | VENDOR
+    current_site_id         String INDEXED      (projectId)
+    current_site_name       String
+    current_store_name      String
+    assigned_to_employee_id    String INDEXED   ("EMP-001")
+    assigned_to_employee_name  String
+
+  STATUS / CONDITION
+    status     enum INDEXED default IN_STORE:
+                 ACTIVE | IN_STORE | ISSUED | UNDER_REPAIR | LOST | SCRAPPED
+    condition  enum default NEW: NEW | GOOD | FAIR | POOR | DAMAGED
+
+  CALIBRATION SUMMARY  (auto-maintained by AssetCalibration service)
+    compliance.requires_calibration       Boolean
+    compliance.last_calibration_date
+    compliance.next_calibration_due       INDEXED
+    compliance.last_certificate_number
+    compliance.last_certificate_url
+
+  DOCUMENTS  (array)
+    [ { doc_type: Invoice|Warranty|Manual|Certificate|Other,
+        doc_number, expiry_date, file_url, uploaded_at } ]
+
+  PHOTOS / TAGGING
+    photos[]      array of S3 URLs
+    qr_code       String INDEXED
+    rfid_tag      String
+
+  SOFT DELETE / META
+    is_deleted   Boolean default false INDEXED
+    notes        String
+    created_by / updated_by
+    timestamps
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  POST   /taggedasset/create                       [create]
+3.2  GET    /taggedasset/getall                       [read]
+3.3  GET    /taggedasset/summary                      [read]
+3.4  GET    /taggedasset/calibration-due?days=30      [read]
+3.5  GET    /taggedasset/getbyid/:assetId             [read]
+3.6  PUT    /taggedasset/update/:assetId              [edit]
+3.7  PATCH  /taggedasset/status/:assetId              [edit]
+3.8  PUT    /taggedasset/transfer/:assetId            [edit]
+3.9  DELETE /taggedasset/delete/:assetId              [delete] (soft)
+
+----- 3.2 List -----
+  GET /taggedasset/getall?page&limit&search&asset_class&status&condition
+                       &ownership&current_site_id&assigned_to_employee_id
+                       &include_deleted=false
+  search matches: asset_id, asset_name, serial_number, qr_code, rfid_tag.
+  Default excludes deleted; pass include_deleted=true to see all.
+
+----- 3.3 Summary -----
+  GET /taggedasset/summary
+  Aggregation: count + total_value per (asset_class × status). Use for
+  the Tagged Assets dashboard tile.
+  Response shape:
+    [ { _id: "Tool",
+        breakdown: [ {status, count, value}, ... ],
+        total: 124, total_value: 350000 }, ... ]
+
+----- 3.7 Status -----
+  PATCH /taggedasset/status/:assetId
+  Body: { status, notes? }
+  status enum: ACTIVE | IN_STORE | ISSUED | UNDER_REPAIR | LOST | SCRAPPED
+
+----- 3.8 Transfer -----
+  PUT /taggedasset/transfer/:assetId
+  Body: { current_location_type?, current_site_id?, current_site_name?,
+          current_store_name? }
+  Side-effect: clears assigned_to_employee_id/_name (so a "transfer" implies
+  the previous custodian no longer holds it).
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LIST PAGE
+  Route   : /taggedasset
+  Title   : "Tagged Assets"
+  Source  : GET /taggedasset/getall (+ filters)
+  Columns :
+    - Asset ID         (link → detail)
+    - Name
+    - Class            (chip — color-mapped per class)
+    - Category / Sub
+    - Serial #
+    - Ownership        (chip OWNED / RENTED / LEASED)
+    - Status           StatusBadge
+    - Condition        chip NEW/GOOD/FAIR/POOR/DAMAGED
+    - Custody          (one-line: "EMP-001 (John)" OR "STORE - Main" OR
+                        "SITE - TND-005")
+    - Calibration      (mini-icon: 🛡 if requires_calibration; red if due)
+    - Actions          (Edit, Status, Transfer, Calibrate, Issue, Delete)
+  Filters :
+    - asset_class (multi)
+    - status
+    - condition
+    - ownership
+    - current_site_id (ProjectPicker)
+    - assigned_to_employee_id (EmployeePicker)
+    - include_deleted toggle
+    - search (debounced)
+  Toolbar :
+    + Add Tagged Asset      (canCreate)
+    + Scan QR              opens scanner; on success, navigate to /taggedasset/<id>
+    + Calibration Due      links to /assetcalibration/due-report
+    + Export CSV
+  Bulk row action:
+    - Mass-issue selected to one employee/site (creates multiple AssetIssuance
+      records via the Issuance create endpoint, file 06)
+
+4.2  DETAIL PAGE
+  Route   : /taggedasset/:assetId
+  Source  : GET /taggedasset/getbyid/:assetId
+  Layout  : Page header + 5 tabs
+
+    HEADER STRIP
+      Asset name + asset_id chip + QR-code thumbnail (if qr_code set)
+      Status badge (large)
+      Action menu: Issue / Return / Calibrate / Transfer / Change Status /
+                    Edit / Retire
+
+    TAB 1 — OVERVIEW
+      Identity, classification, ownership (with rental dates if RENTED),
+      specs, warranty section, photos gallery (Photos[]).
+
+    TAB 2 — CUSTODY HISTORY
+      Table of related AssetIssuance records (filter
+      assetissuance/getall?asset_kind=TAGGED&assetIdLabel=<asset_id>):
+        issue_id | assigned_to_name | issue_date | expected_return |
+        actual_return | status | condition_on_return
+      "+ Issue" button → opens /assetissuance create modal pre-filled with
+      this asset.
+
+    TAB 3 — CALIBRATION  (visible only if compliance.requires_calibration)
+      Top: last cal date, next due date (red if overdue, amber ≤30d), agency,
+            certificate number + download link
+      Below: full history list (calibration_id, agency, result, due) — links
+            to calibration detail (file 07).
+      "+ New Calibration" → opens /assetcalibration create modal pre-filled.
+
+    TAB 4 — DOCUMENTS
+      Same as MachineryAsset.documents (4.2 in file 02). Different doc_types:
+      Invoice | Warranty | Manual | Certificate | Other.
+
+    TAB 5 — AUDIT & NOTES
+      AuditDrawer (inline tab variant) showing all changes. notes field
+      shown above the audit list, editable inline.
+
+4.3  CREATE FORM
+  Route   : /taggedasset/new
+  Sections:
+    Identity
+      Asset ID*           text (auto-suggested; editable)
+      Asset Name*         text
+      Asset Category*     <AssetCategoryPicker classFilter="Tool,IT,Survey,
+                                  Furniture,SiteInfra,SafetyEquipment,Other" />
+    Ownership
+      Ownership*          radio OWNED|RENTED|LEASED
+      Vendor              VendorPicker (visible if !OWNED)
+      Rental per day      MoneyInput (visible if RENTED|LEASED)
+      Rental start/end    date pair (visible if RENTED|LEASED)
+    Technical
+      Serial Number       text
+      Model Number        text
+      Manufacturer        text
+      Manufacturing Year  number
+      Specifications      JSON-edit / key-value pairs (free-form)
+    Purchase / Warranty
+      Purchase Date | Cost | Supplier | Invoice
+      Warranty start / expires_on / vendor / coverage
+    Custody initial state
+      current_location_type*  radio SITE|STORE|ASSIGNED|TRANSIT|VENDOR
+      current_site_id         ProjectPicker (if SITE/ASSIGNED)
+      current_store_name      text (if STORE)
+      assigned_to_employee_id EmployeePicker (if ASSIGNED)
+      condition*              dropdown NEW|GOOD|FAIR|POOR|DAMAGED
+    Photos & Tagging
+      Photos                  multi PhotoUpload
+      QR Code                 text + "Generate" button (uses asset_id seed)
+      RFID Tag                text
+    Documents (multi-row, optional)
+
+  Validation:
+    - manufacturing_year 1900..thisYear+1
+    - rental_end_date > rental_start_date when both set
+    - if asset_category.requires_calibration → push the user to add a first
+      calibration after create (toast with link to /assetcalibration/new)
+
+  Submit: POST /taggedasset/create with X-Idempotency-Key.
+
+4.4  EDIT FORM
+  Route   : /taggedasset/:assetId/edit
+  Same as Create, but asset_id read-only and category change re-denormalizes
+  on the server.
+
+4.5  STATUS MODAL
+  Status*    dropdown ACTIVE|IN_STORE|ISSUED|UNDER_REPAIR|LOST|SCRAPPED
+  Notes      textarea
+  PATCH /taggedasset/status/:assetId
+
+4.6  TRANSFER MODAL
+  current_location_type*  radio
+  current_site / store / employee  (conditional)
+  PUT /taggedasset/transfer/:assetId
+  WARNING: clears existing custodian.
+
+4.7  RETIRE DIALOG
+  Confirmation (type asset_id), reason. Status flips to SCRAPPED + soft-delete.
+
+4.8  CALIBRATION DUE WIDGET (dashboard)
+  Source: GET /taggedasset/calibration-due?days=30
+  Card with count + table: asset_id | name | class | due date | site
+
+4.9  TAGGED-ASSET SUMMARY WIDGET (dashboard)
+  Source: GET /taggedasset/summary
+  Stacked bar: per asset_class, segments per status. Click drills into list.
+
+4.10 QR SCAN MODAL
+  Trigger: "Scan QR" toolbar button
+  Opens webcam; on decode, lookup asset_id (try /taggedasset/getbyid first,
+  fall back to search by qr_code in /getall).
+  Navigate to /taggedasset/:assetId on hit; toast on miss.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS / STATE TRANSITIONS
+--------------------------------------------------------------------------------
+  status transitions (enforced softly — UI-side):
+
+    IN_STORE → ISSUED              (via AssetIssuance create)
+    ISSUED → IN_STORE              (via AssetIssuance return)
+    IN_STORE/ISSUED → UNDER_REPAIR (manual via PATCH /status)
+    UNDER_REPAIR → IN_STORE        (manual)
+    * → LOST                       (via AssetIssuance markLost)
+    * → SCRAPPED                   (via DELETE)
+
+  ACTIVE is reserved for "out being used in field" cases not tied to an
+  Issuance — most workflows use ISSUED/IN_STORE.
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- Calibration due (cron daily 06:30) — see file 07.
+- Asset issuance overdue (cron daily 06:00) — see file 06.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                       | required permission
+  ---------------------------------|----------------------------
+  /taggedasset list                | asset.tagged_asset.read
+  + Add Tagged Asset               | asset.tagged_asset.create
+  Edit                             | asset.tagged_asset.edit
+  Status / Transfer                | asset.tagged_asset.edit
+  Retire                           | asset.tagged_asset.delete
+  Issue button                     | asset.issuance.create
+  Calibrate button                 | asset.calibration.create
+  Calibration tab                  | asset.calibration.read
+  Calibration Due widget           | asset.tagged_asset.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- AssetIssuance (file 06) issues TaggedAssets; flips status ISSUED on issue,
+  IN_STORE on return.
+- AssetCalibration (file 07) writes back the compliance summary on save.
+- Inspection module (file 11) does NOT cover tagged assets — only machinery.
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- The asset_id is generated by IdcodeServices.generateCode("TAGGED_ASSET").
+  Don't auto-increment client-side — always let the server assign.
+- include_deleted=true is the only way to see retired assets in the list.
+- A SCRAPPED tagged asset cannot be issued (server returns 400 from the
+  Issuance service _hydrateAsset check).
+- ownership=RENTED with rental_end_date in the past: surface a banner on
+  detail page to confirm/return to vendor.
+- Specifications is a free-form Mixed field — UI should NOT enforce a schema;
+  use a key-value editor. Document the keys you actually consume.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with all filters + QR scan + bulk-issue
+[ ] Detail with 5 tabs
+[ ] Create form with conditional rental section + custody section
+[ ] Edit, Status, Transfer, Retire modals
+[ ] Calibration tab + new-calibration flow
+[ ] Photos gallery
+[ ] Tagged-asset summary widget on dashboard
+[ ] Calibration-due widget
+[ ] RBAC gates
+[ ] Print "Tagged Asset Card"
+
+================================================================================
+END 03 — Tagged Asset
+================================================================================

@@ -35,6 +35,7 @@ export const getUserToUserTokenDto = (user) => {
     mobile: user.mobile,
     level: user.level,
     status: user.status,
+    hasSeenOnboarding: user.hasSeenOnboarding ?? false,
     createdAt: user.createdAt,
     updatedAt: user.updatedAt,
   };

@@ -81,6 +81,8 @@ const employeeSchema = new mongoose.Schema(
       default: null
     },
     isDeleted: { type: Boolean, default: false },
+    hasSeenOnboarding: { type: Boolean, default: false },
+
 
     // -----------------------------------------------------
     // --- 2. NEW HRMS FIELDS ADDED BELOW ---

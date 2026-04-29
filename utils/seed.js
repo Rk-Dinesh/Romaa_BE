@@ -325,11 +325,22 @@ const seedApprovalRules = async () => {
 const seedAssetIdCodes = async () => {
   try {
     const idCodes = [
-      { name: "TAGGED_ASSET",      prefix: "TGA" },
-      { name: "BULK_INVENTORY",    prefix: "BLK" },
-      { name: "BULK_INV_TXN",      prefix: "BIT" },
-      { name: "ASSET_ISSUANCE",    prefix: "ISS" },
-      { name: "ASSET_CALIBRATION", prefix: "CAL" },
+      { name: "TAGGED_ASSET",       prefix: "TGA" },
+      { name: "BULK_INVENTORY",     prefix: "BLK" },
+      { name: "BULK_INV_TXN",       prefix: "BIT" },
+      { name: "ASSET_ISSUANCE",     prefix: "ISS" },
+      { name: "ASSET_CALIBRATION",  prefix: "CAL" },
+      // Tier-2 industrial-grade additions
+      { name: "MACHINERY_ASSET",    prefix: "MAC" },
+      { name: "MAINTENANCE_LOG",    prefix: "MNT" },
+      { name: "PM_PLAN",            prefix: "PMP" },
+      { name: "WORK_ORDER",         prefix: "WO" },
+      { name: "INSP_TEMPLATE",      prefix: "ITP" },
+      { name: "ASSET_INSPECTION",   prefix: "INS" },
+      { name: "OPERATOR_CERT",      prefix: "OPC" },
+      { name: "INSURANCE_CLAIM",    prefix: "ICL" },
+      { name: "RENTAL_AGREEMENT",   prefix: "RNT" },
+      { name: "RENTAL_INVOICE",     prefix: "RIV" },
     ];
     for (const c of idCodes) {
       await IdcodeServices.addIdCode(c.name, c.prefix);

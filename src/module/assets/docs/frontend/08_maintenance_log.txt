@@ -1,0 +1,238 @@
+================================================================================
+  08 — MAINTENANCE LOG  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/maintainencelog
+Phase     : 4 (Maintenance & Reliability)
+RBAC key  : asset.maintenance   (read / create / edit / delete)
+Route base: (no dedicated route prefix today — exposed via WorkOrder closure
+             and read indirectly from MachineryAsset.dashboard endpoint)
+ID prefix : MNT  (e.g. MNT001)
+
+> UI/VISUAL STYLE NOTE
+>   This is a LEDGER view — mirror /finance/journalentry list visual.
+>   Read-only by default, writes happen automatically when WorkOrder
+>   closes. Manual create/edit endpoints are NOT exposed today (see §3).
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+The maintenance ledger — every service event (scheduled / breakdown / spare-
+parts / consumables / labor / tyre-battery / insurance-claim / other) is
+recorded as one row.
+
+In the industrial-grade architecture (post-tier-2), MaintenanceLog is now
+WRITTEN AUTOMATICALLY by the WorkOrder service on closure (see file 10):
+  • parts[] subdoc copied from WO.parts (with quantity_used, unit_cost, total)
+  • labor[] subdoc copied from WO.labor
+  • totals (parts_total, labor_total, other_charges, tax_amount, amount)
+  • breakdown_started_at / ended_at / downtime_hours (for MTBF/MTTR)
+  • meterReadingAtService
+
+Manual entries (e.g. ad-hoc historical migrations or one-off "I just paid the
+mechanic in cash" entries) are TODO — a dedicated /maintenancelog endpoint set
+is recommended for Phase 4.5. Until then, the WorkOrder workflow is the only
+code-path that creates rows.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: MaintenanceLog
+
+  IDENTITY
+    maintenance_id   String UNIQUE INDEXED   ("MNT001")
+    assetId          String INDEXED REQUIRED  (business key e.g. "EX-01")
+    projectId        String REQUIRED          (where the cost was incurred)
+    date             Date INDEXED default now
+
+  WORK ORDER LINK (when sourced from WO)
+    work_order_ref   ObjectId WorkOrder
+    work_order_no    String
+
+  CATEGORY
+    category    enum REQUIRED:
+                  "Scheduled Service" | "Breakdown Repair" | "Spare Parts"
+                  | "Consumables" | "Labor Charge" | "Tyre/Battery"
+                  | "Insurance Claim" | "Other"
+    description String REQUIRED
+
+  PARTIES
+    vendorId     String   (links to Vendor master if applicable)
+    vendorName   String
+
+  COST BREAKDOWN
+    parts                array of:
+      [ { item_ref, item_id_label, item_name, quantity, unit,
+          unit_cost, total_cost } ]
+    labor                array of:
+      [ { employee_id, technician_name, role, hours,
+          rate_per_hour, total_cost } ]
+    parts_total / labor_total / other_charges / tax_amount
+    amount               Number REQUIRED — grand total
+
+    invoiceNumber / invoice_url
+
+  RELIABILITY METRICS
+    breakdown_started_at / breakdown_ended_at
+    downtime_hours
+    meterReadingAtService
+    next_service_due_at_reading
+    next_service_due_on
+
+  remarks
+  is_deleted (soft) / created_by / updated_by / timestamps
+
+  Compound indexes: (assetId, date desc), (category, date desc).
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+TODAY  : NO direct route prefix. MaintenanceLog rows are READ from the
+         MachineryAsset dashboard endpoint and WRITTEN automatically by the
+         WorkOrder closure flow.
+
+  Read access:
+    GET /machineryasset/dashboard/:assetId
+    Response includes `maintenanceHistory` array — full list for the asset,
+    sorted date desc.
+
+  Write access (automatic):
+    POST /workorderasset/transition/:workOrderNo  with toStatus="CLOSED"
+    Backend's WorkOrderService._postClosureSideEffects() inserts the
+    MaintenanceLog row, denormalising parts/labor/totals from the WO.
+
+  Manual/historical entries (RECOMMENDED FOR PHASE 4.5):
+    A dedicated /maintenancelog endpoint set is NOT yet exposed. If
+    needed later:
+      POST   /maintenancelog/create
+      GET    /maintenancelog/getall?assetId=...&category=...&from=...&to=...
+      GET    /maintenancelog/getbyid/:maintenanceId
+      PUT    /maintenancelog/update/:maintenanceId
+      DELETE /maintenancelog/delete/:maintenanceId
+    The model already supports independence (no required work_order_ref).
+
+For frontend purposes today:
+  - Read on the asset dashboard endpoint.
+  - Show as a tab on /machinery/:assetId.
+  - To "add" a maintenance event manually, the user must create a WorkOrder
+    (kind=CORRECTIVE) and close it through the workflow — that creates the
+    row.
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  ASSET MAINTENANCE TAB  (lives inside file 02 Machinery Detail)
+  Route    : /machinery/:assetId  → Tab "Maintenance"
+  Source   : GET /machineryasset/dashboard/:assetId  → maintenanceHistory[]
+  Columns  :
+    - Maintenance ID
+    - Date
+    - Category               chip per category (color-coded)
+    - Description
+    - Vendor                 (or "—")
+    - Parts Total            MoneyInput-format
+    - Labor Total            MoneyInput-format
+    - Other / Tax            MoneyInput-format combined
+    - Total Amount           MoneyInput-format (bold)
+    - Reading at Service     (HMR/KMs)
+    - Downtime               hours (if breakdown)
+    - WO #                   link to /workorderasset/getbyid/:workOrderNo
+    - Actions                (View / Print)
+  Filters  : date range, category, vendor
+
+4.2  CROSS-ASSET MAINTENANCE LEDGER  (when /maintenancelog endpoints land)
+  Route   : /maintenancelog
+  Source  : GET /maintenancelog/getall (proposed)
+  Columns : as 4.1 plus an Asset column (link to /machinery/:assetId)
+  Filters : asset_id, project_id, category, date range, vendor
+
+4.3  DETAIL DRAWER
+  Trigger: "View" row action
+  Slide-in drawer:
+    Top:    Identity + WO link
+    Middle: Parts table | Labor table | Cost summary card
+            (parts_total + labor_total + other_charges + tax_amount = amount)
+    Bottom: Reliability metrics: breakdown started / ended / downtime
+    Footer: Invoice number + invoice file link
+
+4.4  PRINT — MAINTENANCE VOUCHER
+  Print template: header (company logo, voucher # = maintenance_id),
+  asset block, parts table, labor table, totals, signatures (vendor +
+  authorized signatory). Reuse the existing /purchasebill print template
+  shell for visual consistency.
+
+4.5  COST WIDGETS (dashboard)
+  - "Maintenance cost — last 30d"  (sum of amount, by category, stacked bar)
+  - "Top 5 cost-eating assets"     (sum amount group by assetId, this FY)
+    Sources today: aggregate over /maintenancelog/getall when added.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+Today: RO from frontend (created by WorkOrder).
+Future (when /maintenancelog endpoints land): manual create/edit/soft-delete.
+
+The "lifecycle" within a single record is:
+  • CREATE on WO close → date, parts, labor, totals captured from WO
+  • EDIT (future) — to fix typos in description or vendor; cost lines locked
+    once linked to a WO
+  • DELETE — soft only (is_deleted=true) — but blocked if work_order_ref set
+    (deletion would orphan the WO closure record)
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+None.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                       | required permission
+  ---------------------------------|----------------------------
+  Maintenance tab on asset detail  | asset.maintenance.read
+  Print voucher                    | asset.maintenance.read
+  Cross-asset ledger (future)      | asset.maintenance.read
+  Manual create/edit (future)      | asset.maintenance.create/edit
+  Manual delete (future)           | asset.maintenance.delete
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- WorkOrder (file 10): creates rows on close.
+- MachineryAsset (file 02): dashboard endpoint surfaces history.
+- BulkInventory (file 04): parts subdoc references item_ref / item_id_label
+  / item_name. Click a part to drill into the bulk item.
+- AssetKpiSnapshot (file 15): aggregates downtime_hours and failures (= count
+  of breakdown rows) for MTBF/MTTR.
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- assetId on this collection is the BUSINESS STRING ("EX-01"), not an
+  ObjectId — different from MachineDailyLog.assetId. Don't confuse them
+  when querying.
+- A MaintenanceLog with work_order_ref set is "linked" — its cost lines
+  should be considered immutable from the UI even when edit endpoints
+  exist later (warn the user that fixing costs requires re-opening the WO).
+- The "Insurance Claim" category is reserved for repairs reimbursed by an
+  insurance claim — link the InsuranceClaim's related_work_order_ref to
+  the WO that produced this row, so finance can reconcile.
+- `amount` is the SOURCE-OF-TRUTH grand total. The component subtotals
+  (parts_total / labor_total) should be recomputed from the arrays on save
+  by the backend, but if `amount` and the sum diverge (legacy data),
+  TRUST `amount`.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] Maintenance tab on /machinery/:assetId rendering full history
+[ ] Detail drawer with parts + labor breakdown
+[ ] Print template for maintenance voucher
+[ ] Cost widgets on dashboard (after server aggregation lands)
+[ ] Drill-throughs to WO and bulk-inventory parts
+[ ] Eventually: cross-asset ledger view + manual entry endpoints
+[ ] RBAC gates
+
+================================================================================
+END 08 — Maintenance Log
+================================================================================

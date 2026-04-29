@@ -1,0 +1,564 @@
+================================================================================
+  ROMAA ASSETS — FRONTEND UI & API INTEGRATION GUIDE
+  Common Overview, Phase Plan, and Cross-Cutting Patterns
+================================================================================
+Audience  : Frontend engineers integrating the Romaa Asset module
+Stack     : React + JavaScript (NOT TypeScript) + TanStack Query (@tanstack/react-query)
+            + a form library (React Hook Form recommended) + UI-component-agnostic
+Backend   : Express v5 + Mongoose v8, JWT auth, S3 file storage
+Read also : the per-module guides in this folder, numbered 01..17
+
+--------------------------------------------------------------------------------
+0. UI / VISUAL-STYLE NOTE  (READ FIRST)
+--------------------------------------------------------------------------------
+These documents specify BEHAVIOUR, DATA, and INTEGRATION — they do NOT specify
+visual design.
+
+For colors, typography, spacing, table chrome, modal style, button shapes,
+empty-state illustrations, page-layout shell, sidebar behaviour, breadcrumb
+style, and toast/snackbar appearance:
+
+  >>> REFER TO EXISTING PAGES ALREADY SHIPPED IN THE ROMAA FRONTEND <<<
+  >>> Examples: /tender, /employee, /vendor, /purchaseorderrequest <<<
+
+Reuse the same component library, the same column-header treatment, the same
+form-group spacing, the same status-badge palette, the same date-picker, the
+same file-upload widget, the same empty-state component. Do NOT re-invent.
+
+When this doc says "list page" — that means: same shell as the Tender list.
+When this doc says "create form" — that means: same shell as the Employee
+create form. The fields and validation are documented here; the LOOK is
+already settled in the existing UI.
+
+--------------------------------------------------------------------------------
+1. WHAT THE ASSET MODULE COVERS
+--------------------------------------------------------------------------------
+The Asset module is the operational + financial system-of-record for everything
+the company OWNS, RENTS, ISSUES, MAINTAINS, INSPECTS, INSURES, or CALIBRATES.
+17 sub-modules sit under one top-level `asset` permission group.
+
+ASCII map of sub-modules:
+
+  ┌──────────────────────────── MASTER DATA ──────────────────────────────┐
+  │                                                                       │
+  │   01 Asset Category Master                                            │
+  │      (Machinery / Vehicle / Tool / Formwork / Survey / IT / etc.)     │
+  │                                                                       │
+  └────────────┬──────────────────┬──────────────────┬───────────────────┘
+               │                  │                  │
+       ┌───────▼─────┐    ┌───────▼─────┐    ┌──────▼─────────┐
+       │ 02 Machinery│    │ 03 Tagged   │    │ 04 Bulk        │
+       │   Asset     │    │   Asset     │    │   Inventory    │
+       │ (heavy eqpt)│    │ (tools/IT/  │    │ (formwork/PPE) │
+       │             │    │  survey)    │    │                │
+       └────┬───┬────┘    └─────┬───────┘    └──────┬─────────┘
+            │   │               │                   │
+            │   │       ┌───────┴───────────────────┘
+            │   │       │
+            │   │  ┌────▼─────────┐    ┌────────────┐
+            │   │  │ 06 Issuance  │    │ 07 Calibr- │
+            │   │  │ (polymorphic)│    │   ation    │
+            │   │  └──────────────┘    └────────────┘
+            │   │
+            │   └──► 05 Machinery Logs (daily HMR/KMs/fuel/productivity)
+            │       08 Maintenance Log (service & breakdown ledger)
+            │       09 Preventive Maintenance Plans
+            │       10 Work Order   (lifecycle: Draft→…→Closed)
+            │       11 Inspection   (templates + submissions, critical-fail block)
+            │       12 Operator Cert (license register + enforcement)
+            │       13 Sub-Components (tyres, batteries, wear parts)
+            │       14 Fuel Telemetry (Diztek IoT sync, geofence breach)
+            │       15 KPI / Reliability (MTBF, MTTR, OEE, Utilization)
+            │       16 Insurance Claim (REPORTED→…→SETTLED)
+            │       17 Rental P&L (incoming/outgoing agreements + invoices)
+
+--------------------------------------------------------------------------------
+2. PHASE-WISE BUILD ORDER  (do NOT skip phases)
+--------------------------------------------------------------------------------
+
+  PHASE 1 — Foundations + Master Data
+  -----------------------------------
+    Goal: API client, auth, RBAC, layout, master data ready.
+    Build:
+      • API client (Axios or fetch wrapper) with auth + correlation-id headers
+      • TanStack Query setup (QueryClient + persisted cache)
+      • RBAC helper hook (useCan(module, sub, action))
+      • App shell: header, sidebar, breadcrumb, error boundary, toast provider
+      • Login + token-refresh flow
+      • 01 Asset Category Master  ──► see 01_asset_category_master.txt
+    Why first: every other module needs the category dropdown.
+
+  PHASE 2 — Core Asset Registers
+  ------------------------------
+    Goal: every physical asset is in the system before any operation.
+    Build:
+      • 02 Machinery Asset       ──► 02_machinery_asset.txt
+      • 03 Tagged Asset          ──► 03_tagged_asset.txt
+      • 04 Bulk Inventory + Txn  ──► 04_bulk_inventory.txt
+    Why next: cannot log usage, issue, calibrate, or maintain an asset that
+    isn't registered yet.
+
+  PHASE 3 — Day-to-Day Operations
+  -------------------------------
+    Goal: site can record what's happening with assets.
+    Build:
+      • 05 Machinery Logs        ──► 05_machinery_logs.txt
+      • 06 Asset Issuance        ──► 06_asset_issuance.txt
+      • 07 Asset Calibration     ──► 07_asset_calibration.txt
+
+  PHASE 4 — Maintenance & Reliability
+  -----------------------------------
+    Goal: shift from reactive to preventive maintenance, with full traceability.
+    Build (in this order — they cross-link):
+      • 08 Maintenance Log       ──► 08_maintenance_log.txt        (ledger)
+      • 09 Preventive Maintenance──► 09_preventive_maintenance.txt (plans)
+      • 10 Work Order            ──► 10_work_order.txt             (workflow)
+      • 11 Inspection            ──► 11_inspection.txt             (checklists)
+      • 12 Operator Cert         ──► 12_operator_cert.txt          (licenses)
+
+  PHASE 5 — Telematics & KPI
+  --------------------------
+    Goal: real-time visibility + reliability dashboards.
+    Build:
+      • 13 Sub-Components        ──► 13_sub_components.txt
+      • 14 Fuel Telemetry        ──► 14_fuel_telemetry.txt
+      • 15 KPI / Reliability     ──► 15_kpi_reliability.txt
+
+  PHASE 6 — Compliance & Finance
+  ------------------------------
+    Goal: insurance claim handling + rental P&L.
+    Build:
+      • 16 Insurance Claim       ──► 16_insurance_claim.txt
+      • 17 Rental P&L            ──► 17_rental_pnl.txt
+
+--------------------------------------------------------------------------------
+3. STACK & FOLDER CONVENTIONS  (frontend-side)
+--------------------------------------------------------------------------------
+Recommended folder layout (ALIGN to whatever the Romaa frontend already uses;
+this is a reference, not a mandate):
+
+  src/
+    api/
+      client.js                       ← axios instance
+      asset/
+        machineryAsset.api.js         ← thin wrappers per module
+        taggedAsset.api.js
+        bulkInventory.api.js
+        ...one per sub-module
+    hooks/
+      useCan.js                       ← RBAC gate
+      useAuthUser.js
+      asset/
+        useMachineryAsset.js          ← TanStack Query hooks
+        useWorkOrder.js
+        ...
+    pages/
+      asset/
+        machinery/
+          MachineryAssetList.jsx
+          MachineryAssetDetail.jsx
+          MachineryAssetForm.jsx
+        ...one folder per sub-module
+    components/
+      asset/
+        AssetPicker.jsx               ← shared cross-module pickers
+        EmployeePicker.jsx
+        SignatureCapture.jsx
+        StatusBadge.jsx
+        ...
+    routes/
+      AssetRoutes.jsx                 ← single place that wires asset routes
+
+Module file naming: kebab-case. Component names: PascalCase. Hook names:
+camelCase starting with `use`. API wrappers: camelCase ending with `.api.js`.
+
+--------------------------------------------------------------------------------
+4. API CLIENT SETUP
+--------------------------------------------------------------------------------
+Backend base URL is configured via env var (e.g. VITE_API_BASE_URL). Cookie
+auth is the primary mechanism (`accessToken` HTTP-only cookie); the access
+token is also accepted via `Authorization: Bearer <token>`.
+
+Example axios client (api/client.js):
+
+    import axios from "axios";
+
+    export const apiClient = axios.create({
+      baseURL: import.meta.env.VITE_API_BASE_URL,
+      withCredentials: true,                    // send accessToken cookie
+      timeout: 30000,
+    });
+
+    // Attach correlation-id (server propagates back via X-Correlation-Id)
+    apiClient.interceptors.request.use((config) => {
+      config.headers["X-Correlation-Id"] =
+        config.headers["X-Correlation-Id"] || crypto.randomUUID();
+      return config;
+    });
+
+    // Global 401 handler — kick to /login
+    apiClient.interceptors.response.use(
+      (r) => r,
+      async (err) => {
+        if (err.response?.status === 401) {
+          // try /auth/refresh once, else redirect
+          // ... implementation specific
+        }
+        return Promise.reject(err);
+      }
+    );
+
+Standard headers used by the backend:
+  • X-Idempotency-Key      → optional, makes a POST safe to retry
+  • X-Correlation-Id       → required for log tracing (auto-set above)
+  • If-None-Match          → ETag conditional GET (304 Not Modified)
+  • Authorization: Bearer  → optional fallback to cookie
+
+--------------------------------------------------------------------------------
+5. RBAC IN THE UI
+--------------------------------------------------------------------------------
+The backend ships permissions on the user object:
+    GET /auth/me   →   { user: { _id, role: { permissions: { asset: { ... } } } } }
+
+The asset permission tree contains 17 sub-modules, each with read/create/edit/
+delete booleans. Use a `useCan` hook to gate UI elements:
+
+    // hooks/useCan.js
+    import { useAuthUser } from "./useAuthUser";
+    export const useCan = (mod, sub, action = "read") => {
+      const user = useAuthUser();
+      const m = user?.role?.permissions?.[mod];
+      if (!m) return false;
+      if (!sub) return m[action] === true;
+      return m[sub]?.[action] === true;
+    };
+
+Usage:
+    const canCreate = useCan("asset", "machinery", "create");
+    {canCreate && <Button onClick={openCreate}>Add Machinery</Button>}
+
+EVERY create / edit / delete CTA in this docset must be wrapped in `useCan`.
+The backend WILL also enforce — the frontend gate is for UX (don't show buttons
+the user can't use), not for security.
+
+Asset permission keys (full list — must match role.model.js exactly):
+    asset.category_master
+    asset.machinery
+    asset.machinery_logs
+    asset.maintenance
+    asset.fuel_telemetry
+    asset.tagged_asset
+    asset.bulk_inventory
+    asset.issuance
+    asset.calibration
+    asset.preventive_maintenance
+    asset.work_order
+    asset.inspection
+    asset.operator_cert
+    asset.kpi
+    asset.subcomponent
+    asset.insurance_claim
+    asset.rental
+
+--------------------------------------------------------------------------------
+6. ERROR HANDLING
+--------------------------------------------------------------------------------
+Every backend response follows one of these shapes:
+
+  Success:
+    { status: true, data: ..., message?: "...", meta?: { total, page, ... } }
+
+  Error:
+    { status: false, message: "human-readable", error_code?: "CODE",
+      correlation_id?: "uuid-..." }
+
+Typical HTTP statuses used:
+  200 OK             — read/update success
+  201 Created        — create success
+  400 Bad Request    — validation, business-rule violation
+  401 Unauthorized   — missing/invalid token
+  403 Forbidden      — RBAC denied or business rule (e.g. operator not certified)
+  404 Not Found      — entity missing
+  409 Conflict       — duplicate ID, etag mismatch
+  500 Internal Error — server bug; show generic message + correlation-id
+
+Toast pattern:
+    onError: (err) => toast.error(err.response?.data?.message || "Something went wrong")
+
+Surface `correlation_id` in the toast for easier support escalation:
+    toast.error(`${msg} (ref: ${err.response?.data?.correlation_id ?? "n/a"})`)
+
+Common error_code values used in the asset module:
+    DUPLICATE_ASSET_ID            (409)
+    NOT_FOUND                     (404)
+    OPERATOR_NOT_CERTIFIED        (403)
+    INTERNAL_ERROR                (500)
+
+--------------------------------------------------------------------------------
+7. FILE UPLOAD PATTERN  (S3)
+--------------------------------------------------------------------------------
+Two flows exist in the backend; pick whichever the existing UI uses:
+  (a) Multipart upload to a backend endpoint, server forwards to S3.
+  (b) Backend issues a presigned PUT URL, browser uploads directly.
+
+For asset documents (insurance, RC, calibration cert, handover photo, signature,
+inspection photo), use the same flow that /document or /workorderdocument uses
+in the existing UI.
+
+After upload, you receive `{ Key, Bucket }` — store as `fileUrl` (string) on
+the asset/document subdoc when posting.
+
+--------------------------------------------------------------------------------
+8. PAGINATION / SORTING / FILTERING / SEARCH CONVENTIONS
+--------------------------------------------------------------------------------
+Across all asset list endpoints:
+
+  Query string:
+    ?page=1                          (default 1)
+    &limit=20                        (default 20, max 100 by convention)
+    &search=foo                      (regex-escaped server-side, case-insensitive)
+    &<filter_field>=<value>          (varies per module — see each file)
+
+  Response:
+    { status: true,
+      data: [ ... ],
+      meta: { total, page, limit, totalPages } }
+
+Sorting is endpoint-specific (most default to created/updated DESC). The asset
+module endpoints DO NOT take a `sort` query param — sort is server-decided.
+For client-side sort, sort the page in memory. For server-side custom sort,
+extend the relevant service.
+
+--------------------------------------------------------------------------------
+9. IDEMPOTENCY & ETag
+--------------------------------------------------------------------------------
+For ANY POST that creates a record (issue stock, create work order, file
+claim, post payment), include an idempotency key:
+
+    apiClient.post("/workorderasset/create", payload, {
+      headers: { "X-Idempotency-Key": crypto.randomUUID() }
+    });
+
+The backend caches the response for ~24h keyed by (user, key) — duplicate
+submits return the cached response instead of double-creating.
+
+GET endpoints set `ETag`; pass `If-None-Match: <etag>` on revalidation to
+get a 304 response. TanStack Query handles this automatically when configured
+with `useQuery({ ..., staleTime })`.
+
+--------------------------------------------------------------------------------
+10. NOTIFICATION CENTER INTEGRATION
+--------------------------------------------------------------------------------
+The asset module emits notifications for:
+  • Asset issuance overdue (daily 06:00 cron)
+  • Calibration due (daily 06:30 cron)
+  • Fuel-telemetry geofence breach (real-time on each sync)
+  • PM auto-WO created (daily 05:30 cron — implicit via WO list refresh)
+
+The frontend listens to /notification (existing module). When a notification
+arrives with `module: "asset"`, the existing notification bell handles it.
+Each notification carries an `actionUrl` — clicking it should navigate to the
+relevant asset page (e.g. `/assetissuance/overdue`).
+
+--------------------------------------------------------------------------------
+11. REUSABLE COMPONENTS  (build once, use everywhere)
+--------------------------------------------------------------------------------
+The following components are referenced by multiple module guides. Build them
+once in `components/asset/` and reuse:
+
+  AssetPicker         — autocomplete searching MachineryAsset+TaggedAsset+BulkInv
+                        Props: { kind?, onChange, value, projectId? }
+                        Returns: { _id, asset_id_label, asset_name, asset_kind }
+
+  AssetCategoryPicker — cascading: assetClass → category → subCategory
+                        Source: GET /assetcategory/grouped
+
+  EmployeePicker      — autocomplete on /employee with role/dept filter
+                        Props: { onlyOperators?, assetClass?, onChange, value }
+
+  ProjectPicker       — autocomplete on /tender (projectId = tender_id)
+
+  VendorPicker        — autocomplete on /vendor
+
+  StatusBadge         — colored chip, color-map per module (see each file)
+
+  SignatureCapture    — html-canvas signature pad → uploads to S3 → returns URL
+
+  PhotoUpload         — single or multi photo, with thumbnail preview, S3-backed
+
+  MoneyInput          — INR-formatted, 2-decimal, optional GST split
+
+  GeoPicker           — lat/lng picker on map, falls back to manual input
+
+  AuditDrawer         — opens a side drawer showing /audit?entity_type=X&entity_id=Y
+
+  AttachmentList      — chip-list of uploaded docs, each click opens in new tab
+
+  TransitionDialog    — generic confirm-modal for status moves, captures notes
+
+  KpiTile             — single KPI metric tile with sparkline + delta arrow
+
+  EmptyState          — illustration + headline + CTA (use existing one if any)
+
+  PageHeader          — title + breadcrumb + right-side action slot
+
+  SectionCard         — bordered card with header label (used inside detail pages)
+
+--------------------------------------------------------------------------------
+12. CROSS-MODULE FLOWS  (must understand before integrating)
+--------------------------------------------------------------------------------
+
+  Flow A — PM trigger fires a Work Order
+    1. Daily 05:30 cron (or /workorderasset/auto-create-pm endpoint) scans
+       active PM Plans for due triggers.
+    2. For each due plan, a DRAFT WorkOrder is created with kind="PM",
+       parts pre-populated from the plan template.
+    3. UI list page for /workorderasset filters status="DRAFT" & kind="PM"
+       to show "due PMs to action".
+    4. User approves the WO (transition DRAFT→APPROVED).
+    5. User starts work (APPROVED→IN_PROGRESS), enters reading_at_start.
+    6. User completes (IN_PROGRESS→COMPLETED), enters reading_at_end and
+       quantity_used per part.
+    7. User closes (COMPLETED→CLOSED).
+    8. On CLOSED, backend automatically:
+         • Issues parts from BulkInventory (creates BulkInventoryTransaction)
+         • Posts a MaintenanceLog row
+         • Updates MachineryAsset.lastReading and PM summary
+         • Marks the originating PM Plan as fired → recomputes nextDueAt
+    9. The PM-plan due list refreshes; the next iteration is now the new nextDue.
+
+  Flow B — Inspection critical-fail blocks operation
+    1. Operator submits an inspection (POST /assetinspection/submit).
+    2. Backend tags each response with is_critical from the template.
+    3. If any critical item = FAIL:
+         • MachineryAsset.currentStatus is flipped to "Breakdown"
+         • A remediation WorkOrder (kind="INSPECTION_REMEDIATION") is created
+         • The inspection record stores the WO ref for cross-link
+    4. UI must:
+         • Block the asset from new issuances (already enforced server-side
+           — show a disabled state in /assetissuance/create)
+         • Show a banner on the asset detail page linking to the open WO
+
+  Flow C — Polymorphic Issuance (TAGGED / BULK / MACHINERY)
+    1. /assetissuance/create accepts { asset_kind, asset_ref, ... }.
+    2. UI must pivot the form fields based on `asset_kind`:
+         TAGGED:    quantity locked = 1
+                    show condition_on_issue, photo, signature
+         BULK:      quantity = 1..N (validated against item.total_qty_available
+                    in the chosen location)
+                    show from_location_type/id/name
+         MACHINERY: quantity locked = 1
+                    show operator certification check
+    3. Backend automatically creates the matching BulkInventoryTransaction
+       for BULK; for TAGGED it flips the asset's status to ISSUED.
+    4. Returns can be partial (BULK only): UI shows "open balance" on the
+       return modal so user enters quantity_returning ≤ open_balance.
+
+  Flow D — Rental Invoice generation
+    1. User creates a RentalAgreement (incoming or outgoing).
+    2. Each month, user clicks "Generate Invoice" → POSTs the period dates.
+    3. Backend pulls usage from MachineDailyLog (for hour/km billing) and
+       applies pricing rules → creates DRAFT RentalInvoice.
+    4. User reviews, edits if needed, then "Finalize" → status=FINALIZED.
+    5. Outgoing FINALIZED invoices flow to ClientBilling for raising actual
+       customer invoice; incoming flow to PurchaseBill for vendor payment.
+       (These cross-finance flows are NOT part of the asset module; the
+       asset module stops at FINALIZED — the bridge is in finance.)
+
+  Flow E — Insurance Claim → Work Order
+    1. User files a claim against an asset incident.
+    2. (Optional) User creates a corrective WorkOrder for the repair.
+    3. User links the WO via the claim's `related_work_order_ref`.
+    4. As the claim progresses (REPORTED→SURVEY→…→SETTLED), the linked
+       WO continues independently. Total repair cost on the WO is what
+       the claim should reimburse minus deductible.
+
+--------------------------------------------------------------------------------
+13. PRINT / EXPORT PATTERNS
+--------------------------------------------------------------------------------
+The asset module does NOT yet ship server-side PDF/Excel export endpoints.
+Until those land, do client-side export:
+  • Lists: client-side CSV via the existing CSV helper (/document or /finance
+    pages already have one — reuse it).
+  • Detail/dashboard: client-side PDF via window.print() with @media print
+    CSS, OR a lightweight html-to-pdf lib if the existing UI uses one.
+The work-order printout, calibration certificate, and asset handover voucher
+are common print needs — model them after the existing /purchaseorderrequest
+print template.
+
+--------------------------------------------------------------------------------
+14. DEV / TEST CHECKLIST  (per module)
+--------------------------------------------------------------------------------
+For every module, before declaring it "done", verify:
+
+  [ ] List page renders with pagination, filters, search.
+  [ ] Empty/loading/error states render correctly.
+  [ ] Create form validates required fields client-side.
+  [ ] Create form handles 400/409 from backend with field-level errors.
+  [ ] Create POST sends X-Idempotency-Key.
+  [ ] Edit form locks fields that are read-only post-status.
+  [ ] Detail page loads, audit drawer works.
+  [ ] Status transitions show confirm modal, capture required inputs.
+  [ ] RBAC: hide create/edit/delete buttons when permission missing.
+  [ ] RBAC: backend 403 surfaces a friendly toast.
+  [ ] Cross-module hooks fire (e.g. WO close → MaintenanceLog appears).
+  [ ] Notifications received correctly (where applicable).
+  [ ] CSV export works.
+  [ ] Print template renders without auth (uses session cookie).
+
+--------------------------------------------------------------------------------
+15. GLOSSARY
+--------------------------------------------------------------------------------
+HMR        Hour Meter Reading (engine running hours, primary metric for heavy
+           equipment like excavators)
+KMs        Kilometre reading (primary for vehicles like tippers, trailers)
+OEM        Original Equipment Manufacturer
+NABL       National Accreditation Board for Testing and Calibration Laboratories
+ISO 17025  International calibration accreditation standard
+MTBF       Mean Time Between Failures = operating_hours / failures
+MTTR       Mean Time To Repair = downtime_hours / failures
+OEE        Overall Equipment Effectiveness = Availability × Performance × Quality
+NMR        Non-Muster Roll (informal/contract worker attendance — separate module)
+GRN        Goods Receipt Note
+BOQ        Bill of Quantities
+EMD        Earnest Money Deposit
+DLP        Defect Liability Period
+PM         Preventive Maintenance
+WO         Work Order
+PPE        Personal Protective Equipment
+RC         Registration Certificate (vehicle)
+PUC        Pollution Under Control certificate (vehicle)
+FC         Fitness Certificate (vehicle)
+RTO        Regional Transport Office
+IS / EN    Indian Standard / European Norm (PPE certification standards)
+SLM / WDV  Straight-Line Method / Written-Down Value (depreciation methods)
+HSN/SAC    Harmonized System Nomenclature / Services Accounting Code (GST)
+GST        Goods and Services Tax (India)
+TDS        Tax Deducted at Source (India)
+JE         Journal Entry (finance double-entry posting)
+
+--------------------------------------------------------------------------------
+16. DOCUMENT INDEX
+--------------------------------------------------------------------------------
+File 00 (this file)                  — Overview and phases
+File 01_asset_category_master.txt    — AssetCategoryMaster
+File 02_machinery_asset.txt          — MachineryAsset (heavy equipment)
+File 03_tagged_asset.txt             — TaggedAsset (serial-tracked non-machinery)
+File 04_bulk_inventory.txt           — BulkInventory + Transaction ledger
+File 05_machinery_logs.txt           — MachineDailyLog
+File 06_asset_issuance.txt           — AssetIssuance (polymorphic custody)
+File 07_asset_calibration.txt        — AssetCalibration
+File 08_maintenance_log.txt          — MaintenanceLog
+File 09_preventive_maintenance.txt   — PmPlan
+File 10_work_order.txt               — WorkOrder
+File 11_inspection.txt               — InspectionTemplate + AssetInspection
+File 12_operator_cert.txt            — OperatorCertification
+File 13_sub_components.txt           — Tyres / Batteries / wear parts
+File 14_fuel_telemetry.txt           — Diztek IoT integration
+File 15_kpi_reliability.txt          — AssetKpiSnapshot dashboards
+File 16_insurance_claim.txt          — InsuranceClaim
+File 17_rental_pnl.txt               — RentalAgreement + RentalInvoice
+
+================================================================================
+END — see per-module files for full UI / API specifications.
+================================================================================

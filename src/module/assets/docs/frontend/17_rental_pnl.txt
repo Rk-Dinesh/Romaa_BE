@@ -1,0 +1,418 @@
+================================================================================
+  17 — RENTAL P&L  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/rental
+Phase     : 6 (Compliance & Finance)
+RBAC key  : asset.rental   (read / create / edit / delete)
+Route base: /assetrental
+ID prefixes : RNT (agreement), RIV (invoice)
+
+> UI/VISUAL STYLE NOTE
+>   Mirror /clientbilling list+detail for outgoing invoices and
+>   /purchasebill for incoming. Use the same MoneyInput, GST input,
+>   and currency-pill styling.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Two collections supporting rental P&L:
+
+  • RentalAgreement — formal agreement (incoming = WE rent FROM vendor;
+                       outgoing = WE rent OUR asset OUT to a client).
+                       Captures pricing model, deposits, terms.
+  • RentalInvoice   — monthly billing rollup against an agreement. Pulls
+                       usage from MachineDailyLog (for hour/km billing) and
+                       applies the agreement's pricing rules. DRAFT →
+                       FINALIZED → INVOICED → PAID → CANCELLED.
+
+P&L per asset:
+  Revenue   = Σ(OUTGOING FINALIZED+ invoice totals)
+  Cost      = Σ(INCOMING FINALIZED+ invoice totals)
+  Net       = Revenue − Cost
+
+This module STOPS at FINALIZED. Bridging to actual customer invoices /
+vendor payments lives in finance (ClientBilling / PurchaseBill) — see
+Cross-Module Hooks below.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+
+Collection: RentalAgreement
+
+  agreement_id              String UNIQUE INDEXED   ("RNT001")
+  direction                 enum INDEXED REQUIRED:  INCOMING | OUTGOING
+
+  asset_kind                enum REQUIRED:          MACHINERY | TAGGED | BULK
+  asset_ref                 ObjectId REQUIRED       (kind-specific collection)
+  asset_id_label            String INDEXED REQUIRED ("EX-01" / "TGA001" / "BLK001")
+  asset_name                String
+
+  counterparty_kind         enum REQUIRED:          VENDOR | CLIENT
+  counterparty_id           String INDEXED REQUIRED
+  counterparty_name         String REQUIRED
+
+  projectId                 String INDEXED         (rented to / from this site)
+
+  start_date                Date INDEXED REQUIRED
+  end_date                  Date INDEXED REQUIRED
+
+  PRICING
+  pricing_basis             enum REQUIRED:
+                              PER_DAY | PER_HOUR | PER_KM | PER_MONTH
+  rate                      Number ≥0 REQUIRED
+  currency                  String default "INR"
+  minimum_per_month         Number ≥0       (floor)
+  free_hours_per_month      Number ≥0
+  overtime_rate             Number ≥0
+
+  COST RESPONSIBILITY
+  fuel_borne_by             enum LESSEE | LESSOR  default LESSEE
+  operator_borne_by         enum LESSEE | LESSOR  default LESSEE
+  maintenance_borne_by      enum LESSEE | LESSOR  default LESSOR
+
+  DEPOSITS / TERMS
+  security_deposit          Number ≥0
+  advance_paid              Number ≥0
+  payment_terms_days        Number default 30
+  gst_pct                   Number default 18
+
+  status                    enum INDEXED default DRAFT:
+                              DRAFT | ACTIVE | ON_HOLD | EXPIRED | TERMINATED
+
+  agreement_url             String   (signed PDF in S3)
+  notes / created_by / updated_by / timestamps
+
+
+Collection: RentalInvoice
+
+  invoice_id                String UNIQUE INDEXED   ("RIV001")
+  agreement_ref             ObjectId RentalAgreement REQUIRED INDEXED
+  agreement_no              String INDEXED          ("RNT001")
+  direction                 enum INDEXED            INCOMING | OUTGOING
+  asset_id_label / asset_name / counterparty_id / counterparty_name / projectId
+
+  period_start / period_end / period_label   ("2026-04")
+
+  USAGE
+  days_used / hours_used / kms_used
+
+  AMOUNTS
+  base_amount / overtime_amount / other_charges / deductions
+  taxable_amount / gst_amount / total_amount
+
+  status                    enum INDEXED default DRAFT:
+                              DRAFT | FINALIZED | INVOICED | PAID | CANCELLED
+  invoice_number            String  (external customer invoice # once raised)
+  invoice_date / paid_date / paid_amount
+  notes / created_by / updated_by / timestamps
+
+  Unique: (agreement_ref, period_label)
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+
+Agreements:
+3.1  POST /assetrental/agreement                                      [create]
+3.2  GET  /assetrental/agreements                                     [read]
+3.3  GET  /assetrental/agreement/:agreementId                         [read]
+3.4  PUT  /assetrental/agreement/:agreementId                         [edit]
+
+Invoices:
+3.5  POST /assetrental/agreement/:agreementId/invoice                 [create]
+3.6  GET  /assetrental/invoices                                       [read]
+3.7  POST /assetrental/invoice/:invoiceId/finalize                    [edit]
+
+P&L:
+3.8  GET  /assetrental/pnl/:assetId                                   [read]
+
+----- 3.1 Create Agreement -----
+  POST /assetrental/agreement
+  Body: <see schema>
+  Validation: end_date > start_date, rate ≥ 0.
+
+----- 3.5 Generate Invoice -----
+  POST /assetrental/agreement/:agreementId/invoice
+  Body: { "period_start": "2026-04-01", "period_end": "2026-04-30" }
+  Effect:
+    - Idempotent: returns existing invoice if (agreement_ref, period_label)
+      already exists.
+    - For MACHINERY agreements, queries MachineDailyLog for the asset_ref
+      between period_start and period_end and sums netUsage as hours_used /
+      kms_used (depending on tracking_mode of the asset).
+    - Computes base_amount per pricing_basis:
+        PER_DAY:   days_used × rate
+        PER_MONTH: rate (flat)
+        PER_HOUR:  hours_used × rate (with free-hours cap if set)
+        PER_KM:    kms_used × rate
+    - Applies free_hours_per_month for PER_HOUR agreements; excess goes to
+      overtime_amount.
+    - Enforces minimum_per_month floor.
+    - Computes gst_amount and total_amount.
+    - Inserts DRAFT invoice.
+
+----- 3.6 List Invoices -----
+  GET /assetrental/invoices?page&limit&direction&status&agreement_no&period_label
+
+----- 3.7 Finalize -----
+  POST /assetrental/invoice/:invoiceId/finalize
+  Body: empty
+  Effect: status DRAFT → FINALIZED. Once finalized, edits are blocked.
+
+----- 3.8 P&L per asset -----
+  GET /assetrental/pnl/:assetId?from=&to=
+  assetId = the asset_id_label (string).
+  Filters by asset_id_label and finalized+ statuses (FINALIZED/INVOICED/PAID).
+  Returns:
+    { revenue, cost, net,
+      breakdown: [ { _id: "OUTGOING"|"INCOMING", total, invoices } ] }
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  AGREEMENTS LIST PAGE
+  Route   : /assetrental
+  Title   : "Rental Agreements"
+  Source  : GET /assetrental/agreements
+  Columns :
+    - Agreement ID            (link)
+    - Direction               chip INCOMING/OUTGOING (color)
+    - Asset                   asset_id_label · asset_name (link to asset detail)
+    - Counterparty            kind chip + name (link to /vendor or /client)
+    - Pricing                 "₹15000/day" / "₹500/hr" formatted
+    - Period                  start → end
+    - Status                  StatusBadge DRAFT/ACTIVE/ON_HOLD/EXPIRED/TERMINATED
+    - GST %                   chip
+    - Actions                 (View, Edit, Generate Invoice, Print)
+  Filters :
+    - direction
+    - status
+    - asset_id_label
+    - counterparty_id
+    - active period (start ≤ now ≤ end toggle)
+  Toolbar :
+    + New Agreement           (canCreate)
+    + Active Agreements       (badge)
+    + Export CSV
+
+4.2  AGREEMENT DETAIL
+  Route   : /assetrental/agreement/:agreementId
+  Source  : GET /assetrental/agreement/:agreementId
+  Layout  : header + 3 tabs
+
+    HEADER STRIP
+      Agreement ID + direction chip
+      Asset link · counterparty link
+      Status badge (large)
+      Action menu: Generate Invoice | Edit | Print | Terminate
+
+    TAB 1 — TERMS
+      Pricing card: pricing_basis, rate, currency, minimum_per_month,
+                    free_hours_per_month, overtime_rate, gst_pct
+      Period: start_date → end_date with countdown
+      Cost responsibility: fuel/operator/maintenance chips with LESSEE/LESSOR
+      Deposits: security_deposit, advance_paid, payment_terms_days
+      Agreement file link
+
+    TAB 2 — INVOICES
+      Source: GET /assetrental/invoices?agreement_no=<this>
+      Columns: invoice_id | period_label | days/hours/kms | base | OT |
+               taxable | GST | total | status | invoice_number | actions
+      "+ Generate Invoice for next month" → opens modal pre-filled with
+       next-period dates (uses last invoice period to compute next)
+      Per row: View, Finalize (DRAFT only), Print
+
+    TAB 3 — P&L
+      Source: GET /assetrental/pnl/:asset_id_label?from=<agreement.start>
+      Cards: Revenue, Cost, Net (large numbers)
+      Bar chart: per period, INCOMING vs OUTGOING totals
+
+  Audit drawer trigger.
+
+4.3  CREATE / EDIT AGREEMENT FORM
+  Sections:
+    Direction
+      Direction*           radio INCOMING (we rent from vendor)
+                                  | OUTGOING (we rent out to client)
+    Asset
+      Asset Kind*          radio MACHINERY | TAGGED | BULK
+      Asset*               AssetPicker(kind=<chosen>)
+                           — for INCOMING + MACHINERY, asset must be
+                             assetType=RENTAL ASSET
+      Project              ProjectPicker (the site this rental serves)
+    Counterparty
+      Counterparty Kind*   driven by direction:
+                             INCOMING → VENDOR
+                             OUTGOING → CLIENT
+      Counterparty*        VendorPicker / ClientPicker
+    Period
+      Start Date*          date
+      End Date*            date (must be > start_date)
+    Pricing
+      Pricing Basis*       radio PER_DAY | PER_HOUR | PER_KM | PER_MONTH
+      Rate*                MoneyInput
+      Currency             default INR
+      Minimum per Month    MoneyInput (visible if PER_HOUR / PER_DAY)
+      Free Hours/Month     number    (visible if PER_HOUR)
+      Overtime Rate        MoneyInput (visible if free_hours_per_month > 0)
+      GST %                number (default 18)
+    Cost Responsibility
+      Fuel Borne By*       radio LESSEE | LESSOR
+      Operator Borne By*   radio LESSEE | LESSOR
+      Maintenance Borne By* radio LESSEE | LESSOR
+    Deposits
+      Security Deposit     MoneyInput
+      Advance Paid         MoneyInput
+      Payment Terms (days) number
+    Documents
+      Agreement File       file uploader → S3 → URL
+    Notes                  textarea
+  Submit: POST /assetrental/agreement  /  PUT /assetrental/agreement/:agreementId
+
+4.4  GENERATE INVOICE MODAL
+  Trigger : "Generate Invoice" button (agreement detail or list)
+  Fields  :
+    Period Start*          date (default = first of next un-invoiced month)
+    Period End*            date (default = last day of that month)
+  Submit  : POST /assetrental/agreement/:agreementId/invoice
+  On success: navigate to invoice detail (DRAFT — user can review).
+
+4.5  INVOICE DETAIL
+  Route   : /assetrental/invoice/:invoiceId
+  Source  : (no dedicated single endpoint today; fetch from /invoices and
+             find by id, OR add a getById endpoint later)
+  Layout  :
+    Identity card: invoice_id, agreement link, period, asset, counterparty,
+                   status badge
+    Usage card: days_used | hours_used | kms_used
+    Amount card: base | overtime | other_charges | deductions |
+                 taxable_amount | GST | TOTAL
+    Status timeline: DRAFT → FINALIZED → INVOICED → PAID
+    Actions:
+      DRAFT     → Finalize (canEdit) | Print
+      FINALIZED → Print | "Send to ClientBilling/PurchaseBill" link
+                  (cross-module flow — see hooks)
+      INVOICED  → Mark Paid (when payment received; needs an extension to
+                              the rental endpoint to accept paid_date)
+      PAID      → Print
+
+4.6  INVOICES LIST PAGE
+  Route   : /assetrental/invoices
+  Source  : GET /assetrental/invoices
+  Columns + filters as Tab 2 of the agreement, but unscoped.
+  Top KPI strip:
+    Outstanding Outgoing Revenue (FINALIZED+INVOICED, OUTGOING)
+    Outstanding Incoming Cost
+    Net P&L (FY)
+
+4.7  P&L PAGE  (cross-asset)
+  Route   : /assetrental/pnl
+  Layout  : per-asset table (asset_id | name | revenue | cost | net) sorted
+            by net desc; click → /assetrental/agreement page filtered.
+  Sources : iterate /machineryasset/getall/assets and call
+            /assetrental/pnl/:asset_id_label per asset (or build a fleet
+            endpoint later).
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+
+  Agreement lifecycle:
+    [create]   → DRAFT
+    DRAFT      → ACTIVE      (manual update via PUT)
+    ACTIVE     → ON_HOLD     (e.g. asset unavailable; manual)
+    ACTIVE     → EXPIRED     (auto-flip via cron when end_date < now —
+                              recommended add later)
+    ACTIVE     → TERMINATED  (early termination, manual)
+
+  Invoice lifecycle:
+    [generate] → DRAFT       (user reviews usage and amounts)
+    DRAFT      → FINALIZED   (frozen, sent to finance)
+    FINALIZED  → INVOICED    (after raising customer/vendor invoice — extend
+                              endpoint set later to capture invoice_number)
+    INVOICED   → PAID        (payment received — extend later)
+    DRAFT      → CANCELLED   (mistake)
+
+  P&L feed cycle:
+    Daily logs (file 05) → Generate Invoice (file 17) → Finalize → P&L
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+None today. Recommended additions:
+  • Daily cron: notify when an ACTIVE agreement is within 14d of end_date
+  • Daily cron: notify finance when DRAFT invoices haven't been finalized
+                 within 15d after period_end
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                    | required permission
+  ------------------------------|--------------------------
+  /assetrental list             | asset.rental.read
+  + New Agreement               | asset.rental.create
+  Edit Agreement                | asset.rental.edit
+  Generate Invoice              | asset.rental.create
+  Finalize Invoice              | asset.rental.edit
+  P&L pages                     | asset.rental.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- MachineDailyLog (file 05): the source-of-truth for hours_used / kms_used
+  on PER_HOUR / PER_KM invoices. Logs MUST be entered before invoicing.
+- MachineryAsset / TaggedAsset / BulkInventory: asset_ref points at one of
+  the three.
+- ClientBilling (finance, OUT of scope): an OUTGOING FINALIZED invoice
+  feeds the customer billing flow. The asset module STOPS at FINALIZED;
+  finance picks it up. Ensure a cross-link convention is documented (e.g.
+  ClientBilling.source_type = "RentalInvoice").
+- PurchaseBill (finance): an INCOMING FINALIZED invoice feeds vendor
+  payment. Same cross-link.
+- AssetCategoryMaster: not used directly; rental agreements track raw
+  asset_id_label.
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- Invoice generation is IDEMPOTENT per period — calling /invoice with
+  the same agreement and period_label returns the existing invoice. UI
+  should refresh the list after click (don't disable the button).
+- For MACHINERY assets without daily logs in a period, hours_used will be
+  0 → base_amount = 0 (or minimum_per_month if PER_HOUR with floor). Surface
+  a warning on DRAFT invoice: "No daily logs found for this period".
+- pricing_basis=PER_KM uses the same data field (netUsage) as PER_HOUR;
+  the asset's trackingMode determines what that number actually means.
+  Make sure the Tipper's assetCategory has trackingMode=KILOMETERS.
+- minimum_per_month applies AFTER computing base_amount + overtime_amount.
+  If usage is below the floor, the floor is charged and overtime is zeroed.
+- The currency default is INR; all MoneyInput components should handle
+  multi-currency display (existing /finance/currency module supports it),
+  but rental amount aggregation in P&L assumes one currency. If you have
+  agreements in USD/EUR, the P&L endpoint will sum naively — extend
+  /pnl to apply FX rates from the currency master before summing.
+- gst_pct = 0 is allowed (e.g. for some inter-company rentals) — UI
+  should render "0%" not blank.
+- Agreements can overlap on the same asset (e.g. partial month in/out
+  rentals). The model permits it; the user is responsible for sanity.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] Agreements list with all filters + active toggle
+[ ] Detail with 3 tabs (Terms / Invoices / P&L)
+[ ] Create / Edit form with conditional pricing fields
+[ ] Generate Invoice modal (idempotent — handle existing invoice gracefully)
+[ ] Invoice detail with status timeline + finalize action
+[ ] Invoices list (cross-agreement)
+[ ] P&L page (per-asset)
+[ ] "No logs found" warning on DRAFT invoice
+[ ] RBAC gates
+[ ] Cross-link to ClientBilling / PurchaseBill (when those modules expose
+    source_type=RentalInvoice)
+
+================================================================================
+END 17 — Rental P&L
+================================================================================

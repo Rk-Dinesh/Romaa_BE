@@ -2,10 +2,20 @@ import MachineryAssetService from "./machineryasset.service.js";
 
 export const createMachineryAsset = async (req, res) => {
   try {
-    const result = await MachineryAssetService.addMachineryAsset(req.body);
+    const result = await MachineryAssetService.addMachineryAsset(req.body, req.user?._id);
     res.status(201).json({ status: true, message: "Machinery asset registered successfully", data: result });
   } catch (error) {
-    res.status(500).json({ status: false, message: error.message });
+    res.status(error.statusCode || 500).json({ status: false, message: error.message });
+  }
+};
+
+export const softDeleteMachineryAsset = async (req, res) => {
+  try {
+    const { assetId } = req.params;
+    const result = await MachineryAssetService.softDelete(assetId, req.user?._id);
+    res.status(200).json({ status: true, message: "Machinery asset retired (soft-deleted)", data: result });
+  } catch (error) {
+    res.status(error.statusCode || 500).json({ status: false, message: error.message });
   }
 };
 

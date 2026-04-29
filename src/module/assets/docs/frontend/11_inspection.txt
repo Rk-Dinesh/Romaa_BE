@@ -1,0 +1,402 @@
+================================================================================
+  11 — INSPECTION  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/inspection
+Phase     : 4 (Maintenance & Reliability)
+RBAC key  : asset.inspection   (read / create / edit / delete)
+Route base: /assetinspection
+ID prefixes : ITP (template), INS (submission)
+
+> UI/VISUAL STYLE NOTE
+>   Mirror /attendance punch-in for the photo+location capture step.
+>   Use the existing checklist editor pattern (text-list with add/remove)
+>   for template editing.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Reusable inspection checklist templates plus per-asset submitted inspections.
+Two collections:
+
+  • InspectionTemplate — defines what to check, by asset class + frequency
+                         (PRE_SHIFT / DAILY / WEEKLY / MONTHLY / QUARTERLY / ANNUAL)
+                         Each template has items; each item is critical or not.
+
+  • AssetInspection — a submission against ONE template for ONE machine on
+                      ONE date. If any critical item FAILS, the asset is
+                      auto-flipped to "Breakdown" and a remediation
+                      WorkOrder is auto-created.
+
+Use cases:
+  • Daily pre-shift walkaround (operator-recorded)
+  • Weekly mechanical health check (mechanic)
+  • Annual fitness pre-inspection (before submitting to RTO)
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+
+Collection: InspectionTemplate
+  template_id           String UNIQUE INDEXED  ("ITP001")
+  title                 String REQUIRED
+  asset_class_ref       ObjectId AssetCategoryMaster
+  asset_class           String INDEXED         (denormalised: "Machinery", "Vehicle")
+  asset_category        String                 ("Earthmoving")
+  asset_sub_category    String                 ("Excavator")
+  frequency             enum INDEXED REQUIRED:
+                          PRE_SHIFT | DAILY | WEEKLY | MONTHLY
+                          | QUARTERLY | ANNUAL
+  items                 array of:
+    [ { item_no REQUIRED,
+        section,                      ("Engine","Hydraulics","Brakes")
+        question REQUIRED,
+        response_type default PASS_FAIL: YES_NO | PASS_FAIL | NUMERIC | TEXT,
+        is_critical default false,    (failure blocks operation)
+        expected } ]
+  is_active             Boolean INDEXED default true
+  created_by / updated_by / timestamps
+
+Collection: AssetInspection
+  inspection_id   String UNIQUE INDEXED  ("INS001")
+  asset_ref       ObjectId MachineryAsset REQUIRED INDEXED
+  assetId         String REQUIRED INDEXED  ("EX-01")
+  asset_name      String
+  projectId       String INDEXED
+
+  template_ref    ObjectId InspectionTemplate REQUIRED
+  template_title  String
+  frequency       String
+
+  inspected_at                 Date INDEXED default now
+  inspected_by_employee_id     String                ("EMP-001")
+  inspected_by_employee_name   String
+  operatorId                   String                (operator on shift)
+  reading                      Number                (HMR/KMs at inspection)
+
+  responses       array of:
+    [ { item_no, question, is_critical,
+        response_value: Mixed,        ("YES"|"PASS"|<numeric>|<text>)
+        result REQUIRED: PASS | FAIL | NA,
+        photo_url, notes } ]
+
+  overall_result        enum INDEXED REQUIRED:
+                          PASS | FAIL_NON_CRITICAL | FAIL_CRITICAL
+  failed_critical_count       Number
+  failed_non_critical_count   Number
+
+  remediation_work_order_ref  ObjectId WorkOrder
+                              (auto-created when FAIL_CRITICAL)
+
+  supervisor_signoff_employee_id
+  supervisor_signoff_at
+  supervisor_signature_url
+
+  notes / created_by / timestamps
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+Templates:
+3.1  POST /assetinspection/templates                          [create]
+3.2  GET  /assetinspection/templates                          [read]
+3.3  GET  /assetinspection/templates/:templateId              [read]
+3.4  PUT  /assetinspection/templates/:templateId              [edit]
+
+Submissions:
+3.5  POST /assetinspection/submit                             [create]
+3.6  GET  /assetinspection/submissions                        [read]
+3.7  GET  /assetinspection/submissions/:inspectionId          [read]
+
+----- 3.1 Create Template -----
+  POST /assetinspection/templates
+  Body:
+    {
+      "title": "Excavator Pre-Shift Walk-around",
+      "asset_class": "Machinery",
+      "asset_category": "Earthmoving",
+      "asset_sub_category": "Excavator",
+      "frequency": "PRE_SHIFT",
+      "items": [
+        { "item_no": 1, "section": "Engine",
+          "question": "Engine oil level OK?",
+          "response_type": "PASS_FAIL", "is_critical": true },
+        { "item_no": 2, "section": "Hydraulics",
+          "question": "Any visible hydraulic leaks?",
+          "response_type": "YES_NO", "is_critical": true },
+        { "item_no": 3, "section": "Lights",
+          "question": "All work lights functional?",
+          "response_type": "PASS_FAIL", "is_critical": false }
+      ],
+      "is_active": true
+    }
+
+----- 3.5 Submit -----
+  POST /assetinspection/submit
+  Body:
+    {
+      "asset_ref": "<ObjectId of MachineryAsset>",
+      "template_ref": "<ObjectId of InspectionTemplate>",
+      "projectId": "TND-005",
+      "operatorId": "EMP-007",
+      "reading": 1245,
+      "supervisor_signoff_employee_id": "EMP-002",
+      "supervisor_signature_url": "<S3>",
+      "responses": [
+        { "item_no": 1, "response_value": "PASS", "result": "PASS",
+          "photo_url": "<S3 optional>" },
+        { "item_no": 2, "response_value": "NO", "result": "PASS" },
+        { "item_no": 3, "response_value": "FAIL", "result": "FAIL",
+          "notes": "Left work light flickering" }
+      ],
+      "notes": "..."
+    }
+  Side-effects:
+    - Server tags each response with is_critical from the template
+    - overall_result computed:
+        any critical FAIL  → FAIL_CRITICAL
+        any non-crit FAIL  → FAIL_NON_CRITICAL
+        else                → PASS
+    - If FAIL_CRITICAL:
+        • MachineryAsset.currentStatus → "Breakdown"
+        • Auto-create WorkOrder kind="INSPECTION_REMEDIATION", priority=CRITICAL,
+          inspection_ref=this submission, status=DRAFT
+        • inspection.remediation_work_order_ref filled with the WO id
+
+----- 3.6 List Submissions -----
+  GET /assetinspection/submissions?page&limit&assetId&projectId
+                                 &overall_result&from&to
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  TEMPLATES LIST PAGE
+  Route   : /assetinspection/templates
+  Title   : "Inspection Templates"
+  Source  : GET /assetinspection/templates (+ filters)
+  Columns :
+    - Template ID
+    - Title
+    - Asset Class                (chip)
+    - Category / Sub-category
+    - Frequency                  chip PRE_SHIFT/DAILY/WEEKLY/MONTHLY/Q/ANNUAL
+    - Items count
+    - Critical Items count       (number)
+    - Active                     toggle
+    - Actions                    (Edit, Toggle)
+  Filters : asset_class, frequency, is_active
+  Toolbar : + New Template (canCreate)
+
+4.2  TEMPLATE EDIT PAGE
+  Route   : /assetinspection/templates/:templateId
+  Source  : GET /assetinspection/templates/:templateId
+  Layout  :
+    Top  : Title, scope (asset_class / category / sub_category), frequency,
+           is_active toggle
+    Body : Items editor — table:
+             item_no | section | question | response_type | is_critical | expected
+           Drag to reorder; section header is a string per item, group rows
+           visually by `section` value.
+           "+ Add Item" button
+  Submit:
+    POST /assetinspection/templates  (new)
+    PUT  /assetinspection/templates/:templateId  (edit)
+
+  Validation:
+    - At least 1 item required
+    - item_no must be unique within the template
+    - response_type=NUMERIC: must specify "expected" (range like ">=20")
+
+4.3  SUBMIT INSPECTION FORM  (THE most-used page)
+  Route   : /assetinspection/submit?asset=<assetId>&template=<templateId>
+  Layout  : full-page wizard (mobile-friendly — used at site)
+
+    STEP 1 — CONTEXT
+      Asset*               AssetPicker(kind=MACHINERY) — pre-filled from query
+      Template*            dropdown filtered to is_active=true
+                           AND asset_class/category/sub_category matching
+                           selected asset (auto-filter from
+                           assetCategoryRef → master)
+      Reading              number, default = asset.lastReading
+      Operator             EmployeePicker, default = current user
+      Project              auto-fill from asset.projectId
+
+    STEP 2 — ITEMS
+      For each template item, render a card:
+        Section header (sticky)
+        Question text
+        Response widget (varies by response_type):
+          PASS_FAIL  → big PASS/FAIL toggle pair
+          YES_NO     → big YES/NO toggle pair
+          NUMERIC    → number input (with expected range hint)
+          TEXT       → textarea
+        Result      (auto-set: PASS_FAIL→PASS_or_FAIL match;
+                     YES_NO→PASS if response matches expected, else FAIL;
+                     NUMERIC→PASS if in range, else FAIL;
+                     TEXT→PASS by default, manually flip)
+        Photo upload (PhotoUpload)
+        Notes (textarea)
+        Critical badge (red star) if is_critical
+      Tally bar at top: "X / N items completed | Y FAIL (Z critical)"
+
+    STEP 3 — SIGN-OFF
+      Supervisor*          EmployeePicker
+      Supervisor signature SignatureCapture
+      Notes                textarea
+      Summary card showing overall_result preview
+
+    Submit*              "Submit Inspection" button
+                         POST /assetinspection/submit + X-Idempotency-Key
+    On success:
+      If FAIL_CRITICAL: route to /workorderasset/<remediation_work_order_no>
+                       with banner "Critical failure — asset flagged
+                       Breakdown; remediation WO auto-raised."
+      Else: toast and route to submission detail.
+
+4.4  SUBMISSION DETAIL PAGE
+  Route   : /assetinspection/submissions/:inspectionId
+  Source  : GET /assetinspection/submissions/:inspectionId
+  Layout  :
+    HEADER STRIP
+      Inspection ID + template title + frequency chip
+      overall_result badge (large; red for FAIL_CRITICAL, amber FAIL_NON_CRITICAL)
+      Asset (link), Project, Inspected at, Inspected by, Reading
+      Action menu: Print | Open Remediation WO (if any)
+
+    BODY — Responses
+      Group by section. Per response:
+        ✓ PASS / ✗ FAIL / — NA chip
+        Question
+        Response value
+        Critical-star
+        Photo thumbnail (click to enlarge)
+        Notes
+      Failed critical responses have a red border + warning icon.
+
+    SIGNATURES card
+      Supervisor signature image
+      Supervisor name + signoff timestamp
+
+    REMEDIATION card (only when FAIL_CRITICAL)
+      Link to the remediation WorkOrder with its current status
+
+4.5  SUBMISSIONS LIST PAGE
+  Route   : /assetinspection/submissions
+  Source  : GET /assetinspection/submissions (+ filters)
+  Columns :
+    - Inspection ID
+    - Asset
+    - Template
+    - Frequency chip
+    - Inspected At
+    - Result            badge PASS / FAIL_NON_CRITICAL / FAIL_CRITICAL
+    - Failed counts     "0c / 1n" (critical/non-critical)
+    - Inspected By
+    - Project
+    - Remediation WO    link or "—"
+    - Actions           (View)
+  Filters :
+    - asset (AssetPicker)
+    - project
+    - overall_result
+    - date range
+  Toolbar :
+    + New Inspection            (canCreate)  — opens submit form
+    + Failed Inspections (today) shortcut
+    + Export CSV
+
+4.6  ASSET INSPECTION TAB (cross-link from /machinery/:assetId)
+  Add a tab "Inspections" on the machinery detail page:
+    Recent submissions for this asset, with shortcut "+ New Inspection"
+    pre-filling asset_ref.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+
+  Submit  ──►  responses tagged by template ──► overall_result computed
+                                                    │
+                                          if FAIL_CRITICAL ────►   asset.currentStatus = Breakdown
+                                                    │                +
+                                                    │            auto-create remediation WO
+                                                    │
+                                                    ▼
+                                          submission saved
+
+  Operator can NOT operate the asset (advisory):
+    - The Issuance form for kind=MACHINERY should check the asset's
+      currentStatus; if "Breakdown", show a banner blocking issue.
+    - The MachineDailyLog form should warn if attempting to log a machine
+      currently in Breakdown.
+
+  Once the remediation WO is CLOSED, the asset's currentStatus stays
+  "Breakdown" until manually flipped back to "Active" by a supervisor —
+  this is intentional, so a human re-attests the machine is fit.
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- Today: none direct. UI should surface FAIL_CRITICAL on the dashboard
+  and via the WO list (since a critical-fail creates a CRITICAL-priority
+  WO). Adding a notification is straightforward — see file 06 issuance
+  pattern for reference.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                     | required permission
+  -------------------------------|----------------------------
+  Templates list / edit          | asset.inspection.read / .create / .edit
+  Submit Inspection              | asset.inspection.create
+  Submissions list / detail      | asset.inspection.read
+  Auto-created WO viewing        | asset.work_order.read
+  Asset banner "Breakdown — open WO" | asset.work_order.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- MachineryAsset (file 02): currentStatus auto-flipped on FAIL_CRITICAL
+- WorkOrder (file 10): remediation WO auto-created
+- AssetIssuance (file 06): UI must block issuing a Breakdown asset
+- MachineDailyLog (file 05): UI advisory warning on Breakdown asset
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- response_type=NUMERIC with no `expected` will always result.PASS unless
+  the operator manually flips. Templates should always set `expected` when
+  using NUMERIC.
+- The submit endpoint hydrates `is_critical` per response from the template
+  — sending a different value in the request is silently overridden.
+- If FAIL_CRITICAL but the auto-WO creation throws, the inspection is still
+  saved (try/catch in service). UI should refetch the submission after
+  3s in case the remediation_work_order_ref was set asynchronously.
+- Multiple submissions on the same day for the same (asset, template)
+  are allowed — there's no uniqueness constraint. UI may warn.
+- Templates cover only MachineryAsset today. TaggedAsset / BulkInventory
+  have no inspection concept (a "PPE inspection" use case would need a
+  templates extension).
+- Template item.response_type=YES_NO: by convention, YES = PASS unless
+  the question is phrased negatively ("Any leaks? YES = FAIL"). The
+  template author must phrase questions consistently OR add an `expected`
+  field to flip the polarity. The current schema doesn't have an
+  `expected` for YES_NO — extend if needed.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] Templates list + editor with items table
+[ ] Template scope filter (class/category/subcategory) drives the
+    Submit form's template dropdown
+[ ] Submit wizard (3 steps) — mobile-friendly
+[ ] Per-item response widgets per response_type
+[ ] Photo upload + Signature capture
+[ ] FAIL_CRITICAL routing to remediation WO
+[ ] Submissions list + detail
+[ ] Inspections tab on /machinery/:assetId
+[ ] Block issuing a Breakdown asset (cross-module guard)
+[ ] RBAC gates
+
+================================================================================
+END 11 — Inspection
+================================================================================

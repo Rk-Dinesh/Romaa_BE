@@ -49,6 +49,19 @@ import assetIssuanceRouter from "./src/module/assets/assetissuance/assetissuance
 import assetCalibrationRouter from "./src/module/assets/assetcalibration/assetcalibration.route.js";
 import AssetIssuanceService from "./src/module/assets/assetissuance/assetissuance.service.js";
 import AssetCalibrationService from "./src/module/assets/assetcalibration/assetcalibration.service.js";
+// ── Tier-2 industrial-grade asset modules ───────────────────────────────────
+import pmPlanRouter        from "./src/module/assets/preventiveMaintenance/pmplan.route.js";
+import workOrderAssetRouter from "./src/module/assets/workorder/workorder.route.js";
+import WorkOrderAssetService from "./src/module/assets/workorder/workorder.service.js";
+import inspectionRouter    from "./src/module/assets/inspection/inspection.route.js";
+import operatorCertRouter  from "./src/module/assets/operatorcert/operatorcert.route.js";
+import OperatorCertService from "./src/module/assets/operatorcert/operatorcert.service.js";
+import kpiRouter           from "./src/module/assets/kpi/kpi.route.js";
+import AssetKpiService     from "./src/module/assets/kpi/kpi.service.js";
+import subComponentRouter  from "./src/module/assets/machinery/subcomponent.route.js";
+import insuranceClaimRouter from "./src/module/assets/insuranceclaim/insuranceclaim.route.js";
+import rentalRouter        from "./src/module/assets/rental/rental.route.js";
+import sampleDataRouter    from "./src/module/assets/sampleData/sampledata.route.js";
 import NotificationService from "./src/module/notifications/notification.service.js";
 import { startFuelSyncCron } from "./utils/fuelSyncCron.js";
 import AttendanceRoute from "./src/module/hr/userAttendance/userAttendance.route.js";
@@ -219,6 +232,42 @@ cron.schedule("0 6 * * *", () => runAsSystem("assetIssuanceOverdue", async () =>
   }
 }));
 
+// Daily 05:30: auto-create work orders from any due PM plans, then sweep
+// expired operator certifications, then refresh daily KPI snapshots.
+cron.schedule("30 5 * * *", () => runAsSystem("assetIndustrial", async () => {
+  try {
+    const created = await WorkOrderAssetService.autoCreateFromDuePlans(null);
+    logger.info(`PM auto-WO cron: created=${created.length}`);
+  } catch (err) {
+    logger.error("PM auto-WO cron error: " + err.message);
+  }
+  try {
+    const sweep = await OperatorCertService.sweepExpired();
+    logger.info(`Operator-cert expiry sweep: modified=${sweep.modified}`);
+  } catch (err) {
+    logger.error("Operator-cert sweep error: " + err.message);
+  }
+  try {
+    const stats = await AssetKpiService.computeAll({ period_kind: "DAY" });
+    logger.info(`Asset KPI daily compute: ${JSON.stringify(stats)}`);
+  } catch (err) {
+    logger.error("Asset KPI compute error: " + err.message);
+  }
+}));
+
+// Monthly on 1st at 04:00: compute monthly KPI snapshot for the previous month
+cron.schedule("0 4 1 * *", () => runAsSystem("assetKpiMonthly", async () => {
+  try {
+    const prev = new Date();
+    prev.setDate(1);
+    prev.setMonth(prev.getMonth() - 1);
+    const stats = await AssetKpiService.computeAll({ period_kind: "MONTH", refDate: prev });
+    logger.info(`Asset KPI monthly compute: ${JSON.stringify(stats)}`);
+  } catch (err) {
+    logger.error("Asset KPI monthly compute error: " + err.message);
+  }
+}));
+
 // Daily 06:30: notify asset.calibration audience about calibrations due in the
 // next 30 days (or already overdue). Uses upsert-by-day in NotificationService —
 // safe to run daily; duplicate banners aren't a concern at this volume.
@@ -375,6 +424,16 @@ app.use("/taggedasset", taggedAssetRouter);
 app.use("/bulkinventory", bulkInventoryRouter);
 app.use("/assetissuance", assetIssuanceRouter);
 app.use("/assetcalibration", assetCalibrationRouter);
+// ── Tier-2 asset modules ────────────────────────────────────────────────────
+app.use("/pmplan",           pmPlanRouter);
+app.use("/workorderasset",   workOrderAssetRouter);
+app.use("/assetinspection",  inspectionRouter);
+app.use("/operatorcert",     operatorCertRouter);
+app.use("/assetkpi",         kpiRouter);
+app.use("/subcomponent",     subComponentRouter);
+app.use("/insuranceclaim",   insuranceClaimRouter);
+app.use("/assetrental",      rentalRouter);
+app.use("/asset-sample",     sampleDataRouter);
 app.use("/attendance", AttendanceRoute);
 app.use("/calendar", CalendarRoute);
 app.use("/leave", LeaveRoute);

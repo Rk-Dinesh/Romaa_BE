@@ -169,15 +169,23 @@ const RoleSchema = new mongoose.Schema(
       // Separate top-level module — distinct from project.assets / purchase.assets
       // / site.site_assets which gate per-context UIs in those modules.
       asset: {
-        category_master:  Actions(),   // AssetCategoryMaster (settings master)
-        machinery:        Actions(),   // MachineryAsset (heavy: GPS/fuel/HMR)
-        machinery_logs:   Actions(),   // MachineDailyLog (daily usage)
-        maintenance:      Actions(),   // MaintenanceLog (service/breakdown)
-        fuel_telemetry:   Actions(),   // GPS / fuel sync from third-party
-        tagged_asset:     Actions(),   // Tools, IT, Survey, Furniture, single SiteInfra
-        bulk_inventory:   Actions(),   // Formwork, Scaffolding, PPE, Fencing
-        issuance:         Actions(),   // Cross-cutting custody (issue / return)
-        calibration:      Actions(),   // Survey/Lab calibration certificates
+        category_master:        Actions(),   // AssetCategoryMaster (settings master)
+        machinery:              Actions(),   // MachineryAsset (heavy: GPS/fuel/HMR)
+        machinery_logs:         Actions(),   // MachineDailyLog (daily usage)
+        maintenance:            Actions(),   // MaintenanceLog (service/breakdown)
+        fuel_telemetry:         Actions(),   // GPS / fuel sync from third-party
+        tagged_asset:           Actions(),   // Tools, IT, Survey, Furniture, single SiteInfra
+        bulk_inventory:         Actions(),   // Formwork, Scaffolding, PPE, Fencing
+        issuance:               Actions(),   // Cross-cutting custody (issue / return)
+        calibration:            Actions(),   // Survey/Lab calibration certificates
+        preventive_maintenance: Actions(),   // PM plans (interval-based scheduler)
+        work_order:             Actions(),   // WorkOrder (corrective + PM workflow)
+        inspection:             Actions(),   // Inspection templates + submissions
+        operator_cert:          Actions(),   // Operator licensing register
+        kpi:                    Actions(),   // Reliability dashboards (MTBF/MTTR/OEE)
+        subcomponent:           Actions(),   // Tyres / batteries / wear parts
+        insurance_claim:        Actions(),   // Insurance incident & settlement
+        rental:                 Actions(),   // Rental agreements + invoice rollups
       },
 
       // --- Audit Log (app-wide, non-finance) ---

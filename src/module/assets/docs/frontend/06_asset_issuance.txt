@@ -1,0 +1,446 @@
+================================================================================
+  06 — ASSET ISSUANCE  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/assetissuance
+Phase     : 3 (Operations)
+RBAC key  : asset.issuance   (read / create / edit / delete)
+Route base: /assetissuance
+ID prefix : ISS  (e.g. ISS001)
+
+> UI/VISUAL STYLE NOTE
+>   Polymorphic form — same shell, fields swap by asset_kind. Mirror
+>   the existing /workorderrequest issue/return modal pattern. Reuse
+>   SignatureCapture and PhotoUpload components; same camera UX as
+>   /attendance punch-in.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Cross-cutting custody log: who has WHAT, when issued, when due back, in what
+condition. Polymorphic across THREE asset kinds:
+
+   asset_kind = "TAGGED"     →  TaggedAsset       (qty always 1)
+   asset_kind = "BULK"       →  BulkInventory     (qty 1..N, partial returns)
+   asset_kind = "MACHINERY"  →  MachineryAsset    (qty 1, operator handover)
+
+For BULK, this record is the human-side custody trail — the underlying stock
+movement is posted automatically by BulkInventoryService.issue() / .receiveReturn().
+
+Captures handover proof (photo, signature) and condition before/after.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: AssetIssuance
+
+  IDENTITY
+    issue_id           String UNIQUE INDEXED        ("ISS001")
+
+  POLYMORPHIC ASSET REF
+    asset_kind         enum INDEXED REQUIRED:       TAGGED | BULK | MACHINERY
+    asset_ref          ObjectId REQUIRED            (kind-specific collection)
+    asset_id_label     String INDEXED REQUIRED      ("TGA001" / "BLK001" / "EX-01")
+    asset_name         String
+
+  RECIPIENT
+    assigned_to_kind   enum INDEXED REQUIRED:       EMPLOYEE | CONTRACTOR
+                                                    | CONTRACT_WORKER | SITE
+    assigned_to_id     String INDEXED REQUIRED      ("EMP-001","CON-002",...)
+    assigned_to_name   String REQUIRED
+    contractor_id      String                       (when CONTRACT_WORKER, the parent contractor)
+
+  SITE CONTEXT
+    project_id         String INDEXED               (Tender.tender_id)
+    site_name          String
+
+  QUANTITY & DATES
+    quantity           Number ≥1     (1 for tagged/machinery, N for bulk)
+    issue_date         Date INDEXED default now
+    expected_return_date  Date INDEXED
+    actual_return_date    Date INDEXED
+
+  CONDITION
+    condition_on_issue   enum default GOOD: NEW|GOOD|FAIR|POOR|DAMAGED
+    condition_on_return  enum (or null): NEW|GOOD|FAIR|POOR|DAMAGED|null
+    damage_charge        Number ≥0
+
+  STATUS
+    status     enum INDEXED default ISSUED:
+                 ISSUED | PARTIALLY_RETURNED | RETURNED
+                 | OVERDUE | LOST | DAMAGED
+
+  BULK-SPECIFIC
+    quantity_returned   Number ≥0
+    (open balance = quantity − quantity_returned)
+
+  PURPOSE & PROOF
+    purpose                text
+    handover_signature_url / handover_photo_url  (S3)
+    return_signature_url   / return_photo_url    (S3)
+    notes
+
+  AUDIT
+    issued_by    ObjectId Employee
+    received_by  ObjectId Employee  (who recorded the return)
+    timestamps
+
+  Compound indexes:
+    (assigned_to_id, status)
+    (project_id, status)
+    (status, expected_return_date)   // overdue scans
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  POST  /assetissuance/create                       [create]
+3.2  GET   /assetissuance/getall                       [read]
+3.3  GET   /assetissuance/overdue                      [read]
+3.4  POST  /assetissuance/sweep-overdue                [edit]   (admin manual sweep)
+3.5  GET   /assetissuance/getbyid/:issueId             [read]
+3.6  POST  /assetissuance/return/:issueId              [edit]
+3.7  POST  /assetissuance/lost/:issueId                [edit]
+
+----- 3.1 Create -----
+  POST /assetissuance/create
+  Body (TAGGED):
+    {
+      "asset_kind": "TAGGED",
+      "asset_ref": "<ObjectId of TaggedAsset>",
+      "assigned_to_kind": "EMPLOYEE",
+      "assigned_to_id": "EMP-001",
+      "assigned_to_name": "John Doe",
+      "project_id": "TND-005",        // optional
+      "site_name": "Ariyalur",
+      "expected_return_date": "...",
+      "condition_on_issue": "GOOD",
+      "purpose": "Surveying basement plot",
+      "handover_signature_url": "<S3>",
+      "handover_photo_url": "<S3>",
+      "notes": "..."
+      // quantity is forced to 1 for TAGGED
+    }
+  Body (BULK):
+    {
+      "asset_kind": "BULK",
+      "asset_ref": "<ObjectId of BulkInventory>",
+      "quantity": 25,
+      "from_location_type": "STORE",
+      "from_location_id": "MAIN_STORE",
+      "from_location_name": "Main Store",
+      "assigned_to_kind": "CONTRACTOR",
+      "assigned_to_id": "CON-002",
+      "assigned_to_name": "ABC Contractors",
+      "expected_return_date": "...",
+      "condition_on_issue": "NEW",
+      "purpose": "Roof shuttering",
+      "notes": "..."
+    }
+  Body (MACHINERY):
+    {
+      "asset_kind": "MACHINERY",
+      "asset_ref": "<ObjectId of MachineryAsset>",
+      "assigned_to_kind": "EMPLOYEE",
+      "assigned_to_id": "EMP-007",
+      "assigned_to_name": "Karim",
+      "project_id": "TND-005",
+      "expected_return_date": "...",
+      "purpose": "Excavation, basement pit",
+      "handover_signature_url": "<S3>",
+      "handover_photo_url": "<S3>"
+      // quantity forced to 1
+    }
+  Side-effects (server-side, automatic):
+    TAGGED:    asset.status="ISSUED", asset.assigned_to_employee_*, location=ASSIGNED
+    BULK:      posts ISSUE transaction in BulkInventory ledger (atomic Mongo txn)
+    MACHINERY: no automatic asset-state change (operator handover is the sole
+               custody trail). UI may opt to flip currentStatus to "Active" on
+               handover but that's a manual call to /machineryasset/status.
+  Errors:
+    400 — asset is LOST/SCRAPPED, or BULK insufficient stock at from_location
+    400 — duplicate issue_id
+
+----- 3.2 List -----
+  GET /assetissuance/getall?page&limit&search&status&asset_kind
+                            &assigned_to_id&project_id&overdue=true
+  search matches: issue_id, asset_id_label, asset_name, assigned_to_name.
+  When overdue=true, also forces status=ISSUED + expected_return_date<now.
+
+----- 3.3 Overdue -----
+  GET /assetissuance/overdue
+  Returns ISSUED issuances past expected_return_date. Used for the daily
+  notification cron and the "Overdue" page.
+
+----- 3.4 Sweep Overdue (manual) -----
+  POST /assetissuance/sweep-overdue
+  Body: empty
+  Effect: bulk update ISSUED → OVERDUE for any past-due. Returns { modified }.
+  This is also run automatically by cron at 06:00 daily; the manual endpoint
+  is for admins.
+
+----- 3.6 Record Return -----
+  POST /assetissuance/return/:issueId
+  Body:
+    {
+      "quantity": 25,                       // BULK only — defaults to open balance
+      "actual_return_date": "...",
+      "condition_on_return": "GOOD",        // NEW|GOOD|FAIR|POOR|DAMAGED
+      "damage_charge": 0,
+      "return_signature_url": "<S3>",
+      "return_photo_url": "<S3>",
+      "to_location_type": "STORE",          // BULK only
+      "to_location_id": "MAIN_STORE",
+      "to_location_name": "Main Store",
+      "notes": "..."
+    }
+  Status logic:
+    quantity_returned >= quantity            → "RETURNED"
+    0 < quantity_returned < quantity         → "PARTIALLY_RETURNED"
+    condition_on_return = "DAMAGED"          → "DAMAGED" (overrides RETURNED)
+  Side-effects:
+    TAGGED + RETURNED:  asset.status="IN_STORE", clears custodian
+    BULK:               posts RETURN transaction; if condition=DAMAGED, ALSO
+                        posts a DAMAGE transaction for the same qty
+  Errors:
+    400 — already fully RETURNED, or LOST, or quantity > open balance
+
+----- 3.7 Mark Lost -----
+  POST /assetissuance/lost/:issueId
+  Body: { "notes": "..." }
+  TAGGED: also flips asset.status="LOST"
+  BULK / MACHINERY: only updates the issuance record (no automatic stock
+                    write-off — admin must post an ADJUSTMENT manually).
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LIST PAGE
+  Route   : /assetissuance
+  Title   : "Asset Issuance Register"
+  Source  : GET /assetissuance/getall
+  Columns :
+    - Issue ID            (link → detail)
+    - Asset Kind          chip TAGGED|BULK|MACHINERY (color-coded)
+    - Asset               asset_id_label · asset_name (link to source asset)
+    - Recipient           "EMP-001 (John)" / "CON-002 (ABC)" / etc. with kind chip
+    - Project / Site
+    - Quantity            (·1 for TAGGED/MACHINERY)
+    - Issued On           date
+    - Expected Return     date (red if < now AND status ∈ ISSUED|PARTIALLY_RETURNED)
+    - Returned            actual_return_date or "—"
+    - Status              StatusBadge (ISSUED/PARTIAL/RETURNED/OVERDUE/LOST/DAMAGED)
+    - Actions             (View, Return, Lost)
+  Filters :
+    - status (multi)
+    - asset_kind
+    - assigned_to_id (EmployeePicker / ContractorPicker / ProjectPicker
+                      depending on assigned_to_kind chip filter)
+    - project_id (ProjectPicker)
+    - overdue toggle
+    - search (debounced)
+  Toolbar :
+    + Issue Asset                  (canCreate)
+    + Overdue Report               (badge with count from /overdue)
+    + Sweep Overdue                (canEdit) — manual cron trigger; confirm modal
+    + Export CSV
+  Bulk row action:
+    "Mark Returned" — only when all selected rows have asset_kind=TAGGED
+    and status=ISSUED; opens a multi-row return drawer.
+
+4.2  DETAIL PAGE
+  Route   : /assetissuance/:issueId
+  Source  : GET /assetissuance/getbyid/:issueId
+  Layout  : 2-column
+
+    LEFT — Asset & Custody summary card
+      Asset Kind chip · Asset link · Quantity
+      Recipient details with kind chip
+      Project + site
+      Issue date / Expected return / Actual return
+      Status badge (large)
+      Open balance (BULK only)
+
+    RIGHT — Proof of handover/return card
+      Handover Photo (PhotoUpload component in read-only mode)
+      Handover Signature (image)
+      Return Photo (if returned)
+      Return Signature
+      Condition Issue → Condition Return arrow
+      Damage charge (if any)
+
+    BELOW — Action bar (status-aware)
+      • Status=ISSUED / PARTIALLY_RETURNED / OVERDUE
+          → "Record Return" button (canEdit)
+          → "Mark Lost" button     (canEdit)
+      • Status=RETURNED / LOST / DAMAGED
+          → no actions; show terminal banner
+
+    AUDIT drawer trigger.
+
+4.3  CREATE / ISSUE FORM  (modal — polymorphic by kind)
+  Trigger : "+ Issue Asset" toolbar button (or "Issue" from asset detail
+            pages, pre-filled)
+  Field flow:
+    Asset Kind*       segmented: TAGGED | BULK | MACHINERY
+    Asset*            AssetPicker(kind = chosen kind)
+                      — for TAGGED, only show ACTIVE/IN_STORE
+                      — for BULK, only show is_active=true
+                      — for MACHINERY, only show currentStatus≠Scrapped/Breakdown
+    --- BULK ONLY ---
+    Quantity*         number, min 1, max = item.total_qty_available at chosen
+                      from_location
+    From Location*    location dropdown (filtered to where qty_available > 0)
+    --- COMMON ---
+    Recipient Kind*   segmented: EMPLOYEE | CONTRACTOR | CONTRACT_WORKER | SITE
+    Recipient*        EmployeePicker / ContractorPicker / ProjectPicker
+                      (component switches by kind)
+    Contractor (parent) ContractorPicker (visible only if kind=CONTRACT_WORKER)
+    Project           ProjectPicker (auto-fills site_name)
+    Expected Return   date picker (recommended for tools, mandatory for
+                      MACHINERY operator handover)
+    Condition on Issue dropdown NEW|GOOD|FAIR|POOR|DAMAGED
+    Purpose           text
+    Notes             textarea
+    Handover Photo    PhotoUpload (REQUIRED for MACHINERY; recommended others)
+    Handover Signature SignatureCapture
+  Operator certification check  (MACHINERY only):
+    Before submit, call GET /operatorcert/verify?employee_id=<recipient>
+            &asset_class=<asset.assetCategory class>
+    If empty result → show inline error and block submit:
+      "Recipient is not certified to operate this asset class. Either
+       certify them first or assign a different operator."
+    (This is FRONTEND enforcement — backend doesn't gate. See file 12.)
+  Submit: POST /assetissuance/create with X-Idempotency-Key.
+  On success: toast, refetch list, navigate to detail.
+
+4.4  RECORD-RETURN MODAL
+  Trigger : Detail page "Record Return" or list row "Return" action
+  Pre-filled with issuance data; show:
+    Open balance                    = quantity − quantity_returned
+    --- BULK ONLY ---
+    Quantity returning*             number, max = open balance
+    To Location*                    location dropdown
+    --- COMMON ---
+    Actual Return Date              date (default now)
+    Condition on Return*            dropdown
+    Damage Charge                   MoneyInput (visible if condition=DAMAGED|POOR)
+    Return Photo                    PhotoUpload
+    Return Signature                SignatureCapture
+    Notes                           textarea
+  Confirmation if condition = DAMAGED: "This will also post a DAMAGE
+  movement to the BulkInventory ledger" (BULK only).
+  Submit: POST /assetissuance/return/:issueId
+
+4.5  MARK-LOST DIALOG
+  Confirmation prompt: type the issue_id to confirm.
+  Field: Notes (REQUIRED, what happened?)
+  Submit: POST /assetissuance/lost/:issueId
+  Warning banner explaining stock implications:
+    BULK: "Stock won't be auto-deducted. Post an ADJUSTMENT separately
+           if needed."
+    TAGGED: "The asset will be marked LOST and excluded from future
+            issuances."
+
+4.6  OVERDUE PAGE / WIDGET
+  Route   : /assetissuance/overdue
+  Source  : GET /assetissuance/overdue
+  Same table as the list, but only OVERDUE/ISSUED-past-due rows.
+  Banner above: "Run Sweep" button (canEdit) — admin-only one-click to
+  flip ISSUED → OVERDUE.
+
+  Dashboard widget version: count of overdue issuances; click → /overdue.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS / STATE TRANSITIONS
+--------------------------------------------------------------------------------
+
+  status state machine:
+
+         (create)
+            │
+            ▼
+        ┌─────────┐                      (manual lost)
+        │ ISSUED  │ ────────► LOST  (terminal)
+        └────┬────┘
+             │
+             │ daily cron / sweep
+             ▼
+        ┌─────────┐
+        │ OVERDUE │ (still ISSUED; only flag changed)
+        └────┬────┘
+             │
+             │ partial return (BULK)             full return
+             ├────────► PARTIALLY_RETURNED ─────────────┐
+             │                                          ▼
+             └────────────────────────────────────► RETURNED  (terminal)
+                                                       │
+                              if condition=DAMAGED → DAMAGED  (terminal)
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- Daily 06:00 cron: ISSUED past-due → OVERDUE; emits a notification to roles
+  with asset.issuance.read permission ("N issuances overdue"). The frontend
+  bell handles it; click navigates to /assetissuance/overdue.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                       | required permission
+  ---------------------------------|---------------------------
+  /assetissuance list              | asset.issuance.read
+  Issue Asset                      | asset.issuance.create
+  Record Return                    | asset.issuance.edit
+  Mark Lost                        | asset.issuance.edit
+  Sweep Overdue                    | asset.issuance.edit
+  Detail page                      | asset.issuance.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- TaggedAsset (file 03): status flips ISSUED↔IN_STORE; LOST on mark-lost.
+- BulkInventory (file 04): ISSUE/RETURN/DAMAGE transactions auto-posted.
+- MachineryAsset (file 02): no auto status change; UI shows "currently issued
+  to" on detail page based on most-recent ISSUED row.
+- OperatorCert (file 12): frontend-advisory check before MACHINERY issue.
+- WorkOrder (file 10): WO closure auto-posts an ISSUE transaction for parts
+  consumed — that goes through BulkInventory directly, NOT through this
+  module. (Issuance is for the human-side custody trail, not part-issue.)
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- TAGGED quantity is always 1. The form must lock it; the backend forces it
+  on save regardless of payload.
+- For BULK return, pass `quantity` in the body — without it, server uses
+  the full open balance.
+- DAMAGE on return: the backend posts BOTH a RETURN and a DAMAGE transaction
+  for the same qty. Net effect on stock: +qty_in_use→0, +qty_damaged.
+- LOST + BULK: stock is NOT auto-removed (writing off bulk inventory needs
+  an explicit ADJUSTMENT, by design — the loss should be reviewed).
+- The polymorphic asset_ref points at three different collections; the
+  backend `_hydrateAsset` resolves it. The FRONTEND must validate `asset_kind`
+  matches the picker source — wrong combo will throw 400.
+- contractor_id is only meaningful when assigned_to_kind=CONTRACT_WORKER.
+- Idempotency key on /create matters — duplicate clicks issuing the same
+  asset would create two records and double-deduct stock for BULK. Always
+  attach the key.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with all filters + overdue toggle + sweep button
+[ ] Detail with proof cards (photo + signature)
+[ ] Polymorphic create modal (3 variants TAGGED/BULK/MACHINERY)
+[ ] BULK from-location dropdown filtered to in-stock locations
+[ ] Operator-cert advisory check on MACHINERY issue
+[ ] Record-return modal with open-balance display + DAMAGE warning
+[ ] Mark-Lost dialog with type-to-confirm
+[ ] Overdue page + dashboard widget
+[ ] Notifications wired to overdue cron
+[ ] Idempotency keys on create/return
+[ ] RBAC gates
+
+================================================================================
+END 06 — Asset Issuance
+================================================================================

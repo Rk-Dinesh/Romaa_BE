@@ -1,0 +1,457 @@
+================================================================================
+  02 — MACHINERY ASSET  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/machinery
+Phase     : 2 (Core Registers)
+RBAC key  : asset.machinery   (read / create / edit / delete)
+Route base: /machineryasset
+ID prefix : MAC (auto via IdcodeServices.generateCode("MACHINERY_ASSET"))
+            assetId is the human-facing business key (e.g. "EX-01" or "MAC001").
+
+> UI/VISUAL STYLE NOTE
+>   For page shell, table chrome, and form layout, mirror /vendor or
+>   /tender list+detail. Sub-tab pattern on detail page should match
+>   the Tender detail page's sub-tabs.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Master register for heavy equipment (excavators, dumpers, cranes, transit
+mixers) and any GPS / fuel / HMR-tracked machine. Distinguished from:
+  • TaggedAsset — non-machinery serial-tracked items (tools/IT/survey)
+  • BulkInventory — quantity-tracked stock (formwork/PPE)
+
+Fields cover: identity, technical specs, GPS/telematics, current operational
+state, fuel telemetry summary, statutory compliance dates (insurance/FC/PUC/
+RC/Permit), digital documents, financials, PM hints (next service due),
+sub-component register (tyres/batteries), soft-delete + reverse link to the
+finance FixedAsset.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: MachineryAsset
+
+  IDENTITY
+    assetId            String UNIQUE REQUIRED  (e.g. "EX-01")
+    assetName          String REQUIRED
+    assetCategory      String REQUIRED         (denorm of master)
+    assetCategoryRef   ObjectId AssetCategoryMaster
+    assetType          enum REQUIRED INDEXED:  "OWN ASSET" | "RENTAL ASSET"
+    vendorId           String INDEXED          (when RENTAL)
+    vendorName         String
+
+  TECHNICAL SPECS
+    serialNumber       String   (OEM serial — used by Diztek to match plate)
+    modelNumber        String
+    chassisNumber      String   (RTO / Insurance critical)
+    engineNumber       String
+    manufacturingYear  Number
+    fuelType           enum default Diesel: Diesel | Petrol | Electric
+    fuelTankCapacity   Number   (liters)
+
+  TRACKING CONFIG
+    trackingMode       enum default HOURS: HOURS | KILOMETERS | UNITS
+
+  GPS / TELEMATICS
+    gps.isInstalled         Boolean
+    gps.deviceId            String     (IMEI for Diztek)
+    gps.provider            String
+    gps.lastPingDate        Date       (auto-updated on fuel sync)
+    gps.lastKnownLocation   { lat, lng, address }
+    gps.lastGeofenceCheckAt Date
+    gps.lastGeofenceStatus  enum: INSIDE | OUTSIDE | UNKNOWN | null
+    gps.lastGeofenceZoneId  ObjectId Geofence
+
+  CURRENT OPERATIONAL SNAPSHOT
+    currentSite       String INDEXED  (free-text, e.g. "ARIYALUR")
+    projectId         String INDEXED  (matches Tender.tender_id)
+    currentStatus     enum INDEXED default Active:
+                        Active | Idle | Maintenance | Breakdown | Scrapped
+    lastReading       Number          (latest HMR or KMs)
+    lastReadingDate   Date
+    totalFuelConsumed Number
+
+  FUEL TELEMETRY SUMMARY (auto-updated by /fueltelemetry sync)
+    fuelTelemetry.lastSyncAt | lastFuelReading | lastTankCapacity |
+                  lastFuelPercent | lastStatus | lastIgnition |
+                  lastLocation | lastReadingAt | lastError
+
+  COMPLIANCE
+    compliance.insurancePolicyNo
+    compliance.insuranceExpiry      Date INDEXED
+    compliance.fitnessCertExpiry    Date INDEXED
+    compliance.pollutionCertExpiry  Date
+    compliance.roadTaxExpiry        Date
+    compliance.permitExpiry         Date
+
+  DOCUMENTS  (array)
+    [ { docType: enum Insurance|RC|Invoice|Fitness|Other,
+        docNumber, expiryDate, fileUrl, uploadedAt } ]
+
+  FINANCIALS
+    purchaseDate / purchaseCost / supplierName / invoiceNumber
+
+  PREVENTIVE-MAINT HINTS  (kept in sync by PM service)
+    preventiveMaintenance.lastServiceDate
+    preventiveMaintenance.lastServiceAtReading
+    preventiveMaintenance.nextServiceDueAt           (calendar)
+    preventiveMaintenance.nextServiceDueAtReading    (meter)
+    preventiveMaintenance.activePlanCount
+
+  SUB-COMPONENTS  (array of wear-out parts; see file 13)
+    [ { _id, componentType: TYRE|BATTERY|BELT|FILTER|HOSE|BUCKET_TOOTH|TRACK|OTHER,
+        position, serialNumber, brand, model,
+        installedOn, installedAtReading, purchaseCost, vendorName,
+        invoiceNumber,
+        expectedLifeHours / Kms / Months,
+        replacedOn, replacedAtReading, replacementReason,
+        status: ACTIVE|REPLACED|REMOVED, notes } ]
+
+  SOFT DELETE / META
+    isDeleted   Boolean default false INDEXED
+    deletedAt   Date
+    fixedAssetRef  ObjectId FixedAsset (optional reverse link)
+    timestamps  createdAt / updatedAt
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+All endpoints require auth + asset.machinery permission.
+
+3.1  POST   /machineryasset/createasset                            [create]
+3.2  GET    /machineryasset/getall/assets                          [read]
+3.3  GET    /machineryasset/expiry-alerts                          [read]
+3.4  GET    /machineryasset/getbyid/:assetId                       [read]
+3.5  GET    /machineryasset/dashboard/:assetId                     [read]
+3.6  GET    /machineryasset/getbyproject/:projectId                [read]
+3.7  GET    /machineryasset/getbyprojectselect/:projectId          [read]
+3.8  PUT    /machineryasset/update/:assetId                        [edit]
+3.9  PUT    /machineryasset/transfer/:assetId                      [edit]
+3.10 PUT    /machineryasset/status/:assetId                        [edit]
+3.11 DELETE /machineryasset/delete/:assetId                        [delete]
+
+Sub-component endpoints (see file 13):
+3.12 GET    /subcomponent/:assetId
+3.13 POST   /subcomponent/:assetId/add
+3.14 POST   /subcomponent/:assetId/replace/:subId
+
+----- 3.1 Create -----
+  POST /machineryasset/createasset
+  Body: any of the schema fields. assetId is auto-generated if omitted.
+  Response 201: { status: true, data: <full asset> }
+  Errors:
+    409 DUPLICATE_ASSET_ID — when explicit assetId collides
+
+----- 3.2 List -----
+  GET /machineryasset/getall/assets?currentStatus=Active&assetType=OWN ASSET
+                                 &projectId=TND-005&vendorId=VEN-003
+  Response: { status, data: [...] }    (no meta — full list, paginate client-side
+                                        OR add server-side pagination later)
+
+----- 3.3 Expiry Alerts -----
+  GET /machineryasset/expiry-alerts?days=30
+  Returns assets whose ANY of (insurance/fitness/PUC/roadTax/permit) expires
+  within `days` from now. UI: "Compliance Alerts" widget on dashboard.
+
+----- 3.5 Dashboard -----
+  GET /machineryasset/dashboard/:assetId
+  Response: full asset + last 30 daily logs + full maintenance history.
+  Used to render the Detail page (section 4.2).
+
+----- 3.9 Transfer -----
+  PUT /machineryasset/transfer/:assetId
+  Body: { projectId, currentSite }
+  Use case: moving a machine from one site to another.
+
+----- 3.10 Status -----
+  PUT /machineryasset/status/:assetId
+  Body: { status, remarks? }
+  Status enum: Active | Idle | Maintenance | Breakdown | Scrapped
+
+----- 3.11 Soft Delete -----
+  DELETE /machineryasset/delete/:assetId
+  Sets isDeleted=true, currentStatus="Scrapped", deletedAt=now.
+  Operationally hidden — history retained.
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LIST PAGE
+  Route   : /machinery
+  Title   : "Machinery Assets"
+  Source  : GET /machineryasset/getall/assets (+ filters)
+  Columns :
+    - Asset ID       (link → detail)
+    - Asset Name
+    - Category       (e.g. "Excavator")
+    - Asset Type     (chip: OWN / RENTAL)
+    - Project        (link to /tender/:id)
+    - Status         (StatusBadge: Active/Idle/Maint/Breakdown/Scrapped)
+    - Last Reading   (e.g. "1,240 hrs")
+    - GPS            (small dot: green=INSIDE, red=OUTSIDE, gray=UNKNOWN)
+    - Compliance     (mini-row: 5 chips for Ins/FC/PUC/RT/Permit;
+                      red if expiring ≤30d, amber ≤60d, green otherwise)
+    - Actions        (Edit, Transfer, Status, Sub-components, Delete)
+  Filters :
+    - assetType (OWN / RENTAL)
+    - currentStatus
+    - projectId (ProjectPicker)
+    - vendorId (VendorPicker)
+    - "Compliance expiring ≤30d" toggle  (calls expiry-alerts endpoint instead)
+  Toolbar :
+    + Add Machinery     (canCreate)
+    + Compliance Alerts (badge with count from expiry-alerts)
+    + Export CSV
+
+4.2  DETAIL / DASHBOARD PAGE
+  Route   : /machinery/:assetId
+  Source  : GET /machineryasset/dashboard/:assetId
+  Layout  : Page header + 6-tab interface
+
+    HEADER STRIP
+      - Asset Name + assetId pill
+      - Category breadcrumb
+      - currentStatus StatusBadge (large)
+      - Action menu: Transfer / Change Status / Edit / Retire (Delete) /
+                      Print Asset Card
+
+    TAB 1 — OVERVIEW
+      Sections (SectionCard each):
+        • Identity: ID, name, category, type, vendor (if rental)
+        • Specs: serial, model, chassis, engine, mfg year, fuel type, tank cap
+        • Operational: site, project link, status, last reading + date,
+                        total fuel consumed
+        • Tracking: trackingMode chip, GPS-installed flag
+        • Soft-delete banner (if isDeleted) — read-only, "Retired on <date>"
+
+    TAB 2 — COMPLIANCE
+      Two columns:
+        Left  (DATES table): insurance / fitness / PUC / road-tax / permit
+                with traffic-light rows (red/amber/green)
+        Right (DOCUMENTS table): array of `documents` with type/number/expiry/
+                file link; "+ Add Document" button → opens a modal
+                (docType select + file uploader + expiry + number)
+      Edit button → modal pre-fills compliance object → PUT update.
+
+    TAB 3 — TELEMETRY
+      Top: GPS map widget centered on gps.lastKnownLocation; geofence
+            overlay if gps.lastGeofenceZoneId is set.
+      Status: lastSyncAt, lastFuelPercent (gauge), lastIgnition, lastStatus,
+              lastError (red banner if non-null)
+      Actions: "Sync Now" (POST /fueltelemetry/sync/:_id), "View History"
+              (links to /fueltelemetry asset history page — see file 14)
+
+    TAB 4 — MAINTENANCE
+      Sub-grid:
+        • PM Plans count + "View Plans" link → /pmplan?assetId=X
+        • Last service date / reading
+        • Next service due (calendar) / due (reading)
+        • Recent MaintenanceLog rows (from dashboard payload)
+        • Recent WorkOrders for this asset
+      Actions: "+ New Work Order" (canCreate work_order),
+                "+ New PM Plan" (canCreate preventive_maintenance)
+
+    TAB 5 — DAILY LOGS
+      Table from dashboard payload (last 30 logs):
+        date | start | end | netUsage | fuelConsumed | quantity |
+        operator | supervisor signoff
+      "+ Add Log" → opens MachineryLog bulk-entry form (file 05).
+
+    TAB 6 — SUB-COMPONENTS  (see file 13)
+      Tyre/battery register table with wear% per row.
+
+  Side drawer (right): "Audit Trail" — opens AuditDrawer for this asset.
+
+4.3  CREATE FORM  (full page, NOT modal — many fields)
+  Route   : /machinery/new
+  Wizard  : 4-step or single page with collapsible sections (mirror /vendor
+            create style)
+  Sections:
+    SECTION A — Identity
+      Asset ID*           text (auto-suggested via getNext, editable)
+      Asset Name*         text
+      Asset Category*     <AssetCategoryPicker classFilter="Machinery,Vehicle,
+                                                          StationaryPlant" />
+                          → on select, auto-fill trackingMode and toggle
+                          conditional sections
+      Asset Type*         radio: OWN ASSET | RENTAL ASSET
+      Vendor              VendorPicker (visible only if assetType=RENTAL ASSET)
+
+    SECTION B — Technical Specs
+      Serial Number       text
+      Model Number        text
+      Chassis Number      text   (recommended for compliance flagged categories)
+      Engine Number       text
+      Manufacturing Year  number 1900..currentYear
+      Fuel Type           dropdown: Diesel | Petrol | Electric
+      Fuel Tank Capacity  number, liters
+      Tracking Mode       dropdown HOURS|KILOMETERS|UNITS, prefilled from
+                          category, editable
+
+    SECTION C — GPS / Telematics  (visible only if category.requiresGps OR
+                                  user toggles "GPS installed")
+      GPS Installed        toggle
+      Device ID (IMEI)     text
+      Provider             text (e.g. Diztek)
+
+    SECTION D — Compliance  (visible only if category.requiresCompliance)
+      Insurance Policy No  text
+      Insurance Expiry     date
+      Fitness Cert Expiry  date
+      PUC Expiry           date
+      Road Tax Expiry      date
+      Permit Expiry        date
+
+    SECTION E — Documents
+      Repeating row: docType select | docNumber | expiry date | file uploader
+      "+ Add Document" button
+
+    SECTION F — Financial
+      Purchase Date | Purchase Cost (MoneyInput) | Supplier Name |
+      Invoice Number
+
+  Validation:
+    - assetId regex /^[A-Z0-9-]+$/, length 2..20
+    - manufacturingYear: 1900..thisYear+1
+    - All compliance dates: cannot be in the past at create time (warn, don't block)
+    - Insurance/Fitness expiry within 30 days: warning highlighting
+
+  Submit:
+    POST /machineryasset/createasset
+    headers: { "X-Idempotency-Key": uuid }
+    On 409 (DUPLICATE_ASSET_ID): inline field error on assetId.
+    On 201: navigate to /machinery/:assetId Detail.
+
+4.4  EDIT FORM
+  Route   : /machinery/:assetId/edit
+  Same as Create, but assetId is read-only.
+  Hide Section A's Asset ID input → show as read-only.
+  Submit → PUT /machineryasset/update/:assetId.
+
+4.5  TRANSFER MODAL
+  Trigger: header "Transfer" action
+  Fields :
+    Project         ProjectPicker (required)
+    Current Site    text (required)
+    Reason / Notes  text (optional)
+  Submit : PUT /machineryasset/transfer/:assetId
+
+4.6  STATUS MODAL
+  Trigger: header "Change Status" action
+  Fields :
+    New Status*    dropdown Active|Idle|Maintenance|Breakdown|Scrapped
+    Remarks        textarea (REQUIRED for Breakdown / Scrapped)
+  Confirmation: if status=Scrapped, show a warning that this is one-way and
+                the asset will be hidden from operational lists.
+  Submit : PUT /machineryasset/status/:assetId
+
+4.7  RETIRE (SOFT DELETE) DIALOG
+  Trigger: header "Retire" action — RBAC asset.machinery.delete
+  Fields :
+    Confirmation phrase  user types the assetId to enable Submit
+    Reason              textarea
+  Submit : DELETE /machineryasset/delete/:assetId
+  Effect : asset moved to "Retired" view; operational endpoints exclude it.
+
+4.8  COMPLIANCE ALERTS WIDGET
+  Lives on the asset Dashboard (Phase 5+) and the main /dashboard.
+  Source : GET /machineryasset/expiry-alerts?days=30
+  Rendering:
+    Card titled "Compliance expiring in 30 days"
+    Each row: assetId | name | which cert | days remaining (red ≤7, amber ≤30)
+    Click → /machinery/:assetId tab Compliance.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS / STATE TRANSITIONS
+--------------------------------------------------------------------------------
+  currentStatus state machine (informal — backend doesn't strictly gate, but
+  UI should encourage these transitions):
+
+    Active ↔ Idle           normal day-to-day
+    Active → Maintenance    when WO IN_PROGRESS (auto by WO service is FUTURE;
+                            today the operator changes manually)
+    * → Breakdown           on inspection critical-fail (auto by Inspection
+                            service) OR manual breakdown report
+    Maintenance/Breakdown → Active   on WO close (auto-update reading; manual
+                            status flip recommended)
+    * → Scrapped            terminal; one-way; equivalent to soft-delete
+
+  Soft-delete (Retire) is the lifecycle terminus — once isDeleted=true,
+  almost every query filters it out.
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- Geofence breach: when fuel-telemetry sync detects an OUTSIDE status that
+  was previously not-OUTSIDE, the backend emits a notification to all roles
+  with asset.fuel_telemetry.read permission. The frontend bell handles it;
+  click navigates to /machinery/:assetId Telemetry tab.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                          | required permission
+  ------------------------------------|-----------------------------
+  /machinery list                     | asset.machinery.read
+  + Add Machinery                     | asset.machinery.create
+  Edit                                | asset.machinery.edit
+  Transfer / Change Status            | asset.machinery.edit
+  Retire                              | asset.machinery.delete
+  Compliance Alerts widget            | asset.machinery.read
+  Sub-components tab CTA              | asset.subcomponent.*
+  PM tab "+ New Plan"                 | asset.preventive_maintenance.create
+  WO tab "+ New Work Order"           | asset.work_order.create
+  Telemetry "Sync Now"                | asset.fuel_telemetry.edit
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+  - MachineDailyLog references this asset (assetId is ObjectId ref)
+  - MaintenanceLog references this asset (string assetId business key)
+  - WorkOrder references this asset (asset_ref ObjectId + assetId business key)
+  - PmPlan references this asset
+  - AssetIssuance can issue MACHINERY assets (operator handover)
+  - FuelTelemetryLog records here, also updates this asset's fuelTelemetry sub-doc
+  - InsuranceClaim references this asset
+  - RentalAgreement references this asset (asset_kind=MACHINERY)
+  - FixedAsset (finance) optionally back-links here via fixedAssetRef
+  - Inspection records inspections for this asset
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- assetId is NOT mongoose ObjectId — it's the human business key. But
+  MachineDailyLog.assetId IS an ObjectId ref. Don't conflate the two:
+  daily-log queries take ObjectId; machinery queries take the string.
+- The /getall/assets endpoint does NOT paginate — it returns the full list.
+  For large fleets (>500), add pagination on the server before relying on
+  it for tables; client-side pagination is fine for now.
+- Soft-delete sets currentStatus="Scrapped"; un-deleting is not exposed via
+  any endpoint. If an admin accidentally retires an asset, they need DB
+  access to restore.
+- The /transfer endpoint does NOT clear operator assignments or open
+  issuances. UI must show a confirmation listing existing open issuances
+  before transfer.
+- Geofence breach detection requires the asset's projectId to point at a
+  Tender that has an active Geofence linked. Without that, gps.lastGeofenceStatus
+  will be UNKNOWN and breach notifications won't fire.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with all filters and the "compliance expiring" toggle
+[ ] Detail page with all 6 tabs working
+[ ] Create form with conditional sections (driven by category flags)
+[ ] Edit form locks assetId
+[ ] Transfer / Status / Retire modals
+[ ] Compliance Alerts dashboard widget
+[ ] Audit drawer
+[ ] Sync Now button on Telemetry tab
+[ ] RBAC gates on every CTA
+[ ] Print "Asset Card" view (read-only printable)
+
+================================================================================
+END 02 — Machinery Asset
+================================================================================

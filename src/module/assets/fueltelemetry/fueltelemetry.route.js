@@ -8,33 +8,11 @@ import {
 } from "./fueltelemetry.controller.js";
 
 const fuelTelemetryRouter = express.Router();
+fuelTelemetryRouter.use(verifyJWT);
 
-// Read endpoints
-fuelTelemetryRouter.get(
-  "/asset/:assetId/latest",
-  verifyJWT,
-  //verifyPermission("purchase", "machinery_tracking", "read"),
-  getLatestForAsset
-);
-fuelTelemetryRouter.get(
-  "/asset/:assetId/history",
-  verifyJWT,
- // verifyPermission("purchase", "machinery_tracking", "read"),
-  getHistory
-);
-
-// Manual sync endpoints — require edit permission since they hit the third-party API
-fuelTelemetryRouter.post(
-  "/sync/:assetId",
-  verifyJWT,
-  //verifyPermission("purchase", "machinery_tracking", "edit"),
-  syncOneAsset
-);
-fuelTelemetryRouter.post(
-  "/sync-all",
-  verifyJWT,
-//  verifyPermission("purchase", "machinery_tracking", "edit"),
-  syncAllActive
-);
+fuelTelemetryRouter.get("/asset/:assetId/latest",   verifyPermission("asset", "fuel_telemetry", "read"),   getLatestForAsset);
+fuelTelemetryRouter.get("/asset/:assetId/history",  verifyPermission("asset", "fuel_telemetry", "read"),   getHistory);
+fuelTelemetryRouter.post("/sync/:assetId",          verifyPermission("asset", "fuel_telemetry", "edit"),   syncOneAsset);
+fuelTelemetryRouter.post("/sync-all",               verifyPermission("asset", "fuel_telemetry", "edit"),   syncAllActive);
 
 export default fuelTelemetryRouter;

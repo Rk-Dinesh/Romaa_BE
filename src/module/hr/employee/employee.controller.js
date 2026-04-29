@@ -360,6 +360,24 @@ export const forgotPassword = async (req, res) => {
   }
 };
 
+export const updateOnboardingStatus = async (req, res) => {
+  try {
+    const updated = await EmployeeModel.findByIdAndUpdate(
+      req.user._id,
+      { $set: { hasSeenOnboarding: true } },
+      { new: true, runValidators: false }
+    ).select("hasSeenOnboarding");
+
+    if (!updated) {
+      return res.status(404).json({ status: false, message: "Employee not found" });
+    }
+
+    res.status(200).json({ status: true, hasSeenOnboarding: updated.hasSeenOnboarding });
+  } catch (error) {
+    return res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 export const resetPasswordWithOTP = async (req, res) => {
   try {
     const { email, otp, newPassword } = req.body;

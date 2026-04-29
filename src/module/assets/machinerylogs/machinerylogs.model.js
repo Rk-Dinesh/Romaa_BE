@@ -3,10 +3,12 @@ import { auditPlugin } from "../../audit/auditlog.plugin.js";
 
 const MachineDailyLogSchema = new mongoose.Schema(
   {
-    assetId: { type: Schema.Types.ObjectId, ref: "MachineryAsset", required: true, index: true }, // custom business ID (e.g. "EX-01"), not ObjectId
-    projectId: { type: String, required: true, index: true },
-    bid_id: { type: Schema.Types.ObjectId, ref: "Bids", required: true, index: true }, 
-    // custom business ID
+    assetId:  { type: Schema.Types.ObjectId, ref: "MachineryAsset", required: true, index: true },
+    projectId:{ type: String, required: true, index: true },
+    bid_id:   { type: Schema.Types.ObjectId, ref: "Bids", required: true, index: true },
+    // vendorId is the custom business ID string (e.g. "VEN-001") — not an ObjectId,
+    // since populate against a String-typed field would not resolve. Kept as a
+    // denormalized lookup key.
     vendorId: { type: String, required: true, index: true },
     vendorName: { type: String, required: true, index: true },
     item_id: { type: String },

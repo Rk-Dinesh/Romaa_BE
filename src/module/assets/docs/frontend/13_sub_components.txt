@@ -1,0 +1,278 @@
+================================================================================
+  13 — SUB-COMPONENTS  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/machinery (sub-document on MachineryAsset)
+Phase     : 5 (Telematics & KPI)
+RBAC key  : asset.subcomponent   (read / create / edit / delete)
+Route base: /subcomponent
+ID        : Mongo subdoc _id within MachineryAsset.subComponents
+
+> UI/VISUAL STYLE NOTE
+>   This is a TAB on the machinery detail page. Mirror the Documents
+>   tab style (table + add modal). Use the existing wear-bar component
+>   if any (e.g. progress bar with red/amber/green); otherwise build
+>   a simple % bar with thresholds.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Wear-out part register attached to a machinery asset. Tracks installation
+event, expected life, and replacement event for each tyre / battery / belt /
+filter / track / hose / bucket-tooth, etc.
+
+The service computes a "wearPercent" per active component:
+   wear% = max(used_hours / expected_hours,   if expected_hours
+               used_months / expected_months)  if expected_months
+                                                (whichever is highest)
+
+UI uses wearPercent to drive replacement-due alerts.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Sub-document on MachineryAsset.subComponents:
+
+  _id                    Mongo ObjectId (auto)
+  componentType          enum INDEXED REQUIRED:
+                           TYRE | BATTERY | BELT | FILTER | HOSE
+                           | BUCKET_TOOTH | TRACK | OTHER
+  position               String                ("Front-Left","Battery-1","Pos-A")
+  serialNumber / brand / model
+
+  installedOn            Date REQUIRED
+  installedAtReading     Number default 0      (HMR/KMs at fitment)
+  purchaseCost           Number ≥0
+  vendorName / invoiceNumber
+
+  expectedLifeHours      Number ≥0
+  expectedLifeKms        Number ≥0
+  expectedLifeMonths     Number ≥0
+
+  replacedOn             Date | null
+  replacedAtReading      Number | null
+  replacementReason      enum (or null):
+                           WORN_OUT | DAMAGED | PUNCTURE_REPAIR_FAILED
+                           | MANUFACTURING_DEFECT | ACCIDENT | OTHER
+
+  status                 enum INDEXED default ACTIVE:
+                           ACTIVE | REPLACED | REMOVED
+  notes / timestamps
+
+  Computed (returned by listSubComponents):
+  wearPercent            Number 0..>100  (null if no expected life set)
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  GET  /subcomponent/:assetId                              [read]
+3.2  POST /subcomponent/:assetId/add                          [create]
+3.3  POST /subcomponent/:assetId/replace/:subId               [edit]
+
+  No PUT/DELETE — sub-components are append-only with a "replace" event.
+  Edit a typo in field via the edit-asset form (the entire array can be
+  patched via the asset PUT endpoint; not exposed here for safety).
+
+----- 3.1 List for asset -----
+  GET /subcomponent/:assetId?active_only=true
+  Returns the asset's subComponents array, with wearPercent computed
+  per row.
+
+----- 3.2 Add -----
+  POST /subcomponent/:assetId/add
+  Body: <SubComponent fields, omit replacedOn / replacedAtReading / status>
+  Server appends to the array.
+
+----- 3.3 Replace -----
+  POST /subcomponent/:assetId/replace/:subId
+  Body:
+    {
+      "replacedOn": "2026-04-29",
+      "replacedAtReading": 1450,
+      "replacementReason": "WORN_OUT",
+      "notes": "...",
+      "newComponent": {                         // optional
+        "componentType": "TYRE",
+        "position": "Front-Left",
+        "brand": "MRF",
+        "model": "...",
+        "installedOn": "2026-04-29",
+        "installedAtReading": 1450,
+        "expectedLifeHours": 1500,
+        "purchaseCost": 18000,
+        "vendorName": "Tyre Plus"
+      }
+    }
+  Effects:
+    Old component → status=REPLACED, replacedOn, replacedAtReading,
+                   replacementReason, notes
+    If newComponent provided → appended as ACTIVE entry
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  SUB-COMPONENTS TAB  (on /machinery/:assetId)
+  Title  : "Sub-Components"
+  Source : GET /subcomponent/:assetId
+  Layout :
+    Top toolbar:
+      Filter chips: [ All | Active only ]
+      "+ Add Sub-Component" button (canCreate)
+    Table:
+      - Type             chip TYRE/BATTERY/BELT/FILTER/HOSE/...
+      - Position         (e.g. "Front-Left")
+      - Brand / Model
+      - Serial #
+      - Installed On     date
+      - Installed @      reading (with units suffix)
+      - Expected Life    formatted "1500 hrs" / "12 months" / "60000 km"
+      - Used             "320 hrs / 1500 hrs (21%)" with bar
+      - Wear %           color bar:
+                            ≤70%  green
+                            70..90% amber
+                            >90%  red ("DUE FOR REPLACEMENT")
+                            >100% red+exclamation
+      - Status           StatusBadge ACTIVE / REPLACED / REMOVED
+      - Replaced On / Reason   (when REPLACED)
+      - Cost             MoneyInput-format
+      - Vendor
+      - Actions          (Replace, View History)
+
+  Group rows by `componentType` (collapsible group headers) for readability
+  on big machines.
+
+4.2  ADD SUB-COMPONENT MODAL
+  Trigger: "+ Add Sub-Component" button
+  Fields (* = required):
+    Component Type*       dropdown TYRE/BATTERY/BELT/FILTER/HOSE/
+                                   BUCKET_TOOTH/TRACK/OTHER
+    Position              text  (suggested values per type:
+                                  TYRE → Front-L/Front-R/Rear-L/Rear-R/Spare;
+                                  BATTERY → Battery-1/Battery-2;
+                                  BUCKET_TOOTH → 1..5 numbered)
+    Serial Number         text
+    Brand                 text
+    Model                 text
+    Installed On*         date (default now)
+    Installed @ Reading   number (default = asset.lastReading)
+    Purchase Cost         MoneyInput
+    Vendor                VendorPicker
+    Invoice Number        text
+    Expected Life
+      Hours               number  (visible/relevant for HOURS-tracking machines)
+      Kms                 number  (KMs-tracking)
+      Months              number  (always)
+      (UI: at least one of the three should be set; service tolerates none
+       but wearPercent will be null then)
+    Notes                 textarea
+  Submit: POST /subcomponent/:assetId/add
+
+4.3  REPLACE COMPONENT MODAL
+  Trigger : "Replace" row action
+  Layout  : 2 panes
+    LEFT — Retire current
+      Retire Date*         date (default now)
+      Retire @ Reading     number (default = asset.lastReading)
+      Reason*              dropdown WORN_OUT | DAMAGED | PUNCTURE_REPAIR_FAILED
+                                    | MANUFACTURING_DEFECT | ACCIDENT | OTHER
+      Notes                textarea
+    RIGHT — Install replacement (optional toggle)
+      [ ] Install replacement now
+      ─ if checked, render the same fields as the Add form
+        (component type pre-filled from old, position pre-filled from old)
+  Submit: POST /subcomponent/:assetId/replace/:subId
+  On success: refetch list; show animation on row transition
+  (REPLACED row + new ACTIVE row appearing).
+
+4.4  HISTORY VIEW
+  Trigger : "View History" row action
+  Drawer  : show all rows of the same `componentType + position` (e.g.
+            "Front-Left tyre history") chronologically:
+              - Cost
+              - Hours/Kms run
+              - Reason for retirement
+            Useful for tracking "which brand of tyre lasts longest at
+            position X".
+
+4.5  WEAR-OUT DASHBOARD WIDGET
+  Aggregate across all assets: list all ACTIVE sub-components with
+  wearPercent ≥ 80%, sorted desc.
+  Source: client-side iterate /machineryasset/getall/assets, then
+  /subcomponent/:assetId per asset (or build a server-side aggregation
+  endpoint later). Cache aggressively (5 min) — this is heavy.
+  Card columns: asset_id | name | component | position | wear% | days/hrs left
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+
+  status state machine:
+
+    [add]      ─► ACTIVE
+    ACTIVE ── replace ──► REPLACED  (terminal; new ACTIVE may be added)
+    ACTIVE ── manual remove (PATCH via asset PUT) ──► REMOVED  (rare)
+
+  Wear% triggers (UI-only):
+    >90%  : red badge "DUE FOR REPLACEMENT", optional notification widget
+    >100% : "OVERDUE — replace immediately"
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+None today. Easy add: a daily cron that scans all active components and
+notifies asset.subcomponent.read roles when wear% > threshold.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                  | required permission
+  ----------------------------|--------------------------
+  Sub-components tab          | asset.subcomponent.read
+  + Add                       | asset.subcomponent.create
+  Replace                     | asset.subcomponent.edit
+  Wear-out dashboard widget   | asset.subcomponent.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- MachineryAsset (file 02): subdoc lives on the asset record
+- WorkOrder (file 10): "Tyre/Battery" maintenance category surfaces in the
+  detail page, with optional cross-link to a sub-component (manual entry
+  for now — could extend later)
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- wearPercent is computed using `asset.lastReading − installedAtReading`
+  for hours / km, AND elapsed months for the calendar dimension. Whichever
+  is higher wins. If asset.lastReading is stale (no recent log), wearPercent
+  is artificially low — encourage ops team to keep daily logs current.
+- `expectedLifeHours` should reflect REAL operating hours, not calendar.
+  An excavator running 10h/day will hit 1500h faster than one running 4h/day.
+- Position naming is free-text — UI suggestions per type help consistency,
+  but don't over-validate: customer machines have weird configurations
+  (e.g. 6-tyre tippers).
+- The list endpoint includes REPLACED rows by default; pass active_only=true
+  to filter. The history view explicitly wants all rows.
+- Replace event with newComponent: positions are NOT auto-copied other than
+  via the UI's pre-fill. The server treats them as independent rows; if
+  user changes position in the new-component pane, the new row goes there.
+- Cost rollup: total spend on tyres/batteries per asset across the FY is a
+  useful report — sum purchaseCost across the array. No dedicated endpoint
+  yet; aggregate client-side.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] Sub-components tab on /machinery/:assetId
+[ ] Wear% bar with traffic-light thresholds
+[ ] Group rows by componentType
+[ ] Add modal with type-specific position suggestions
+[ ] Replace modal with optional install-replacement toggle
+[ ] History drawer per (type, position)
+[ ] Wear-out dashboard widget (cross-asset)
+[ ] RBAC gates
+
+================================================================================
+END 13 — Sub-Components
+================================================================================

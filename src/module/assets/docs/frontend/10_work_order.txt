@@ -1,0 +1,465 @@
+================================================================================
+  10 — WORK ORDER  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/workorder
+Phase     : 4 (Maintenance & Reliability)
+RBAC key  : asset.work_order   (read / create / edit / delete)
+Route base: /workorderasset
+ID prefix : WO  (e.g. WO001)
+
+> UI/VISUAL STYLE NOTE
+>   THE flagship workflow UI of the asset module. Mirror existing
+>   /workorderrequest (project work-order request) page chrome for
+>   list+detail; mirror /finance/journalentry transition modal for
+>   the status-change dialog with notes capture.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+The unit of repair / preventive-maintenance work on a machine. Lifecycle:
+
+   DRAFT → APPROVED → IN_PROGRESS → COMPLETED → CLOSED
+                                              ↘ CANCELLED
+
+Supports parts-BOM tracking (auto-issued from BulkInventory on close) and
+labor-line tracking. On close, automatically:
+  1. Issues parts (creates BulkInventoryTransaction with reference_type="WORK_ORDER")
+  2. Posts a MaintenanceLog row
+  3. Updates MachineryAsset.lastReading + preventiveMaintenance summary
+  4. If sourced from a PM plan, marks that plan as fired (recomputes nextDue)
+
+Three kinds of orders:
+  • PM                       (auto-created from a due PM Plan)
+  • CORRECTIVE               (manual breakdown report)
+  • INSPECTION_REMEDIATION   (auto-created on critical inspection failure)
+  • ACCIDENT / OTHER         (manual)
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: WorkOrder
+
+  IDENTITY
+    work_order_no   String UNIQUE INDEXED   ("WO001")
+
+  ASSET LINK
+    asset_ref       ObjectId MachineryAsset REQUIRED INDEXED
+    assetId         String REQUIRED INDEXED  ("EX-01")
+    asset_name      String
+    projectId       String INDEXED
+
+  KIND / TITLE / PRIORITY
+    kind        enum REQUIRED INDEXED:
+                  PM | CORRECTIVE | INSPECTION_REMEDIATION | ACCIDENT | OTHER
+    title       String REQUIRED
+    description String
+    priority    enum default MEDIUM INDEXED: LOW | MEDIUM | HIGH | CRITICAL
+
+  ORIGIN TRACE
+    pm_plan_ref      ObjectId PmPlan        (set when kind=PM)
+    inspection_ref   ObjectId AssetInspection (set when kind=INSPECTION_REMEDIATION)
+
+  STATUS MACHINE
+    status         enum INDEXED default DRAFT:
+                     DRAFT | APPROVED | IN_PROGRESS | COMPLETED | CLOSED | CANCELLED
+    statusHistory  array of:
+      [ { from_status, to_status, by_employee, at, notes } ]
+
+  TIMESTAMPS (for KPI)
+    raised_at INDEXED / approved_at / started_at / completed_at / closed_at
+
+  READINGS / DOWNTIME
+    reading_at_start
+    reading_at_end
+    downtime_hours
+
+  COSTING
+    parts                     array (parts BOM, see below)
+    labor                     array (labor lines, see below)
+    parts_total / labor_total / other_charges / tax_amount
+    estimated_cost / actual_cost
+    vendorId / vendorName
+    invoiceNumber / invoice_url
+
+  APPROVAL
+    approval_request_id       ObjectId ApprovalRequest (links to generic engine)
+
+  SIDE-EFFECT REFS
+    maintenance_log_ref       ObjectId MaintenanceLog (set on close)
+
+  ASSIGNMENT
+    assigned_to_employee_id / _name
+
+  created_by / updated_by / timestamps
+
+  Compound indexes:
+    (assetId, status), (status, raised_at), (projectId, status)
+
+  parts subdoc:
+    [ { item_ref, item_id_label, item_name,
+        quantity_planned, quantity_used,
+        unit, unit_cost, total_cost,
+        issued_txn_ref } ]   ← set after WO closure when stock is issued
+
+  labor subdoc:
+    [ { employee_id, technician_name, role,
+        hours, rate_per_hour, total_cost } ]
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  POST /workorderasset/create                              [create]
+3.2  GET  /workorderasset/getall                              [read]
+3.3  GET  /workorderasset/getbyid/:workOrderNo                [read]
+3.4  PUT  /workorderasset/update/:workOrderNo                 [edit]
+3.5  POST /workorderasset/transition/:workOrderNo             [edit]
+3.6  POST /workorderasset/auto-create-pm                      [create]
+
+----- 3.1 Create -----
+  POST /workorderasset/create
+  Body (manual CORRECTIVE):
+    {
+      "asset_ref": "<ObjectId>",
+      "kind": "CORRECTIVE",
+      "title": "Hydraulic boom won't lift",
+      "description": "Boom stalls at half-extend...",
+      "priority": "HIGH",
+      "projectId": "TND-005",
+      "estimated_cost": 8000,
+      "parts": [
+        { "item_ref": "<bulk _id>",
+          "item_id_label": "BLK023",
+          "item_name": "Hydraulic Hose 12mm",
+          "quantity_planned": 2, "unit": "Nos",
+          "unit_cost": 1500 }
+      ],
+      "labor": [
+        { "technician_name": "Service Engineer",
+          "role": "Mechanic", "hours": 4, "rate_per_hour": 500 }
+      ]
+    }
+  Side-effects on create:
+    - parts_total, labor_total, actual_cost recomputed
+    - statusHistory seeded with "Created"
+  Default status = DRAFT.
+
+----- 3.2 List -----
+  GET /workorderasset/getall?page&limit&search&status&assetId
+                           &projectId&kind
+  search matches: work_order_no, title, assetId.
+
+----- 3.5 Transition -----
+  POST /workorderasset/transition/:workOrderNo
+  Body:
+    {
+      "toStatus": "APPROVED" | "IN_PROGRESS" | "COMPLETED" | "CLOSED" | "CANCELLED",
+      "notes": "...",
+      "reading": <HMR/KMs>     // captured at IN_PROGRESS (start) or COMPLETED (end)
+    }
+  Allowed transitions (server-enforced):
+    DRAFT       → APPROVED, CANCELLED
+    APPROVED    → IN_PROGRESS, CANCELLED
+    IN_PROGRESS → COMPLETED, CANCELLED
+    COMPLETED   → CLOSED
+    CLOSED      → (terminal)
+    CANCELLED   → (terminal)
+  Side-effects per transition:
+    APPROVED:    sets approved_at
+    IN_PROGRESS: sets started_at + reading_at_start
+    COMPLETED:   sets completed_at + reading_at_end + computes downtime_hours
+    CLOSED:      sets closed_at + posts:
+                   - parts.issued_txn_ref filled per part with quantity_used > 0
+                   - MaintenanceLog row inserted
+                   - MachineryAsset.lastReading updated to reading_at_end
+                   - PM plan firing (if pm_plan_ref set)
+    CANCELLED:   sets closed_at; no side effects
+  Errors:
+    400 invalid transition; 400 if WO not found
+
+----- 3.6 Auto-create from due PM plans -----
+  POST /workorderasset/auto-create-pm
+  Body: empty
+  Effect: scans /pmplan/due, creates DRAFT WOs for plans without an open WO.
+  Returns: array of newly-created WO documents.
+  Idempotent: skips plans that already have an open WO.
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LIST PAGE
+  Route   : /workorderasset
+  Title   : "Work Orders"
+  Source  : GET /workorderasset/getall
+  Columns :
+    - WO #              (link)
+    - Title
+    - Asset             (link to /machinery/:assetId)
+    - Kind              chip PM | CORRECTIVE | INSPECTION_REMEDIATION
+                              | ACCIDENT | OTHER
+    - Priority          chip LOW/MED/HIGH/CRITICAL (color)
+    - Status            StatusBadge (DRAFT yellow, APPROVED blue,
+                                     IN_PROGRESS amber, COMPLETED purple,
+                                     CLOSED gray-green, CANCELLED gray)
+    - Raised on
+    - Estimated / Actual cost
+    - Downtime          (hours, when set)
+    - Project
+    - Actions           (View, Edit, Transition)
+  Filters :
+    - status (multi)
+    - kind
+    - priority
+    - assetId (AssetPicker, kind=MACHINERY)
+    - projectId (ProjectPicker)
+    - date range (raised_at)
+    - search
+  Toolbar :
+    + New Work Order              (canCreate)
+    + Auto-create PM WOs          (canCreate)
+                                   POSTs /auto-create-pm; toast "X created"
+    + Export CSV
+  Default sort: raised_at desc.
+
+4.2  DETAIL PAGE
+  Route   : /workorderasset/:workOrderNo
+  Source  : GET /workorderasset/getbyid/:workOrderNo
+  Layout  : header + 4 tabs
+
+    HEADER STRIP
+      WO# + title + kind chip
+      Status badge (large) + priority chip
+      Asset (link with reading widget showing lastReading)
+      Action menu (status-aware):
+        DRAFT       → Approve | Edit | Cancel
+        APPROVED    → Start Work | Edit | Cancel
+        IN_PROGRESS → Complete | Edit | Cancel
+        COMPLETED   → Close | Print
+        CLOSED      → Print | Audit | Open MaintenanceLog | Open Parts Issued
+        CANCELLED   → Print | Audit
+
+    TAB 1 — DETAILS
+      Description
+      Origin trace:
+        kind=PM                     → link to PM Plan (pm_plan_ref)
+        kind=INSPECTION_REMEDIATION → link to Inspection (inspection_ref)
+      Project / Site / Vendor / Invoice
+      Assignment (assigned_to_employee_*)
+      Readings:
+        reading_at_start (HMR/KMs at IN_PROGRESS)
+        reading_at_end   (HMR/KMs at COMPLETED)
+        downtime_hours
+      Timestamps timeline (raised → approved → started → completed → closed)
+
+    TAB 2 — PARTS
+      Editable while status ∈ DRAFT|APPROVED|IN_PROGRESS|COMPLETED:
+        Repeating row:
+          Item            AssetPicker(kind=BULK)
+          Quantity Planned (set at create/edit)
+          Quantity Used    (filled before COMPLETED)
+          Unit             auto from item
+          Unit Cost        MoneyInput
+          Total Cost       MoneyInput (auto = unit_cost × quantity_used)
+          Issued Txn       (link to BulkInventoryTransaction once filled
+                            after CLOSED)
+        "+ Add Part" button
+      Cost summary card:
+        parts_total | labor_total | other_charges | tax_amount = actual_cost
+
+    TAB 3 — LABOR
+      Editable while status ≠ CLOSED|CANCELLED:
+        Repeating row:
+          Employee / Technician name
+          Role
+          Hours
+          Rate per hour    MoneyInput
+          Total Cost       (auto = hours × rate_per_hour)
+        "+ Add Labor" button
+
+    TAB 4 — STATUS HISTORY
+      Read-only timeline of statusHistory:
+        from → to | by employee | at timestamp | notes
+      Audit drawer trigger.
+
+  Right-side panel (sticky on desktop):
+    - "Open MaintenanceLog" button (only visible after CLOSED, if
+      maintenance_log_ref set)
+    - "Open PM Plan" (if pm_plan_ref)
+    - "Open Inspection" (if inspection_ref)
+    - "Print Work Order"
+
+4.3  CREATE / EDIT FORM
+  Route   : /workorderasset/new  /  /workorderasset/:workOrderNo/edit
+  Sections:
+    Asset & Kind
+      Asset*           AssetPicker(kind=MACHINERY)
+      Kind*            radio PM | CORRECTIVE | INSPECTION_REMEDIATION
+                              | ACCIDENT | OTHER
+                       (typically only CORRECTIVE / ACCIDENT / OTHER are
+                        manually selected — PM is auto-created)
+      Title*           text
+      Description      textarea
+      Priority         radio LOW | MEDIUM | HIGH | CRITICAL
+      Project          ProjectPicker (auto-fills from asset.projectId)
+    Assignment
+      Assigned To      EmployeePicker (mechanic / supervisor)
+    Estimates
+      Estimated Cost   MoneyInput
+    Parts (multi-row)
+      Same editor as Detail Tab 2
+    Labor (multi-row)
+      Same editor as Detail Tab 3
+    Vendor (when external service)
+      Vendor          VendorPicker
+      Invoice Number / Invoice file
+  Submit:
+    POST /workorderasset/create   — creates DRAFT
+    PUT  /workorderasset/update/:workOrderNo
+
+  Edit form is BLOCKED for CLOSED|CANCELLED — show banner "Closed work order
+  cannot be edited; reopen via approval if needed."
+
+4.4  TRANSITION DIALOG  (one component, all 5 transitions)
+  Trigger : Header status action (Approve / Start / Complete / Close / Cancel)
+  Modal contents vary by target status:
+
+    APPROVE        → just notes (optional)
+    START          → notes + Reading At Start* (number; defaults to asset's lastReading)
+    COMPLETE       → notes + Reading At End* (number)
+                     + warning if any part has quantity_used=0 ("Did you forget
+                       to record consumption?")
+    CLOSE          → notes (REQUIRED) + summary preview:
+                       "On close, parts will be issued, MaintenanceLog
+                        posted, asset reading updated to <reading_at_end>,
+                        PM plan (if any) marked fired."
+                     + checkbox "I have reviewed parts and labor"
+    CANCEL         → notes (REQUIRED — reason for cancellation)
+
+  Submit: POST /workorderasset/transition/:workOrderNo
+
+4.5  PRINT — WORK ORDER VOUCHER
+  Print template (use existing /purchaseorderrequest print as visual base):
+    Header: WO# + title + kind + status
+    Asset block: assetId, name, project
+    Description
+    Parts table | Labor table
+    Totals
+    Status timeline
+    Signatures: Raised By | Approved By | Closed By
+
+4.6  WORKORDER WIDGETS  (dashboard)
+  - "Open Work Orders" — count by status (stacked bar)
+  - "Average MTTR (this month)" — sourced from KPI snapshots (file 15)
+  - "Top breakdown assets (last 90d)" — count of CLOSED CORRECTIVE WOs
+    grouped by assetId, top 5
+  - "PM compliance %" — closed-on-time PM WOs / total PM WOs
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS / STATE TRANSITIONS
+--------------------------------------------------------------------------------
+
+   ┌─────────┐
+   │  DRAFT  │  (default on create)
+   └────┬────┘
+    Approve   Cancel
+        │       └────────────────────────────────────────────► CANCELLED
+        ▼
+   ┌──────────┐
+   │ APPROVED │
+   └────┬─────┘
+    Start     Cancel
+        │       └────────────────────────────────────────────► CANCELLED
+        ▼
+   ┌─────────────┐
+   │ IN_PROGRESS │  (capture reading_at_start)
+   └────┬────────┘
+    Complete   Cancel
+        │        └───────────────────────────────────────────► CANCELLED
+        ▼
+   ┌──────────┐
+   │ COMPLETED │  (capture reading_at_end, compute downtime_hours)
+   └────┬──────┘
+    Close
+        ▼
+   ┌────────┐  Auto side-effects:
+   │ CLOSED │   • Issue parts to BulkInventory (per quantity_used)
+   └────────┘   • Insert MaintenanceLog row
+               • Update MachineryAsset.lastReading + PM summary
+               • Mark PM Plan fired (if pm_plan_ref)
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- No direct user-facing notifications today; PM cron logs server-side and the
+  WO list refresh is the user signal.
+- Approval engine notifications fire IF the WO is wired into the generic
+  approval workflow (approval_request_id) — that's optional today.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                | required permission
+  --------------------------|----------------------------
+  /workorderasset list      | asset.work_order.read
+  + New Work Order          | asset.work_order.create
+  Auto-create PM WOs        | asset.work_order.create
+  Edit WO                   | asset.work_order.edit
+  Approve / Start / Complete / Close / Cancel | asset.work_order.edit
+  Open MaintenanceLog link  | asset.maintenance.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- PmPlan (file 09): drives auto-creation; markFired on close
+- BulkInventory (file 04): parts auto-issued on close
+- MaintenanceLog (file 08): row auto-created on close
+- MachineryAsset (file 02): lastReading + PM summary updated on close
+- AssetInspection (file 11): critical-fail submission auto-creates WO
+- InsuranceClaim (file 16): may link a related WO
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- Status transitions are SERVER-ENFORCED. Trying DRAFT→COMPLETED skipping
+  approval will return 400. The UI must respect TRANSITIONS map and only
+  show the valid Next Action button.
+- On CLOSE, if a part's item_ref is set and quantity_used > 0, the backend
+  attempts an ISSUE — if there's insufficient stock, the issue silently
+  fails (logged, but doesn't block close). Surface a banner on detail
+  showing failed-to-issue parts so an admin can adjust manually.
+- A WO with kind=PM should only be CANCELLED if the PM is no longer needed
+  — be careful, because cancellation does NOT re-fire the plan; the
+  nextDueAt remains based on the plan's lastTriggeredAt (unchanged).
+  Document this in the cancel-confirmation modal.
+- reading_at_start defaults to asset.lastReading at the time of START. The
+  user may override (e.g. mistakenly captured a higher reading earlier).
+- downtime_hours is auto-calculated as (completed_at − started_at) in hours.
+  For overnight work this is fine; for "started 9am, mechanic gone for
+  lunch, completed 4pm" the downtime is 7h. If "actual labor hours" matters,
+  the labor lines capture it separately.
+- Multi-day WOs: the UI should NOT pretend status is "live for 3 days";
+  it's "in progress until completed". Handle date display accordingly.
+- A WO can't be edited after CLOSED. To "fix" a closed WO, you'd need a
+  new corrective WO referencing the original — there's no reopen path
+  exposed.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with all filters + auto-create-pm button
+[ ] Detail with 4 tabs (Details / Parts / Labor / Status History)
+[ ] Status-aware action bar showing only valid next actions
+[ ] Transition dialog with mode-specific fields (reading capture)
+[ ] Parts and labor editors with auto totals
+[ ] Cost summary card recomputes live as user edits
+[ ] Close confirmation lists side-effects + reviewed checkbox
+[ ] Print template
+[ ] Origin trace links (PM plan / inspection)
+[ ] Right-side panel with maintenance-log link after CLOSED
+[ ] Insufficient-stock banner on close (when parts can't all be issued)
+[ ] Dashboard widgets
+[ ] RBAC gates on every transition button
+
+================================================================================
+END 10 — Work Order
+================================================================================

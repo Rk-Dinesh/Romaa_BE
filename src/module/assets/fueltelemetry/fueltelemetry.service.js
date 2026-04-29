@@ -2,6 +2,8 @@ import logger from "../../../config/logger.js";
 import MachineryAsset from "../machinery/machineryasset.model.js";
 import FuelTelemetryLog from "./fueltelemetry.model.js";
 import { getLiveFuelData } from "../../../integrations/diztekFuel/diztekFuel.client.js";
+import { resolveExpectedGeofence, evaluateBreach } from "./geofenceBreach.js";
+import NotificationService from "../../notifications/notification.service.js";
 
 const REFUEL_THRESHOLD_LTR = Number(process.env.FUEL_REFUEL_THRESHOLD_LTR || 10);
 const EXTERNAL_PROJECT_ID  = process.env.FUEL_API_PROJECT_ID || "37";
@@ -129,22 +131,59 @@ class FuelTelemetryService {
       raw: r,
     });
 
-    await MachineryAsset.updateOne(
-      { _id: asset._id },
-      { $set: {
-          "fuelTelemetry.lastSyncAt":      new Date(),
-          "fuelTelemetry.lastFuelReading": fuelReading,
-          "fuelTelemetry.lastTankCapacity":tankCapacity,
-          "fuelTelemetry.lastFuelPercent": fuelPercent,
-          "fuelTelemetry.lastStatus":      r.status,
-          "fuelTelemetry.lastIgnition":    r.ignition,
-          "fuelTelemetry.lastLocation":    r.location,
-          "fuelTelemetry.lastReadingAt":   readingAt,
-          "fuelTelemetry.lastError":       null,
-      } }
-    );
+    // Geofence breach evaluation against the assigned project's zone
+    let breach = { status: "UNKNOWN", distance: null, zone: null };
+    if (r.lat != null && r.lng != null) {
+      const fence = await resolveExpectedGeofence(asset);
+      breach = evaluateBreach({ lat: r.lat, lng: r.lng }, fence);
+    }
 
-    return { logId: doc._id, eventType, fuelReading, deltaFromPrev };
+    const $set = {
+      "fuelTelemetry.lastSyncAt":      new Date(),
+      "fuelTelemetry.lastFuelReading": fuelReading,
+      "fuelTelemetry.lastTankCapacity":tankCapacity,
+      "fuelTelemetry.lastFuelPercent": fuelPercent,
+      "fuelTelemetry.lastStatus":      r.status,
+      "fuelTelemetry.lastIgnition":    r.ignition,
+      "fuelTelemetry.lastLocation":    r.location,
+      "fuelTelemetry.lastReadingAt":   readingAt,
+      "fuelTelemetry.lastError":       null,
+      "gps.lastPingDate":              new Date(),
+      "gps.lastGeofenceCheckAt":       new Date(),
+      "gps.lastGeofenceStatus":        breach.status,
+    };
+    if (r.lat != null && r.lng != null) {
+      $set["gps.lastKnownLocation"] = {
+        lat: Number(r.lat),
+        lng: Number(r.lng),
+        address: r.location,
+      };
+    }
+    if (breach.zone) $set["gps.lastGeofenceZoneId"] = breach.zone._id;
+
+    await MachineryAsset.updateOne({ _id: asset._id }, { $set });
+
+    // Surface a notification on a fresh OUTSIDE breach (asset just left zone)
+    if (breach.status === "OUTSIDE" && asset.gps?.lastGeofenceStatus !== "OUTSIDE") {
+      try {
+        const roleIds = await NotificationService.getRoleIdsByPermission("asset", "fuel_telemetry", "read");
+        if (roleIds.length > 0) {
+          await NotificationService.notify({
+            title: `Geofence breach: ${asset.assetId}`,
+            message: `${asset.assetName} (${asset.assetId}) is ${breach.distance}m outside the ${breach.zone?.name || "assigned"} zone.`,
+            audienceType: "role",
+            roles: roleIds,
+            category: "alert",
+            priority: "high",
+            module: "asset",
+            actionUrl: `/machineryasset/dashboard/${asset.assetId}`,
+            actionLabel: "View asset",
+          });
+        }
+      } catch (_) { /* never fail sync on notification error */ }
+    }
+
+    return { logId: doc._id, eventType, fuelReading, deltaFromPrev, geofenceStatus: breach.status };
   }
 
   /**

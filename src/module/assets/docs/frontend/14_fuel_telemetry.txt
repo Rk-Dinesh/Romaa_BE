@@ -1,0 +1,274 @@
+================================================================================
+  14 — FUEL TELEMETRY  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/fueltelemetry  (Diztek IoT integration)
+Phase     : 5 (Telematics & KPI)
+RBAC key  : asset.fuel_telemetry   (read / create / edit / delete)
+Route base: /fueltelemetry
+ID        : Mongo _id (logs are time-series)
+
+> UI/VISUAL STYLE NOTE
+>   Mirror /attendance map view for the GPS map widget. Use the same
+>   leaflet/google-maps wrapper. Charts: use whatever charting library
+>   the existing dashboard uses (recharts, victory, etc.) — match it.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Pulls live fuel + GPS readings from the Diztek third-party API and stores
+them as a time-series log. Background cron syncs every 6 hours by default
+(env-configurable).
+
+For each sync:
+  • Skips assets without serialNumber + gps.deviceId
+  • Calls Diztek with the plate + IMEI
+  • Skips duplicate readings (same readingAt timestamp)
+  • Computes deltaFromPrev and classifies: NORMAL / REFUEL / DRAIN
+    (threshold via FUEL_REFUEL_THRESHOLD_LTR env, default 10L)
+  • Persists FuelTelemetryLog entry
+  • Updates MachineryAsset.fuelTelemetry summary AND gps.lastKnownLocation
+  • Evaluates geofence breach against the asset's project zone — if newly
+    OUTSIDE, fires a notification
+  • On error, logs error to MachineryAsset.fuelTelemetry.lastError
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: FuelTelemetryLog
+
+  assetId         ObjectId MachineryAsset INDEXED REQUIRED
+  assetCode       String INDEXED                ("EX-01" denormalised)
+  plateNumber     String INDEXED                (= asset.serialNumber)
+  imei            String INDEXED                (= asset.gps.deviceId)
+  projectId       String INDEXED                (asset.projectId at sync time)
+  externalProjectId  String                     (Diztek project_id)
+
+  fuelReading     Number                        (liters)
+  tankCapacity    Number                        (liters)
+  unit            String default "ltr"
+  fuelPercent     Number                        ((reading / capacity) × 100)
+  ignition        String                        "ON" | "OFF" | "--"
+  status          String                        "IDLE" | "MOVING" | ...
+  location        String                        (provider-supplied address)
+  lat / lng       Number
+
+  readingAt       Date INDEXED REQUIRED         (parsed from provider datetime, IST→UTC)
+  fetchedAt       Date default now              (when WE pulled it)
+
+  deltaFromPrev   Number                        (current - previous reading)
+  eventType       enum INDEXED:                 NORMAL | REFUEL | DRAIN
+
+  source          enum default CRON:            CRON | MANUAL | WEBHOOK
+  raw             Mixed                         (full provider payload — debug)
+
+  Compound indexes:
+    (assetId, readingAt desc)
+    (projectId, readingAt desc)
+    (eventType, readingAt desc)
+
+Summary fields on MachineryAsset.fuelTelemetry (auto-updated):
+  lastSyncAt | lastFuelReading | lastTankCapacity | lastFuelPercent
+  | lastStatus | lastIgnition | lastLocation | lastReadingAt | lastError
+
+GPS fields on MachineryAsset.gps (auto-updated):
+  lastPingDate | lastKnownLocation { lat, lng, address }
+  | lastGeofenceCheckAt | lastGeofenceStatus (INSIDE/OUTSIDE/UNKNOWN)
+  | lastGeofenceZoneId
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  GET  /fueltelemetry/asset/:assetId/latest                [read]
+3.2  GET  /fueltelemetry/asset/:assetId/history               [read]
+3.3  POST /fueltelemetry/sync/:assetId                        [edit]
+3.4  POST /fueltelemetry/sync-all                             [edit]
+
+  IMPORTANT: assetId here is the OBJECTID of MachineryAsset, NOT the
+  business string. The controller validates it as ObjectId.
+
+----- 3.1 Latest -----
+  GET /fueltelemetry/asset/:assetId/latest
+  Returns the most recent log row for that asset (or null).
+
+----- 3.2 History -----
+  GET /fueltelemetry/asset/:assetId/history?from=&to=&eventType=&limit=200
+  Returns up to `limit` (default 200) rows newest first.
+
+----- 3.3 Sync One -----
+  POST /fueltelemetry/sync/:assetId
+  Body: empty
+  Effect: pulls fresh reading from Diztek, persists if new.
+  Response: { logId, eventType, fuelReading, deltaFromPrev, geofenceStatus }
+  Errors:
+    400 invalid id
+    404 asset not found
+    500 with provider error message (wrapped) — surfaces to fuelTelemetry.lastError
+
+----- 3.4 Sync All -----
+  POST /fueltelemetry/sync-all
+  Body: empty
+  Effect: iterates every Active asset with serialNumber + gps.deviceId,
+          processes in concurrent batches of 5, ignores per-asset failures.
+  Response: { total, synced, skipped, failed, refuels, drains }
+  Use case: admin-triggered manual full sync.
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  FUEL TELEMETRY DASHBOARD  (cross-asset overview)
+  Route   : /fueltelemetry
+  Title   : "Fuel & GPS Telemetry"
+  Layout  :
+    KPI tiles (top row):
+      Last sync (timestamp)
+      Active assets with telemetry (count)
+      REFUEL events today
+      DRAIN events today
+      Assets with errors (lastError != null)
+    Map widget:
+      All assets' lastKnownLocation as markers (green=INSIDE, red=OUTSIDE,
+      gray=UNKNOWN). Click marker → open a side panel with asset summary
+      (fuelPercent, ignition, status, lastReadingAt, "Sync Now",
+      "Open Asset Detail").
+    "Recent Events" feed (right column):
+      Stream of recent REFUEL/DRAIN events across the fleet:
+        time | asset | type chip | delta liters | location
+    Action: "Sync All" button (canEdit) — confirm modal then POST /sync-all
+            and toast result stats.
+
+4.2  ASSET TELEMETRY TAB  (on /machinery/:assetId)
+  Tab title : "Telemetry"
+  Sources   :
+    GET /fueltelemetry/asset/:_id/latest
+    GET /fueltelemetry/asset/:_id/history?limit=200
+  Layout    :
+    Top — current snapshot card:
+      Fuel % gauge (0..100)
+      Ignition + status chips
+      Last sync timestamp + last reading timestamp
+      Last error (red banner if non-null)
+      "Sync Now" button (canEdit)
+    Map card:
+      lastKnownLocation marker
+      If geofence is set, draw radius circle (green if INSIDE, red OUTSIDE)
+      Toggle: "Show recent path" → render polyline from last N readings
+              (use lat/lng from history)
+    Charts (collapsible row):
+      Fuel Reading over time (line) — toggle period 24h / 7d / 30d
+      Fuel % over time
+      REFUEL/DRAIN markers overlaid (annotations on the line chart)
+    Events table (full width):
+      readingAt | event chip | delta | fuel | percent | ignition | status |
+      location | source chip
+      Filters: eventType, date range
+      Each row click expands to show raw provider payload (debug aid).
+
+4.3  GEOFENCE BREACH ALERTS WIDGET
+  Source : aggregate over MachineryAsset.gps.lastGeofenceStatus="OUTSIDE"
+           (no dedicated endpoint; /machineryasset/getall/assets returns gps
+           subdoc and you filter client-side)
+  Card with table:
+    asset_id | name | last location | distance from zone | last sync
+  Click → /machinery/:assetId Telemetry tab.
+
+4.4  REFUEL / DRAIN AUDIT REPORT
+  Filterable table of recent REFUEL or DRAIN events fleet-wide:
+    Source: GET /fueltelemetry/asset/:_id/history?eventType=REFUEL&from&to
+            (loop per asset OR add a fleet endpoint later)
+  Use case: auditing fuel theft, contractor reconciliation.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+Background sync (cron every 6h by default, or */15 in dev):
+  1. List assets where currentStatus="Active" AND serialNumber AND gps.deviceId
+  2. Concurrent batches of 5
+  3. Per asset:
+       a. Call Diztek with plate + IMEI
+       b. Validate provider returned the same plate (sanity check)
+       c. Skip if a log with same readingAt already exists
+       d. Look up previous reading → delta
+       e. Classify event type
+       f. Insert FuelTelemetryLog
+       g. Update MachineryAsset.fuelTelemetry summary
+       h. Update gps.lastKnownLocation + geofence breach state
+       i. If newly OUTSIDE the zone, emit notification
+  4. Log batch stats
+
+Manual sync: same as above but source=MANUAL and only one asset (3.3) or
+all (3.4).
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- Geofence breach (real-time on each sync):
+    Title: "Geofence breach: <assetId>"
+    Message: "<asset_name> (<assetId>) is <distance>m outside the
+              <zone_name> zone."
+    Audience: roles with asset.fuel_telemetry.read
+    Category: alert; Priority: high
+    actionUrl: /machinery/:assetId   (Telemetry tab)
+  Dedup: only fires when status flips from non-OUTSIDE to OUTSIDE; no spam
+  if asset stays OUTSIDE across multiple syncs.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                       | required permission
+  ---------------------------------|----------------------------
+  Telemetry dashboard              | asset.fuel_telemetry.read
+  Asset Telemetry tab              | asset.fuel_telemetry.read
+  Sync Now (single)                | asset.fuel_telemetry.edit
+  Sync All                         | asset.fuel_telemetry.edit
+  Geofence Breach widget           | asset.fuel_telemetry.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- MachineryAsset (file 02): summary + GPS subdoc auto-updated
+- Geofence (HR module): breach evaluation reads the asset's project's tender
+  geofence (one Geofence linked to one Tender)
+- KPI (file 15): fuel_consumed in MachineDailyLog is the source for KPI;
+  telemetry is observational only and does NOT feed KPI today (because
+  fuel sync gives snapshots not consumption).
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- The endpoints take MachineryAsset _id (ObjectId), NOT the business string.
+  When linking from /machinery/:assetId page (which uses the string), you'll
+  need to use the asset's _id from the dashboard payload. Plan API calls
+  accordingly.
+- Geofence breach requires:
+    asset.projectId → Tender.tender_id → Tender._id → Geofence.tenderId
+  If any link is missing, breach status is UNKNOWN and no notification fires.
+  Encourage users to attach a Geofence to every active project.
+- Refuel/drain threshold is environment-configurable. Set it sensibly per
+  fleet — 10L for excavators is fine, 5L might be tighter for cars.
+- Diztek may return readings in IST without timezone marker; the service
+  parses "DD-MM-YYYY HH:mm:ss" as IST and converts to UTC. UI display
+  should always show user's local timezone (existing pattern in the project).
+- Provider rate limits: don't spam manual /sync-all. The cron is gentle
+  (5 concurrent). Disable the "Sync All" button for non-admin roles.
+- The `raw` field on each log retains the full provider payload — handy
+  for debugging. Don't display in normal UI; show on row-expand only.
+- Map widgets are heavy; lazy-load them and respect the user's data plan
+  on mobile.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] /fueltelemetry dashboard with map + KPI tiles + recent events feed
+[ ] Telemetry tab on /machinery/:assetId with snapshot, map, charts
+[ ] Sync Now / Sync All buttons with confirm modal
+[ ] Geofence breach widget on dashboard
+[ ] Refuel/Drain audit report (per asset, then fleet later)
+[ ] Notification handling for breaches
+[ ] Use ObjectId not business assetId in API calls
+[ ] Lazy-load map components
+[ ] RBAC gates
+
+================================================================================
+END 14 — Fuel Telemetry
+================================================================================

@@ -1,0 +1,416 @@
+================================================================================
+  04 — BULK INVENTORY  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/bulkinventory  (+ bulkinventorytxn ledger)
+Phase     : 2 (Core Registers)
+RBAC key  : asset.bulk_inventory   (read / create / edit / delete)
+Route base: /bulkinventory
+ID prefix : BLK (item), BIT (transaction)
+
+> UI/VISUAL STYLE NOTE
+>   Mirror /material (BOQ material master) for the item list and detail.
+>   Use the existing stock-movement modal pattern from /purchaseorderrequest
+>   GRN posting if it exists; else build a single TransactionDialog
+>   reused across all 7 movement types.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Quantity-tracked stock that isn't serial-tagged. Covers:
+  • Formwork — steel shuttering plates, plywood, props, scaffolding sets
+  • Safety / PPE — helmets, shoes, harnesses, life lines, safety nets
+  • Site Infra (consumable) — fencing, tarpaulin
+  • Tools (when purchased in bulk and tracked by quantity)
+
+Stock is tracked PER LOCATION (one item can sit in many sites/stores at once),
+with three buckets per location: qty_available / qty_in_use / qty_damaged.
+
+EVERY change to stock posts an append-only LEDGER row (BulkInventoryTransaction).
+The item rollup is recomputed atomically inside a Mongo transaction. This is
+core inventory accounting — never edit a transaction; correct via ADJUSTMENT.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+
+Collection: BulkInventory  (item master + rollup)
+
+  IDENTITY
+    item_id            String UNIQUE INDEXED  (e.g. "BLK001")
+    item_name          String REQUIRED
+
+  CLASSIFICATION (denorm from master)
+    asset_category_ref ObjectId AssetCategoryMaster REQUIRED INDEXED
+    asset_class        enum INDEXED:
+                         Formwork | SafetyEquipment | SiteInfra | Tool | Other
+    category / sub_category   String INDEXED
+
+  ATTRIBUTES
+    brand / model / size / color
+    unit_of_measure    String REQUIRED   ("Nos","Pair","Mtr","Sqm","Set")
+
+  STOCK LOCATIONS (array) — auto-maintained by transactions
+    [ { location_type: SITE|STORE,
+        location_id: String,
+        location_name: String,
+        qty_available: Number ≥0,
+        qty_in_use:    Number ≥0,
+        qty_damaged:   Number ≥0 } ]
+
+  ROLLUPS (auto-recomputed)
+    total_qty_available  Number
+    total_qty_in_use     Number
+    total_qty_damaged    Number
+
+  REORDER THRESHOLDS
+    min_stock_level / reorder_qty
+
+  COST
+    standard_cost / vendor_id / vendor_name
+
+  FLAGS
+    is_reusable   (formwork=true, PPE=false)
+    is_consumable
+    has_expiry / shelf_life_months
+    certifications  ["IS 2925","EN 397"]
+    is_active     Boolean INDEXED default true
+
+  notes / created_by / updated_by / timestamps
+
+
+Collection: BulkInventoryTransaction  (append-only ledger)
+
+  txn_id             String UNIQUE INDEXED  (e.g. "BIT001")
+  item_ref           ObjectId BulkInventory REQUIRED
+  item_id_label      String                  ("BLK001")
+  item_name          String
+
+  txn_type           enum INDEXED:
+                       RECEIPT | ISSUE | RETURN | TRANSFER
+                       | DAMAGE | SCRAP | ADJUSTMENT
+  txn_date           Date INDEXED default now
+  quantity           Number ≥0       (always positive; type implies direction)
+
+  from_location_type / id / name    (enum: SITE | STORE | VENDOR | EXTERNAL)
+  to_location_type / id / name
+
+  recipient_kind: EMPLOYEE | CONTRACTOR | SITE | null
+  recipient_id / recipient_name
+
+  reference_type     ("PO","GRN","INDENT","ADJ","ISSUANCE","RETURN","WORK_ORDER",...)
+  reference_number
+  reference_url
+
+  unit_cost / total_cost
+  linked_txn_ref     ObjectId    (RETURN → original ISSUE; for traceability)
+
+  notes / performed_by / timestamps
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+
+Item CRUD:
+3.1  POST   /bulkinventory/create                          [create]
+3.2  GET    /bulkinventory/getall                          [read]
+3.3  GET    /bulkinventory/low-stock                       [read]
+3.4  GET    /bulkinventory/getbyid/:itemId                 [read]
+3.5  PUT    /bulkinventory/update/:itemId                  [edit]
+3.6  PATCH  /bulkinventory/toggle-active/:itemId           [edit]
+
+Stock movements (each posts a ledger row):
+3.7  POST   /bulkinventory/movement/receive                [create]
+3.8  POST   /bulkinventory/movement/issue                  [create]
+3.9  POST   /bulkinventory/movement/return                 [create]
+3.10 POST   /bulkinventory/movement/transfer               [create]
+3.11 POST   /bulkinventory/movement/damage                 [create]
+3.12 POST   /bulkinventory/movement/scrap                  [create]
+3.13 POST   /bulkinventory/movement/adjustment             [create]
+
+Ledger:
+3.14 GET    /bulkinventory/transactions                    [read]
+
+----- 3.2 List -----
+  GET /bulkinventory/getall?page&limit&search&asset_class&is_active
+                          &location_id&low_stock=true
+  Note: low_stock=true returns items where total_qty_available < min_stock_level.
+  search matches item_id, item_name, brand, model.
+
+----- 3.7..3.13 Stock movements (common payload shape) -----
+  POST /bulkinventory/movement/<type>
+  Body (varies by type — see below):
+    {
+      item_ref:        "<ObjectId of item>",
+      quantity:        <positive number>,
+      // Movement endpoints — depending on type:
+      from_location_type: "SITE"|"STORE"|"VENDOR"|"EXTERNAL",
+      from_location_id:   "<projectId or storeId>",
+      from_location_name: "<display name>",
+      to_location_type:   "SITE"|"STORE"|"VENDOR"|"EXTERNAL",
+      to_location_id:     "...",
+      to_location_name:   "...",
+      // For ISSUE / RETURN — recipient
+      recipient_kind:  "EMPLOYEE"|"CONTRACTOR"|"SITE",
+      recipient_id:    "EMP-001"|"CON-002"|"TND-005",
+      recipient_name:  "...",
+      // Reference doc
+      reference_type:   "PO"|"GRN"|"INDENT"|"ADJ"|"ISSUANCE"|"RETURN"|"WORK_ORDER",
+      reference_number: "...",
+      reference_url:    "<S3 link>",
+      // Cost (optional on RECEIPT for value capture)
+      unit_cost:        100,
+      total_cost:       1000,
+      notes:            "..."
+    }
+  Backend semantics per type (validated server-side):
+    RECEIPT:    requires to_location;                 +qty_available at to
+    ISSUE:      requires from_location, recipient;    -avail, +in_use at from
+                fails with 400 if from.qty_available < quantity
+    RETURN:     requires to_location, recipient;      -in_use, +avail at to
+                fails if to.qty_in_use < quantity
+    TRANSFER:   requires from + to locations;         -avail at from, +avail at to
+    DAMAGE:     requires from_location;               -avail or -in_use, +damaged
+    SCRAP:      requires from_location;               -damaged (must be enough)
+    ADJUSTMENT: requires either from OR to;           free-form, qty signed by side
+
+  Response 201:
+    { status: true, message, data: { transaction, item } }
+    where item is the rollup-updated BulkInventory document.
+
+  Idempotency: ALWAYS pass X-Idempotency-Key on movement endpoints.
+
+----- 3.14 Transactions (ledger) -----
+  GET /bulkinventory/transactions?page&limit&item_id_label&txn_type&from&to
+  Response: { data: [...], meta }
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  ITEM LIST PAGE
+  Route   : /bulkinventory
+  Title   : "Bulk Inventory"
+  Source  : GET /bulkinventory/getall
+  Columns :
+    - Item ID            (link → detail)
+    - Item Name
+    - Class              chip
+    - Brand / Model
+    - UoM
+    - Total Available    (number, red if < min_stock_level)
+    - In Use
+    - Damaged
+    - Min Level / Reorder Qty
+    - Active             toggle
+    - Actions            (Edit, Toggle Active, Quick-issue, Receive)
+  Filters :
+    - asset_class
+    - is_active toggle
+    - location_id (ProjectPicker / store dropdown)
+    - low_stock toggle (calls ?low_stock=true)
+    - search (item_id / name / brand / model)
+  Toolbar :
+    + Add Item                     (canCreate)
+    + Receive Stock                (canCreate, opens TransactionDialog)
+    + Low Stock Report             (badge with count)
+    + Export CSV
+  Quick row actions:
+    "Issue" / "Return" / "Transfer" — open the corresponding TransactionDialog
+    pre-filled with that item.
+
+4.2  ITEM DETAIL PAGE
+  Route   : /bulkinventory/:itemId
+  Source  : GET /bulkinventory/getbyid/:itemId
+  Layout  : header + 4 tabs
+
+    HEADER STRIP
+      Item name + item_id chip
+      Total Available + In Use + Damaged (KPI tiles)
+      Action menu: Receive / Issue / Return / Transfer / Mark Damaged / Scrap /
+                    Adjustment / Edit / Toggle Active
+
+    TAB 1 — OVERVIEW
+      Identity, classification, attributes, flags, certifications,
+      reorder thresholds, cost.
+
+    TAB 2 — STOCK BY LOCATION
+      Table from item.stock_locations:
+        location_type | location_name | qty_available | qty_in_use | qty_damaged | total
+      Per row: "Issue from here" / "Transfer from here" buttons.
+
+    TAB 3 — TRANSACTIONS (LEDGER)
+      Table: GET /bulkinventory/transactions?item_id_label=<this>&page=1
+      Columns: txn_id | date | type chip | qty | from → to | recipient |
+                ref | unit cost | total | performed_by
+      Filter row: txn_type, date range
+      Click row → expand to show notes + reference URL.
+
+    TAB 4 — AUDIT
+      AuditDrawer-tab variant.
+
+4.3  CREATE / EDIT ITEM FORM
+  Route   : /bulkinventory/new  /  /bulkinventory/:itemId/edit
+  Sections:
+    Identity
+      Item ID            text (auto-suggested; editable)
+      Item Name*         text
+      Asset Category*    <AssetCategoryPicker classFilter="Formwork,
+                                  SafetyEquipment,SiteInfra,Tool,Other" />
+                         on select, pre-fills:
+                           asset_class / category / sub_category / unit_of_measure
+                           is_consumable
+    Attributes
+      Brand | Model | Size | Color | UoM*
+    Reorder
+      Min Stock Level | Reorder Qty
+    Cost
+      Standard Cost (MoneyInput) | Vendor (VendorPicker)
+    Flags
+      [ ] Is Reusable
+      [ ] Is Consumable
+      [ ] Has Expiry  → if checked, show "Shelf Life (months)"
+      Certifications  comma-separated chips ("IS 2925","EN 397")
+    Status
+      Active toggle
+  Submit: POST /bulkinventory/create
+  Edit: PUT /bulkinventory/update/:itemId
+
+4.4  TRANSACTIONDIALOG  (one component, 7 modes)
+  Trigger : any "Receive/Issue/Return/Transfer/Damage/Scrap/Adjustment" button
+  Mode    : passed as prop {type: "RECEIPT"|"ISSUE"|...}
+  Common fields :
+    Item             AssetPicker(kind="BULK") — pre-filled if from item detail
+    Quantity*        number (validated against rollup; show available locally)
+    Reference Type   dropdown PO|GRN|INDENT|ADJ|ISSUANCE|RETURN|WORK_ORDER
+    Reference Number text
+    Reference URL    file uploader → S3 → URL
+    Unit Cost        MoneyInput (RECEIPT mostly, optional elsewhere)
+    Total Cost       MoneyInput (auto = unit_cost × qty, editable override)
+    Notes            textarea
+  Conditional fields by mode:
+    RECEIPT:    To Location (type+id+name)
+    ISSUE:      From Location, Recipient (kind+id+name)
+                — Recipient picker switches: EmployeePicker | ContractorPicker |
+                  ProjectPicker
+    RETURN:     To Location, Recipient (links to original ISSUE — UI may show
+                an "Open Issuances" picker that fills both)
+    TRANSFER:   From + To Locations
+    DAMAGE:     From Location (auto-deducts from available, falls to in_use)
+    SCRAP:      From Location (must have qty_damaged ≥ qty)
+    ADJUSTMENT: To OR From location (signed)
+  Validation:
+    - quantity > 0
+    - locations required per mode
+    - recipient required for ISSUE/RETURN
+  Submit: POST /bulkinventory/movement/<type> with X-Idempotency-Key.
+  On success: toast, refetch item + ledger.
+
+4.5  LOW STOCK REPORT
+  Route   : /bulkinventory?low_stock=true (filter shortcut)
+  OR dedicated /bulkinventory/low-stock dashboard widget
+  Source  : GET /bulkinventory/low-stock
+  Card with table:
+    item_id | name | class | total_available | min_stock_level | reorder_qty
+  Per row: "Raise PO" → opens /purchaseorderrequest/new pre-filled.
+
+4.6  TRANSACTIONS GLOBAL VIEW
+  Route   : /bulkinventory/transactions
+  Source  : GET /bulkinventory/transactions
+  Filters : item, type, date range, performed_by
+  Same table as Detail Tab 3 but unscoped. Use for audit / GST reconciliation
+  feeds.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS / STATE TRANSITIONS
+--------------------------------------------------------------------------------
+The "state" here is per-location quantities; transactions move quantities
+between buckets:
+
+    [available]       ─ ISSUE ─►       [in_use]
+        ▲                                  │
+        │                                  │
+      RECEIPT                          RETURN
+        │                                  │
+   (from VENDOR                            ▼
+    or RECEIPT)                       [available]
+        │
+    TRANSFER                            DAMAGE
+        │                                  ▼
+        ▼                              [damaged]
+    [other location's available]            │
+                                          SCRAP
+                                            ▼
+                                      (removed from inventory)
+
+ADJUSTMENT can directly add or remove from available (signed by from/to).
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- Low stock: NOT auto-notified by backend yet. Frontend can poll
+  /bulkinventory/low-stock daily and surface a banner; or add a cron
+  on the backend later.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                          | required permission
+  ------------------------------------|------------------------------
+  /bulkinventory list                 | asset.bulk_inventory.read
+  + Add Item                          | asset.bulk_inventory.create
+  Edit                                | asset.bulk_inventory.edit
+  Toggle Active                       | asset.bulk_inventory.edit
+  ANY stock movement                  | asset.bulk_inventory.create
+  Transactions ledger                 | asset.bulk_inventory.read
+  Low Stock report                    | asset.bulk_inventory.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- AssetIssuance (file 06) creates a corresponding ISSUE / RETURN transaction
+  internally when asset_kind=BULK. The frontend issuance form does NOT post
+  a separate /bulkinventory/movement call — it calls /assetissuance/create
+  and /assetissuance/return, which fan out automatically.
+- WorkOrder (file 10) auto-issues parts on closure (creates ISSUE txns
+  with reference_type="WORK_ORDER", reference_number=<work_order_no>).
+- MaintenanceLog parts subdoc references the same item collection
+  (item_ref, item_id_label, item_name).
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- The append-only ledger rule: never edit a transaction; correct mistakes
+  via a reverse ADJUSTMENT. UI must NOT expose any "edit transaction" button.
+- ISSUE will fail (400) if from_location.qty_available < quantity. Show an
+  inline error AND show a hint with current stock at that location.
+- RETURN will fail if to_location.qty_in_use < quantity (you can't return
+  more than was issued). Common with returns from contractors who sub-issue
+  internally — surface "open issuances" picker if return >= 1 issuance ago.
+- DAMAGE deducts from available first, then in_use. SCRAP requires damaged
+  stock to exist; it doesn't auto-DAMAGE first.
+- Locations are created lazily — first time a movement references a new
+  (location_type, location_id) pair, the location row appears in the item.
+  Once created, the row stays even when zeroed (preserves history).
+- A single item can appear in many sites simultaneously; rollups are sums.
+  When picking "from_location" on ISSUE/TRANSFER, dropdown must list ONLY
+  locations that currently hold the item (filter stock_locations where any
+  bucket > 0).
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] Item list with all filters + low-stock toggle
+[ ] Detail with 4 tabs and per-location stock breakdown
+[ ] Create/Edit form with all flags and reorder thresholds
+[ ] TransactionDialog reused for all 7 movement types
+[ ] Conditional fields per movement type
+[ ] Idempotency keys on every POST
+[ ] Low-stock dashboard widget
+[ ] Transactions global ledger view
+[ ] Refetch item + ledger after each movement
+[ ] RBAC gates
+[ ] Error inline-display on insufficient-stock 400s
+
+================================================================================
+END 04 — Bulk Inventory
+================================================================================

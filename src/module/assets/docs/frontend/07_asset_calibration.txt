@@ -1,0 +1,328 @@
+================================================================================
+  07 — ASSET CALIBRATION  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/assetcalibration
+Phase     : 3 (Operations)
+RBAC key  : asset.calibration   (read / create / edit / delete)
+Route base: /assetcalibration
+ID prefix : CAL  (e.g. CAL001)
+
+> UI/VISUAL STYLE NOTE
+>   Mirror /document upload page for the certificate file widget;
+>   /finance/voucher detail for the read-only audit-trail card layout.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+NABL / ISO 17025 calibration certificate ledger for survey, lab, and detection
+instruments (Total Stations, Auto Levels, Theodolites, GPS/DGPS, Drones,
+Cube Testing Machines, Gas Detectors, Fire Extinguishers' weight, etc.).
+
+Each document represents ONE calibration event: who calibrated, when, against
+which agency, what was measured, the result, and the certificate file.
+
+On save, the service writes back a summary to the TaggedAsset.compliance:
+last_calibration_date, next_calibration_due, last_certificate_url. This makes
+the "calibration due" report fast — no join needed.
+
+ONLY TaggedAsset records can be calibrated (Survey/Lab/Detection items).
+MachineryAsset and BulkInventory cannot.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: AssetCalibration
+
+  IDENTITY
+    calibration_id    String UNIQUE INDEXED  ("CAL001")
+
+  ASSET LINK (TaggedAsset only)
+    asset_ref         ObjectId TaggedAsset REQUIRED INDEXED
+    asset_id_label    String INDEXED REQUIRED   ("TGA042")
+    asset_name        String
+    asset_class       String
+
+  DATES
+    calibration_date  Date INDEXED REQUIRED
+    next_due_date     Date INDEXED REQUIRED      (per agency standard)
+
+  AGENCY
+    agency_name             String REQUIRED
+    agency_accreditation    String                ("NABL","ISO 17025")
+    agency_contact          String
+
+  CERTIFICATE
+    certificate_number      String INDEXED REQUIRED
+    certificate_url         String                (S3 link)
+
+  OUTCOME
+    result        enum INDEXED REQUIRED:
+                    PASS | FAIL | ADJUSTED | OUT_OF_TOLERANCE
+    measurements  array of:
+      [ { parameter REQUIRED,
+          expected,
+          actual,
+          deviation,
+          within_tolerance: Boolean default true } ]
+
+  COST
+    cost              Number ≥0
+    invoice_number    String
+
+  performed_by    String (operator/technician name from the agency)
+  notes
+  created_by
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  POST   /assetcalibration/create                              [create]
+3.2  GET    /assetcalibration/getall                              [read]
+3.3  GET    /assetcalibration/due-report?days=30                  [read]
+3.4  GET    /assetcalibration/getbyid/:calibrationId              [read]
+3.5  GET    /assetcalibration/history/:assetIdLabel               [read]
+3.6  PUT    /assetcalibration/update/:calibrationId               [edit]
+3.7  DELETE /assetcalibration/delete/:calibrationId               [delete]
+
+----- 3.1 Create -----
+  POST /assetcalibration/create
+  Body:
+    {
+      "asset_ref": "<ObjectId of TaggedAsset>",
+      "calibration_date": "2026-04-12",
+      "next_due_date": "2027-04-12",
+      "agency_name": "TUV India Pvt Ltd",
+      "agency_accreditation": "NABL",
+      "agency_contact": "+91-...",
+      "certificate_number": "TUV-CAL-2026-04-1234",
+      "certificate_url": "<S3 link>",
+      "result": "PASS",
+      "measurements": [
+        { "parameter": "Angular accuracy",
+          "expected": "±2\"", "actual": "±1.5\"", "deviation": "ok",
+          "within_tolerance": true }
+      ],
+      "cost": 5000,
+      "invoice_number": "TUV/INV/123",
+      "performed_by": "K. Iyer",
+      "notes": "..."
+    }
+  Side-effects:
+    The TaggedAsset.compliance summary is updated:
+      requires_calibration = true
+      last_calibration_date  = calibration_date
+      next_calibration_due   = next_due_date
+      last_certificate_number = certificate_number
+      last_certificate_url    = certificate_url
+
+----- 3.2 List -----
+  GET /assetcalibration/getall?page&limit&asset_ref&asset_id_label
+                             &result&from&to
+  Returns paginated calibration history across all assets.
+
+----- 3.3 Due Report -----
+  GET /assetcalibration/due-report?days=30
+  Returns the LATEST calibration record per asset whose next_due_date is
+  within `days` from now (overdue included). One row per asset (de-duplicated
+  via aggregation).
+
+----- 3.5 History per asset -----
+  GET /assetcalibration/history/:assetIdLabel    (e.g. /history/TGA042)
+  All calibration records for one asset, newest first.
+
+----- 3.6 Update -----
+  PUT /assetcalibration/update/:calibrationId
+  Side-effect: re-fetches the latest record for that asset and rewrites the
+  TaggedAsset compliance summary.
+
+----- 3.7 Delete -----
+  DELETE /assetcalibration/delete/:calibrationId
+  Side-effect: rewrites the TaggedAsset compliance summary from the next-most-recent
+  record (or clears it if no others exist).
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LIST PAGE
+  Route   : /assetcalibration
+  Title   : "Asset Calibration Register"
+  Source  : GET /assetcalibration/getall
+  Columns :
+    - Calibration ID    (link → detail)
+    - Asset             asset_id_label · asset_name (link → tagged-asset detail)
+    - Class             chip (Survey/IT/etc.)
+    - Calibration Date
+    - Next Due          (red ≤7d, amber ≤30d, green > 30d)
+    - Agency            (with accreditation chip "NABL"/"ISO 17025")
+    - Cert #            link to certificate_url (open in new tab)
+    - Result            chip PASS|FAIL|ADJUSTED|OUT_OF_TOLERANCE
+    - Cost              MoneyInput-format
+    - Actions           (View, Edit, Delete)
+  Filters :
+    - asset_ref / asset_id_label (AssetPicker filtered to TAGGED only)
+    - result
+    - date range (calibration_date)
+    - search (by certificate_number — can be local since list is small)
+  Toolbar :
+    + New Calibration         (canCreate)
+    + Due Report              (badge with count from /due-report; click →
+                               /assetcalibration/due-report page)
+    + Export CSV
+
+4.2  DETAIL PAGE
+  Route   : /assetcalibration/:calibrationId
+  Source  : GET /assetcalibration/getbyid/:calibrationId
+  Layout  : 2-column
+
+    LEFT — Identity & dates card
+      Calibration ID + asset link
+      Calibration date / Next due (with countdown chip)
+      Agency: name + accreditation + contact
+      Performed by
+
+    RIGHT — Outcome & cost card
+      Result chip (large)
+      Cost + invoice link
+      Certificate Number + "Download Certificate" button → certificate_url
+
+    BELOW — Measurements table (full width)
+      parameter | expected | actual | deviation | within_tolerance ✓ / ✗
+      Failed rows highlighted in red.
+
+    Action bar: Edit | Delete | New for this Asset (links to create with
+    asset_ref pre-filled)
+
+    Audit drawer trigger.
+
+4.3  CREATE FORM  (modal, full-width because of measurements table)
+  Trigger : "+ New Calibration" toolbar button OR "Calibrate" from
+            TaggedAsset detail (pre-fills asset_ref)
+  Sections:
+    Asset
+      Asset*               <AssetPicker kind="TAGGED" requireCalibration={true}/>
+                           (filter to assets where compliance.requires_calibration
+                           is true, or any tagged asset if user wants to set it)
+    Dates
+      Calibration Date*    date
+      Next Due Date*       date (default = +1 year from calibration_date,
+                           editable per agency frequency)
+    Agency
+      Agency Name*         text
+      Accreditation        dropdown NABL | ISO 17025 | Other (free-form)
+      Agency Contact       text/phone
+      Performed By         text (operator/technician name)
+    Certificate
+      Certificate Number*  text
+      Certificate File     file uploader → S3 → URL
+    Outcome
+      Result*              segmented: PASS | FAIL | ADJUSTED | OUT_OF_TOLERANCE
+      Measurements         table-edit:
+        Add Row | parameter* | expected | actual | deviation | within_tolerance toggle
+        Default: 3 rows pre-added; user can extend.
+    Cost
+      Cost                 MoneyInput
+      Invoice Number       text
+    Notes                  textarea
+
+  Validation:
+    - next_due_date > calibration_date
+    - cost ≥ 0
+    - certificate_number unique per (asset, calibration_date) — soft warn
+      if a record exists (server doesn't enforce uniqueness)
+  Submit: POST /assetcalibration/create
+
+4.4  EDIT FORM
+  Same as Create but calibration_id is read-only.
+  PUT /assetcalibration/update/:calibrationId.
+
+4.5  DELETE DIALOG
+  Confirmation: "Deleting this record will recompute the asset's compliance
+  summary from the next-most-recent calibration. Continue?"
+  DELETE /assetcalibration/delete/:calibrationId.
+
+4.6  DUE REPORT PAGE
+  Route   : /assetcalibration/due-report
+  Source  : GET /assetcalibration/due-report?days=30  (period selector at top)
+  Layout  : Sortable table:
+    asset_id_label | asset_name | class | last_cal_date | next_due_date |
+    days_overdue/days_left | agency
+  Period selector: 7 / 14 / 30 / 60 / 90 days
+  Per row: "+ New Calibration" → opens create modal pre-filled.
+  Top: "Total overdue: X | Due in 30d: Y" KPI tiles.
+
+4.7  CALIBRATION-DUE DASHBOARD WIDGET
+  Same data as 4.6 but card-sized; show top 5 most-overdue with link to
+  full report.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+None — flat ledger. The "workflow" is in the cross-write-back to TaggedAsset:
+
+   Create calibration ─► TaggedAsset.compliance summary refreshed
+   Update calibration ─► summary refreshed from latest
+   Delete calibration ─► summary recomputed from next-most-recent (or cleared)
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- Daily 06:30 cron sweeps the due-report and notifies all roles with
+  asset.calibration.read about overdue + due-soon counts. Notification
+  payload includes actionUrl=/assetcalibration/due-report.
+- Notification has dedup-by-day (won't spam if you re-run).
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                | required permission
+  --------------------------|--------------------------
+  /assetcalibration list    | asset.calibration.read
+  + New Calibration         | asset.calibration.create
+  Edit                      | asset.calibration.edit
+  Delete                    | asset.calibration.delete
+  Due Report                | asset.calibration.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- TaggedAsset (file 03): compliance summary auto-updated on save/update/delete.
+- TaggedAsset detail page Calibration tab links to history endpoint.
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- Calibration is for TAGGED assets only — the create form must filter the
+  AssetPicker accordingly. (BULK and MACHINERY don't have a calibration concept
+  in this module.)
+- next_due_date is set per agency frequency (typically 12 months for Total
+  Stations and survey kit, 6 months for some lab gear). Pre-fill default to
+  +1y but always allow override.
+- result=FAIL or OUT_OF_TOLERANCE: surface a banner on the asset's detail
+  page advising removal from service until re-calibrated. (Today this is
+  UI-advisory only; the backend doesn't auto-flip the tagged-asset status.)
+- Deleting the only calibration of an asset clears the compliance summary
+  but does NOT clear `compliance.requires_calibration` — that flag remains
+  true (set on first create). To turn off entirely, edit the TaggedAsset.
+- The certificate_number unique constraint is not enforced at DB level;
+  duplicates are possible. If you want strict uniqueness, validate on the
+  client by querying /getall?certificate_number=... first (or add a
+  server-side check later).
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with filters + due-soon counts in toolbar
+[ ] Detail with measurements table
+[ ] Create form with measurements editor + cert upload
+[ ] Result-driven badge colors and FAIL banner on tagged-asset detail
+[ ] Due report page with period selector
+[ ] Dashboard widget
+[ ] Notification handling (dedup-by-day)
+[ ] AssetPicker filter for tagged-only
+[ ] Compliance summary refresh visible after save (refetch tagged asset)
+[ ] RBAC gates
+
+================================================================================
+END 07 — Asset Calibration
+================================================================================

@@ -1,0 +1,343 @@
+================================================================================
+  09 — PREVENTIVE MAINTENANCE  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/preventiveMaintenance
+Phase     : 4 (Maintenance & Reliability)
+RBAC key  : asset.preventive_maintenance   (read / create / edit / delete)
+Route base: /pmplan
+ID prefix : PMP  (e.g. PMP001)
+
+> UI/VISUAL STYLE NOTE
+>   Mirror /recurringvoucher (finance) form layout for the trigger-
+>   configuration UI — the recurrence pattern editor is conceptually
+>   the same. Use existing checklist editor pattern (text-list +
+>   add/remove rows) from /tender process steps.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+PM Plan defines a recurring preventive-maintenance trigger for ONE machine.
+One machine can have many plans:
+  • "250-hr Engine Oil + Filter"
+  • "500-hr Hydraulic Filter"
+  • "1000-hr Gearbox Oil"
+  • "Annual Fitness Renewal"
+
+Triggers are evaluated as ANY-OF:
+  • METER:    asset.lastReading − lastTriggeredAtReading ≥ intervalReading
+  • CALENDAR: now − lastTriggeredAt ≥ intervalDays days
+
+If both are set (BOTH), whichever fires first wins.
+
+The cron at 05:30 daily scans all active plans and creates DRAFT WorkOrders
+for those that crossed their threshold. The user reviews, approves, and
+runs the WO through closure (file 10). On WO closure, the plan is marked
+"fired" and its nextDueAt/nextDueAtReading are recomputed from the new base.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: PmPlan
+
+  pm_plan_id        String UNIQUE INDEXED   ("PMP001")
+  asset_ref         ObjectId MachineryAsset REQUIRED INDEXED
+  assetId           String INDEXED REQUIRED   ("EX-01" — denormalised)
+  asset_name        String
+  asset_class       String
+
+  name              String REQUIRED          ("250-hr Engine Oil & Filter")
+  description       String
+
+  triggerType       enum REQUIRED:           METER | CALENDAR | BOTH
+  intervalReading   Number ≥1                (METER / BOTH)
+  intervalDays      Number ≥1                (CALENDAR / BOTH)
+
+  lastTriggeredAt           Date
+  lastTriggeredAtReading    Number
+  nextDueAt                 Date INDEXED      (auto)
+  nextDueAtReading          Number            (auto)
+
+  leadTimeDays      Number default 7   (≥0)   — when to surface in due-list
+  leadTimeReading   Number default 25  (≥0)   — meter lead window
+
+  estimated_cost            Number ≥0
+  estimated_downtime_hours  Number ≥0
+  parts             array of:
+    [ { item_ref, item_id_label, item_name, quantity, unit } ]
+  checklist         array of strings        (free-form steps for the operator)
+
+  priority          enum default MEDIUM:    LOW | MEDIUM | HIGH | CRITICAL
+  is_active         Boolean INDEXED default true
+  created_by / updated_by / timestamps
+
+  Compound indexes: (assetId, is_active), (is_active, nextDueAt).
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  POST   /pmplan/create                       [create]
+3.2  GET    /pmplan/getall                       [read]
+3.3  GET    /pmplan/due                          [read]
+3.4  GET    /pmplan/getbyid/:planId              [read]
+3.5  PUT    /pmplan/update/:planId               [edit]
+3.6  PATCH  /pmplan/toggle/:planId               [edit]
+
+  No DELETE — disabling a plan is via /toggle. (PM history is preserved
+  via WO trail; deletion would lose cross-references.)
+
+----- 3.1 Create -----
+  POST /pmplan/create
+  Body:
+    {
+      "asset_ref": "<ObjectId of MachineryAsset>",
+      "name": "250-hr Engine Oil & Filter",
+      "description": "...",
+      "triggerType": "BOTH",
+      "intervalReading": 250,
+      "intervalDays": 90,
+      "leadTimeDays": 7,
+      "leadTimeReading": 25,
+      "estimated_cost": 4500,
+      "estimated_downtime_hours": 2,
+      "parts": [
+        { "item_ref": "<bulk_inv _id>",
+          "item_id_label": "BLK045",
+          "item_name": "Engine Oil 15W40 (4L)",
+          "quantity": 1, "unit": "Nos" },
+        { "item_id_label": "BLK046", "item_name": "Oil Filter",
+          "quantity": 1, "unit": "Nos" }
+      ],
+      "checklist": [
+        "Drain old oil",
+        "Replace oil filter",
+        "Refill engine oil to spec",
+        "Run engine, check for leaks"
+      ],
+      "priority": "MEDIUM"
+    }
+  Validation (server):
+    triggerType=METER    requires intervalReading
+    triggerType=CALENDAR requires intervalDays
+    triggerType=BOTH     requires BOTH
+  Side-effects:
+    Server computes nextDueAt / nextDueAtReading from baseDate (asset
+    purchaseDate or now) + interval. Updates MachineryAsset.preventiveMaintenance
+    summary.
+
+----- 3.2 List -----
+  GET /pmplan/getall?page&limit&assetId&is_active
+  Sorted by nextDueAt ascending.
+
+----- 3.3 Due Plans -----
+  GET /pmplan/due?lead_days=7
+  Returns plans whose nextDueAt is within `lead_days` from now OR whose
+  asset's lastReading + leadTimeReading ≥ nextDueAtReading.
+  Used by:
+    • The /workorderasset/auto-create-pm endpoint to pick which plans to
+      generate WOs for
+    • The "Due" UI tab on this module
+
+----- 3.6 Toggle -----
+  PATCH /pmplan/toggle/:planId
+  Flips is_active. Side-effect: refreshes the asset's
+  preventiveMaintenance.activePlanCount and nextServiceDueAt summary.
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LIST PAGE
+  Route   : /pmplan
+  Title   : "Preventive Maintenance Plans"
+  Source  : GET /pmplan/getall
+  Columns :
+    - Plan ID            (link → detail)
+    - Asset              link to /machinery/:assetId
+    - Name
+    - Trigger Type       chip METER | CALENDAR | BOTH
+    - Interval           "250 hr / 90d" formatted from intervals
+    - Last Triggered     (date + reading)
+    - Next Due           (date / "+250 hrs" — both shown when BOTH)
+                         red if overdue, amber if within lead, green otherwise
+    - Priority           chip
+    - Active             toggle (calls /toggle)
+    - Actions            (Edit, Toggle, Auto-create WO)
+  Filters :
+    - assetId (AssetPicker, kind=MACHINERY)
+    - is_active toggle
+    - triggerType
+    - "Due now / soon" toggle
+  Toolbar :
+    + Add PM Plan                  (canCreate)
+    + Auto-create WOs for due      (canCreate work_order)
+                                    POSTs /workorderasset/auto-create-pm
+    + Export CSV
+
+4.2  DUE PLANS PAGE
+  Route   : /pmplan/due
+  Source  : GET /pmplan/due?lead_days=<period>
+  Period selector: 7 / 14 / 30 days
+  Columns: same as 4.1 with "Why due" column (Calendar / Meter / Both)
+  Per row: "Generate WO" button — POST /workorderasset/auto-create-pm
+            (it's all-at-once today; UI may filter by asset client-side
+            to do per-row triggers when the WO endpoint accepts a single
+            plan ID later).
+
+4.3  DETAIL PAGE
+  Route   : /pmplan/:planId
+  Source  : GET /pmplan/getbyid/:planId
+  Layout  : 2-column
+
+    LEFT — Plan summary card
+      Plan ID, Name, Description
+      Asset (link)
+      Trigger configuration (TriggerCard component):
+        triggerType chip
+        intervalReading (units suffix from asset.trackingMode)
+        intervalDays
+        leadTimeDays / leadTimeReading
+      Last triggered / Next due (countdown chip)
+      Priority
+
+    RIGHT — Cost & Resources card
+      Estimated cost
+      Estimated downtime hours
+      Parts table (item_id_label, item_name, quantity, unit)
+      Checklist (numbered list, ordered)
+
+    BELOW — History
+      All WorkOrders linked to this plan (filter
+      /workorderasset/getall?pm_plan_ref=<this-id>):
+      WO# | raised_at | status | actual_cost | downtime_hours
+      Click → WO detail.
+
+    Action bar: Edit | Toggle Active | Generate WO Now (canCreate work_order)
+
+4.4  CREATE / EDIT FORM
+  Route   : /pmplan/new  /  /pmplan/:planId/edit
+  Sections:
+    Asset
+      Asset*           AssetPicker(kind=MACHINERY)
+      Plan Name*       text
+      Description      textarea
+      Priority*        radio LOW | MEDIUM | HIGH | CRITICAL
+    Trigger
+      Trigger Type*    radio METER | CALENDAR | BOTH
+      Interval Reading number  (visible if METER or BOTH)
+                       — units suffix shown from asset.trackingMode
+      Interval Days    number  (visible if CALENDAR or BOTH)
+      Lead Time Days   number, default 7
+      Lead Time Reading number, default 25
+    Estimates
+      Estimated Cost                MoneyInput
+      Estimated Downtime (hrs)      number
+    Parts (BOM template)
+      Repeating row:
+        Item*          AssetPicker(kind=BULK)
+        Quantity*      number
+        (item_name + unit auto-populate from selected item)
+      "+ Add Part" button
+    Checklist
+      Free-text list editor; "+ Add Step", drag to reorder
+  Validation:
+    - triggerType requires its corresponding interval(s)
+    - intervalReading > 0 if set
+    - intervalDays > 0 if set
+  Submit: POST /pmplan/create  /  PUT /pmplan/update/:planId
+
+4.5  PM TAB ON ASSET DETAIL  (referenced from file 02)
+  Route   : /machinery/:assetId  → Tab "Maintenance" → "Plans" sub-section
+  Source  : GET /pmplan/getall?assetId=<assetId>
+  Compact table of plans for this asset; "+ New Plan" CTA opens the create
+  form with asset pre-filled.
+
+4.6  PM DASHBOARD WIDGETS
+  - "PM Plans Due (next 30d)"  — count from /pmplan/due?lead_days=30
+  - "Plans Triggered This Month" — count of unique pm_plan_ref values from
+    /workorderasset/getall?kind=PM&from=<month-start>
+  - "Average compliance %"      — for each asset, % of due-on-time vs
+                                   overdue across the last 90d (computed
+                                   client-side from due/history)
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+                                       ┌─ daily 05:30 cron OR
+                                       │   /workorderasset/auto-create-pm
+                                       ▼
+   PM Plan "Active" ── nextDue crosses ── creates DRAFT WorkOrder (kind=PM)
+        ▲                                            │
+        │                                            │ user actions
+        │                                            ▼
+        │                              [DRAFT → APPROVED → IN_PROGRESS
+        │                               → COMPLETED → CLOSED]
+        │                                            │
+        │                                            ▼
+        │                              On CLOSED, PmPlanService.markFired:
+        │                                lastTriggeredAt = WO.completed_at
+        │                                lastTriggeredAtReading = WO.reading_at_end
+        └──── recompute nextDueAt/Reading ────────────┘
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- The cron logs how many WOs were created at 05:30. Today no direct
+  notification fires for "PM due" — the WO list refresh is the signal.
+  If you want a notification, attach one in the auto-create cron later.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                      | required permission
+  --------------------------------|------------------------------
+  /pmplan list                    | asset.preventive_maintenance.read
+  + Add PM Plan                   | asset.preventive_maintenance.create
+  Edit / Toggle                   | asset.preventive_maintenance.edit
+  Auto-create WO from due         | asset.work_order.create
+  Generate WO Now (detail)        | asset.work_order.create
+  PM tab on asset detail          | asset.preventive_maintenance.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- WorkOrder (file 10): consumes plans for auto-create; fires markFired on close.
+- MachineryAsset (file 02): preventiveMaintenance summary auto-updated.
+- BulkInventory (file 04): parts BOM references items; on WO close, parts are
+  auto-issued from inventory.
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- A plan can be due by BOTH meter and calendar; the WO is created once
+  (idempotent: auto-create skips plans that already have an open WO).
+- Toggle Off on a plan with an open WO does NOT cancel the WO — handle
+  the WO independently. Show a banner on the plan detail when toggling
+  off if any WO is open.
+- intervalReading should be positive integer; the asset's lastReading is
+  what's compared. Make sure asset HMR is being kept current (via
+  MachineryLog or future telemetry HMR auto-update) — otherwise the meter
+  trigger never fires.
+- nextDueAt is computed from `lastTriggeredAt` (or asset.purchaseDate) +
+  intervalDays. If the user creates a plan with intervalDays=90 on
+  2026-04-29 with no priorTrigger, nextDueAt = 2026-04-29 + 90d. Adjust
+  via Edit if the asset has been running long without service.
+- Generating the WO is the user's responsibility OR cron's; the plan
+  itself does not auto-create. UI must surface "Generate WO Now" CTAs
+  prominently for due plans.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with due-status colors and toggle
+[ ] Due page with period selector
+[ ] Detail with trigger card, parts table, checklist editor, history
+[ ] Create form with conditional intervals by triggerType
+[ ] Parts BOM editor with AssetPicker(kind=BULK)
+[ ] PM tab on asset detail
+[ ] Auto-create WO button (toolbar + per-row in due list)
+[ ] Dashboard widgets for due / fired / compliance
+[ ] RBAC gates
+
+================================================================================
+END 09 — Preventive Maintenance
+================================================================================

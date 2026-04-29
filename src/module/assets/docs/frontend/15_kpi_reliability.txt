@@ -1,0 +1,260 @@
+================================================================================
+  15 — KPI / RELIABILITY  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/kpi
+Phase     : 5 (Telematics & KPI)
+RBAC key  : asset.kpi   (read / create / edit / delete)
+Route base: /assetkpi
+ID        : Mongo _id (snapshots are de-duplicated by (asset, period_kind, period_label))
+
+> UI/VISUAL STYLE NOTE
+>   The marquee dashboard of the asset module — make it look polished.
+>   Use the same KpiTile component the finance dashboard uses if any.
+>   Charts: same library as elsewhere in the app. Drill-down click
+>   should open the same kind of modal/page used by /reports.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Daily / Weekly / Monthly snapshots of reliability metrics per machinery asset.
+Cached so dashboards don't recompute on each page load.
+
+Definitions (industry-standard EAM):
+
+  Operating Hours    = Σ MachineDailyLog.netUsage in window (HOURS-tracked assets)
+  Scheduled Hours    = days × shift_hours (default 12, env-configurable)
+  Downtime Hours     = Σ WorkOrder.downtime_hours for CORRECTIVE WOs CLOSED in window
+  Available Hours    = max(0, Scheduled − Downtime)
+  Failures           = count of CORRECTIVE WOs CLOSED in window
+
+  MTBF (hours)       = Operating / Failures        — null when failures=0
+  MTTR (hours)       = Downtime / Failures         — null when failures=0
+  Availability %     = (Available / Scheduled) × 100
+  Utilization %      = (Operating / Available) × 100
+  Performance %      = utilization (proxy when no expected-rate)
+  Quality %          = 100 (default — no defect data captured)
+  OEE %              = Availability × Performance × Quality / 10000
+
+Refresh policy:
+  Daily 05:30 cron computes DAY snapshots for all active assets.
+  Monthly on 1st @ 04:00 cron computes MONTH snapshot for previous month.
+  Manual recompute via /assetkpi/compute/:assetId or /compute-all.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: AssetKpiSnapshot
+
+  asset_ref          ObjectId MachineryAsset INDEXED REQUIRED
+  assetId            String INDEXED REQUIRED   ("EX-01")
+  asset_name         String
+  projectId          String INDEXED
+
+  period_kind        enum INDEXED REQUIRED: DAY | WEEK | MONTH
+  period_label       String INDEXED REQUIRED  ("2026-04-29" | "2026-W18" | "2026-04")
+  period_start       Date INDEXED
+  period_end         Date
+
+  operating_hours    Number
+  scheduled_hours    Number
+  downtime_hours     Number
+  available_hours    Number
+
+  failures           Number
+  mtbf_hours         Number | null
+  mttr_hours         Number | null
+
+  fuel_consumed      Number
+  productivity_qty   Number
+
+  availability_pct   Number
+  utilization_pct    Number
+  performance_pct    Number
+  quality_pct        Number default 100
+  oee_pct            Number
+
+  computed_at        Date
+  timestamps
+
+  Unique index: (asset_ref, period_kind, period_label)
+  Compound: (projectId, period_kind, period_label)
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  POST /assetkpi/compute/:assetId            [edit]    (single asset)
+3.2  POST /assetkpi/compute-all                 [edit]    (fleet)
+3.3  GET  /assetkpi/asset/:assetId              [read]    (history)
+3.4  GET  /assetkpi/project-rollup              [read]
+3.5  GET  /assetkpi/fleet-rollup                [read]
+
+  assetId on 3.1/3.3 is the BUSINESS STRING ("EX-01") — the controller
+  resolves it via /machineryasset.
+
+----- 3.1 Compute (single) -----
+  POST /assetkpi/compute/:assetId
+  Body: { "period_kind": "DAY"|"WEEK"|"MONTH", "refDate": "2026-04-29" (optional) }
+  Effect: upserts snapshot for that asset + period.
+  Response: { data: <full snapshot> }
+
+----- 3.2 Compute All -----
+  POST /assetkpi/compute-all
+  Body: { "period_kind": "DAY"|"WEEK"|"MONTH", "refDate": ... }
+  Response: { data: { total, computed, failed } }
+  Use sparingly — heavy.
+
+----- 3.3 Asset History -----
+  GET /assetkpi/asset/:assetId?period_kind=MONTH&limit=12
+  Returns last `limit` snapshots, newest first.
+
+----- 3.4 Project Rollup -----
+  GET /assetkpi/project-rollup?projectId=&period_kind=MONTH&period_label=2026-04
+  Aggregation across assets in a project for one period:
+    [ { _id: <projectId>,
+        assets, operating_hours, downtime_hours, failures,
+        fuel_consumed,
+        avg_availability, avg_utilization, avg_oee } ]
+
+----- 3.5 Fleet Rollup -----
+  GET /assetkpi/fleet-rollup?period_kind=MONTH&period_label=2026-04
+  Single-doc:
+    { assets, operating_hours, downtime_hours, failures,
+      avg_availability, avg_utilization, avg_mtbf, avg_mttr, avg_oee }
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  RELIABILITY DASHBOARD
+  Route   : /reliability    (or /assetkpi)
+  Title   : "Asset Reliability — KPIs"
+  Layout  :
+    Top filter row:
+      Period Kind     segmented DAY | WEEK | MONTH (default MONTH)
+      Period          period picker (DAY: date; WEEK: ISO week; MONTH: month)
+      Project         ProjectPicker (all if unset)
+
+    KPI Tiles (top row, 6 tiles):
+      Avg Availability%     (green ≥85, amber 70..85, red <70)
+      Avg Utilization%
+      Avg OEE%
+      Total Operating Hours (sum)
+      Total Downtime Hours
+      Failures (count)
+      Each tile: big number + tiny sparkline of last 6 periods
+
+    Two-column body:
+      LEFT — Per-asset table:
+        asset_id | name | available% | utilization% | mtbf | mttr | oee%
+        Sortable client-side; click row → asset's KPI history page (4.2)
+      RIGHT — Charts:
+        Availability trend (line, periods x-axis, fleet avg vs project avg)
+        OEE trend
+        Failures over time (bar)
+
+    Action: "Recompute Now" (canEdit) — POSTs /compute-all for chosen
+            period; toast result stats.
+
+4.2  ASSET KPI HISTORY  (drilling from dashboard or /machinery/:assetId)
+  Route   : /machinery/:assetId/kpi   OR a tab on detail page
+  Source  : GET /assetkpi/asset/:assetId?period_kind=&limit=12
+  Layout  :
+    Period Kind segmented control (DAY / WEEK / MONTH)
+    Snapshot summary card for the most recent period
+    Trend chart for each metric with toggleable series:
+      [✓] Availability  [✓] Utilization  [ ] Performance  [ ] OEE  [ ] MTBF  [ ] MTTR
+    Snapshots table:
+      period_label | operating | downtime | failures | mtbf | mttr |
+      avail% | util% | oee%
+    Action: "Recompute" (canEdit) — POSTs /compute/:assetId for the
+            selected period.
+
+4.3  PROJECT ROLLUP PAGE
+  Route   : /reliability/project    (or modal from dashboard)
+  Source  : GET /assetkpi/project-rollup
+  Filter  : period_kind, period_label
+  Table   : per-project rollup metrics
+  Click   : navigate to /reliability?projectId=<id>
+
+4.4  KPI WIDGETS  (embedded across the app)
+  - On /machinery/:assetId Overview tab: small KPI strip (4 tiles) showing
+    current period's metrics for THIS asset
+  - On main /dashboard: "Fleet Reliability" widget (compact KpiTile + chart)
+  - On /tender/:tenderId: "Asset KPIs at this site" project rollup card
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+- Daily 05:30 cron: /assetkpi compute-all DAY for previous day
+- Monthly on 1st @ 04:00: compute-all MONTH for previous month
+- Manual recompute: any user with asset.kpi.edit can trigger
+- WEEK snapshots are computed only on demand (no cron). UI's "Recompute"
+  button covers it.
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+None today. Future: alert when an asset's monthly availability drops
+below a threshold.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                       | required permission
+  ---------------------------------|--------------------------
+  Reliability dashboard            | asset.kpi.read
+  Asset KPI tab                    | asset.kpi.read
+  Project / Fleet rollups          | asset.kpi.read
+  Recompute (single + all)         | asset.kpi.edit
+  Per-asset KPI strip              | asset.kpi.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- MachineDailyLog (file 05): operating_hours, fuel_consumed, productivity_qty
+- WorkOrder (file 10): failures (count), downtime_hours
+- MachineryAsset (file 02): asset list + denormalised name, projectId
+- AssetKpiSnapshot is read by:
+    /reliability dashboard
+    embedded widgets across the app
+    eventually /reports (file outside the asset module)
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- Failures = CORRECTIVE WOs CLOSED in window. INSPECTION_REMEDIATION,
+  ACCIDENT, OTHER are NOT counted as failures by default. If you want
+  them included in MTBF, change the kpi.service filter (or extend the
+  schema with a "counts_as_failure" flag).
+- PM WOs are excluded from MTBF/MTTR by design (preventive ≠ failure).
+  Their downtime is captured as scheduled work.
+- mtbf_hours and mttr_hours are null when failures=0. UI must display
+  "—" rather than "0" in that case (zero would imply terrible reliability,
+  whereas null means "no failures yet, can't compute").
+- Scheduled hours uses a fixed shift assumption (default 12h via env).
+  For day+night double-shift fleets, set ASSET_KPI_SHIFT_HOURS=24.
+- The performance_pct uses utilization as a proxy because we don't capture
+  expected-rate per asset class. To improve, capture
+  AssetCategoryMaster.expected_rate_per_hour and use:
+    Performance% = (productivity_qty / (operating_hours × expected_rate)) × 100
+- Snapshots are upserted — recomputing an old period overwrites it. This
+  is intentional (logs and WOs may have been backfilled), but means the
+  historical snapshot is the FINAL truth at recompute time.
+- Period boundaries are local-time-based (midnight to midnight). Fleet
+  spanning multiple timezones may need localization later.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] /reliability dashboard with KPI tiles + per-asset table + trends
+[ ] Asset KPI tab with toggleable series
+[ ] Project rollup view
+[ ] Recompute (single + all) buttons with toast stats
+[ ] Embedded KpiTile widgets on machinery detail and main dashboard
+[ ] Period selector handling DAY/WEEK/MONTH correctly
+[ ] Null-safe display for mtbf/mttr ("—")
+[ ] RBAC gates
+
+================================================================================
+END 15 — KPI / Reliability
+================================================================================

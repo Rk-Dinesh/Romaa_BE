@@ -1,0 +1,266 @@
+================================================================================
+  01 — ASSET CATEGORY MASTER  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/master/assetcategory
+Phase     : 1 (Foundations / Master Data — build this first)
+RBAC key  : asset.category_master   (read / create / edit / delete)
+Route base: /assetcategory
+ID prefix : (none — uses Mongo _id; codes are deterministic strings like
+             MAC-EARTHMOVING-EXCAVATOR)
+
+> UI/VISUAL STYLE NOTE
+>   Don't invent visuals. For master-table look-and-feel, mirror the
+>   existing /hsn (HSN/SAC master) page or /vendor master page. Same
+>   page header, same table chrome, same form-modal style.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Single source of truth for the asset taxonomy. Every other asset module reads
+from this master:
+  • MachineryAsset.assetCategoryRef          → ObjectId of an entry here
+  • TaggedAsset.asset_category_ref           → ObjectId of an entry here
+  • BulkInventory.asset_category_ref         → ObjectId of an entry here
+  • InspectionTemplate.asset_class_ref       → ObjectId of an entry here
+  • OperatorCertification.asset_class        → enum-value mirroring this
+
+The master's "behavior flags" (requiresCompliance / requiresFuel / requiresGps /
+requiresOperator / isConsumable) drive conditional UI on the asset-create form
+of every consuming module.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: AssetCategoryMaster
+
+  code              String, unique, uppercase. Auto-built from category+sub
+                    when not provided. e.g. "MAC-EARTHMOVING-EXCAVATOR".
+  assetClass        enum REQUIRED:
+                      Machinery | Vehicle | StationaryPlant | Tool | Formwork
+                      | SiteInfra | SafetyEquipment | Survey | IT
+                      | Furniture | Other
+  category          String REQUIRED      e.g. "Earthmoving", "Lifting"
+  subCategory       String OPTIONAL      e.g. "Excavator", "Mobile Crane"
+  description       String
+
+  trackingMode      enum default NONE:
+                      HOURS | KILOMETERS | UNITS | QUANTITY | NONE
+  defaultUnit       String                e.g. "Nos", "Sqm", "Mtr", "Set"
+
+  requiresCompliance Boolean default false   (insurance/RC/PUC needed?)
+  requiresFuel       Boolean default false
+  requiresGps        Boolean default false
+  requiresOperator   Boolean default false   (license check on assignment)
+  isConsumable       Boolean default false
+
+  isActive          Boolean default true, indexed
+
+  createdBy / updatedBy   ObjectId Employee
+  createdAt / updatedAt   ISO date
+
+Compound unique index on { category, subCategory } — duplicate pairs are
+rejected even if their auto-built `code` differs.
+
+The taxonomy is seeded with ~120 default entries on backend boot; admins can
+add custom rows.
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+All endpoints require Bearer/cookie auth + the asset.category_master permission.
+
+3.1  POST   /assetcategory                      (create) [create]
+3.2  POST   /assetcategory/seed                 (re-run idempotent seed) [create]
+3.3  GET    /assetcategory/getall               (list) [read]
+3.4  GET    /assetcategory/grouped              (cascade-tree, dropdown source) [read]
+3.5  GET    /assetcategory/getbyid/:id          (one row) [read]
+3.6  GET    /assetcategory/getbycode/:code      (one row by uppercase code) [read]
+3.7  PUT    /assetcategory/update/:id           [edit]
+3.8  PATCH  /assetcategory/toggle-status/:id    [edit]
+3.9  DELETE /assetcategory/delete/:id           [delete]
+
+----- 3.1 Create -----
+  Request:
+    POST /assetcategory
+    {
+      "code": "MAC-EARTHMOVING-WHEEL_LOADER",   // optional; auto-built if omitted
+      "assetClass": "Machinery",
+      "category": "Earthmoving",
+      "subCategory": "Wheel Loader",
+      "description": "...",
+      "trackingMode": "HOURS",
+      "defaultUnit": "",
+      "requiresCompliance": true,
+      "requiresFuel": true,
+      "requiresGps": true,
+      "requiresOperator": true,
+      "isConsumable": false,
+      "isActive": true
+    }
+  Response 201:
+    { "status": true, "data": { _id, code, ... } }
+  Errors:
+    400 — duplicate (category, subCategory) pair
+    400 — duplicate code
+
+----- 3.4 Grouped -----
+  Returns nested map for cascading dropdowns:
+    {
+      "status": true,
+      "data": {
+        "Machinery": {
+          "Earthmoving": [ {_id, code, subCategory, ...}, ... ],
+          "Lifting":     [ ... ]
+        },
+        "Vehicle": { "Transport": [ ... ] },
+        ...
+      }
+    }
+  Cache aggressively — content rarely changes (staleTime: 1h).
+
+----- 3.7 Update / 3.8 Toggle / 3.9 Delete -----
+  Standard CRUD. Toggle flips isActive without payload. Delete is HARD —
+  blocked at the UI level if the category is referenced by any existing
+  MachineryAsset / TaggedAsset / BulkInventory (do an existence check
+  on those endpoints before showing the delete button).
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LIST PAGE
+  Route   : /settings/asset-category
+  Title   : "Asset Category Master"
+  Source  : GET /assetcategory/getall?page&limit&search&assetClass&isActive
+  Columns :
+    - Code               (sortable client-side)
+    - Asset Class        (filterable dropdown — 11 values)
+    - Category           (text, primary)
+    - Sub-category
+    - Tracking Mode      (chip)
+    - Flags              (compact pill row: COMPLIANCE / FUEL / GPS / OPERATOR / CONSUMABLE)
+    - Status             (Active/Inactive badge)
+    - Actions            (Edit, Toggle, Delete) — RBAC-gated
+  Filters above the table:
+    - assetClass dropdown (multi-select optional)
+    - isActive toggle (Active only / All)
+    - search box (debounced 300ms; matches code/category/subCategory)
+  Toolbar buttons (right-aligned):
+    + Add Category       (canCreate)
+    + Re-run Seed        (canCreate, confirm modal: "Insert any missing
+                          default categories? Existing rows are not modified.")
+  Empty state: "No categories configured. Click 'Re-run Seed' to populate
+               defaults, or 'Add Category' to create a custom entry."
+
+  TanStack Query hook:
+    const { data, isLoading } = useQuery({
+      queryKey: ["assetCategory", filters],
+      queryFn: () => assetCategoryApi.list(filters),
+      staleTime: 60_000,
+    });
+
+4.2  CREATE / EDIT FORM  (modal, not a separate page)
+  Trigger : "Add Category" button OR Edit row action
+  Layout  : 2-column form, see existing /hsn create modal for spacing.
+  Fields  (* = required):
+    Asset Class*       — dropdown of 11 enum values
+    Category*          — free-text (e.g. "Earthmoving")
+    Sub-category       — free-text (e.g. "Excavator")
+    Code               — readonly preview, auto-computed live from class+
+                         category+subCategory; user can override (uppercase only)
+    Description        — textarea
+    Tracking Mode      — radio group: HOURS / KILOMETERS / UNITS / QUANTITY / NONE
+    Default Unit       — text (shown only when tracking ∈ {QUANTITY, UNITS})
+    Behavior flags (checkboxes, all default false):
+      [ ] Requires Compliance Documents (RC/Insurance/PUC/etc.)
+      [ ] Requires Fuel Tracking
+      [ ] Requires GPS / Telematics
+      [ ] Requires Certified Operator
+      [ ] Is Consumable
+    Active             — toggle, default true
+  Validation:
+    - assetClass + category + subCategory: at least the pair (category +
+      subCategory) must be unique, validated server-side (409 → field error).
+    - code: UPPERCASE only, /^[A-Z0-9-]+$/, unique.
+  Submit: POST or PUT, X-Idempotency-Key on POST.
+  On success: toast, close modal, invalidate ["assetCategory"] queries.
+
+4.3  GROUPED-DROPDOWN PICKER  (reused across 9 other modules)
+  Component : <AssetCategoryPicker value={catRefId} onChange={...}
+                                    classFilter="Machinery" />
+  Source    : GET /assetcategory/grouped (cached 1h)
+  UX        : 3-level cascading select:
+                Asset Class → Category → Sub-category
+              On bottom select, returns the row's _id AND the row object
+              so the parent form can read behavior flags (e.g. show fuel
+              fields only if requiresFuel === true).
+  All consuming forms (machinery create, tagged create, bulk create, etc.)
+  use this component.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+None — pure CRUD. The "workflow" effect is via behavior flags consumed by
+downstream modules.
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+None.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                        | required permission
+  ----------------------------------|--------------------------
+  List page visible                 | asset.category_master.read
+  "+ Add Category" button           | asset.category_master.create
+  "Re-run Seed" button              | asset.category_master.create
+  Edit row action                   | asset.category_master.edit
+  Toggle status                     | asset.category_master.edit
+  Delete row action                 | asset.category_master.delete
+  AssetCategoryPicker (read-only)   | asset.category_master.read
+                                    | (gracefully degrade if missing)
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+Every asset-create form (machinery, tagged, bulk) consumes this master:
+  • The chosen category's behavior flags drive conditional UI in those forms.
+  • Server-side, BulkInventoryService._resolveCategory denormalizes
+    asset_class / category / sub_category onto the BulkInventory row, so
+    the master is read at create-time.
+
+Inspection module also reads `asset_class` to filter applicable templates.
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- Deleting a category that's referenced by existing assets will fail at the
+  app layer (no FK constraint, but downstream services will throw "category
+  not found"). UI must check usage before allowing delete:
+      GET /machineryasset/getall/assets?assetCategoryRef=<id>&limit=1
+  If any rows return, disable delete and show a tooltip.
+- The seed is idempotent — running it multiple times is safe; no rows are
+  overwritten, only missing rows are inserted.
+- `code` is uppercase by storage; if user types lowercase, server uppercases.
+- Auto-built code uses CLASS_PREFIX (MAC/VEH/STP/TOL/FRM/INF/SAF/SUR/ITX/
+  FUR/OTH) + slug(category) + slug(subCategory). Don't try to reverse-engineer
+  it client-side — let the server compute or accept the override.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with filters (assetClass, isActive, search)
+[ ] Create modal with auto-code preview
+[ ] Edit modal locks `code` if user prefers — or allows override
+[ ] Toggle status updates in place
+[ ] Delete blocked when in use elsewhere
+[ ] Re-run Seed shows "X inserted, Y already existed" toast
+[ ] AssetCategoryPicker component built and reused everywhere
+[ ] Cache (staleTime 1h) for the /grouped endpoint
+[ ] RBAC gates verified (hide buttons when missing perm)
+
+================================================================================
+END 01 — Asset Category Master
+================================================================================

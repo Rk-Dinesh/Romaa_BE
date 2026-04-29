@@ -1,0 +1,365 @@
+================================================================================
+  16 — INSURANCE CLAIM  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/insuranceclaim
+Phase     : 6 (Compliance & Finance)
+RBAC key  : asset.insurance_claim   (read / create / edit / delete)
+Route base: /insuranceclaim
+ID prefix : ICL  (e.g. ICL001)
+
+> UI/VISUAL STYLE NOTE
+>   Mirror /finance/creditnote workflow page style for the lifecycle
+>   transitions; mirror /document for the documents tab.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Incident & settlement tracking for insurance claims against an insured asset.
+Lifecycle:
+
+   REPORTED → SURVEY → DOCUMENTS_SUBMITTED → APPROVED → SETTLED
+                                                ↘ REJECTED
+                                                ↘ WITHDRAWN
+
+Tied to MachineryAsset; the same model could be reused for TaggedAsset
+later if needed. Captures incident details, FIR (if applicable), surveyor,
+documents, claim/approved/settled amounts, and an optional cross-link to
+a corrective WorkOrder for the actual repair.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: InsuranceClaim
+
+  claim_id              String UNIQUE INDEXED  ("ICL001")
+
+  ASSET LINK
+    asset_ref           ObjectId MachineryAsset REQUIRED INDEXED
+    assetId             String REQUIRED INDEXED  ("EX-01")
+    asset_name          String
+
+  POLICY (frozen at incident time)
+    insurer_name
+    insurance_policy_no String REQUIRED
+    policy_start / policy_end
+
+  INCIDENT
+    incident_type       enum INDEXED REQUIRED:
+                          ACCIDENT | FIRE | THEFT | VANDALISM | FLOOD
+                          | ENGINE_FAILURE | THIRD_PARTY | OTHER
+    incident_date       Date INDEXED REQUIRED
+    incident_location
+    description
+
+  FIR (when applicable)
+    fir_filed           Boolean
+    fir_number
+    police_station
+
+  SURVEYOR
+    surveyor_name / surveyor_contact / survey_date
+
+  AMOUNTS
+    claimed_amount    ≥0
+    approved_amount   ≥0
+    settled_amount    ≥0
+    deductible        ≥0
+    settlement_date   Date
+
+  STATUS
+    status     enum INDEXED default REPORTED:
+                 REPORTED | SURVEY | DOCUMENTS_SUBMITTED | APPROVED
+                 | SETTLED | REJECTED | WITHDRAWN
+    rejection_reason  String
+
+  REPAIR LINK
+    related_work_order_ref  ObjectId WorkOrder
+
+  DOCUMENTS  (array)
+    [ { doc_type: FIR | Survey Report | Estimate | Invoice | Photos
+                  | Discharge Voucher | Other,
+        doc_number, file_url, uploaded_at } ]
+
+  notes / created_by / updated_by / timestamps
+
+  Compound: (assetId, status), (status, incident_date desc)
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  POST /insuranceclaim/create                       [create]
+3.2  GET  /insuranceclaim/getall                       [read]
+3.3  GET  /insuranceclaim/summary                      [read]
+3.4  GET  /insuranceclaim/getbyid/:claimId             [read]
+3.5  PUT  /insuranceclaim/update/:claimId              [edit]
+3.6  POST /insuranceclaim/transition/:claimId          [edit]
+3.7  POST /insuranceclaim/document/:claimId            [edit]
+
+----- 3.1 Create -----
+  POST /insuranceclaim/create
+  Body: minimum fields required:
+    {
+      "asset_ref": "<ObjectId>",
+      "incident_type": "ACCIDENT",
+      "incident_date": "2026-04-12",
+      "incident_location": "NH-44 km 142",
+      "description": "Side-on collision at junction; driver minor injuries.",
+      "claimed_amount": 250000,
+      "policy_start": "2025-04-01",
+      "policy_end": "2026-03-31",
+      "insurer_name": "ICICI Lombard",
+      "insurance_policy_no": "ICL/MGV/2025/12345",
+      "fir_filed": true, "fir_number": "FIR-101/2026", "police_station": "Anantapur",
+      "notes": "..."
+    }
+  Server denormalises: assetId, asset_name, insurance_policy_no (falls back
+  to asset.compliance.insurancePolicyNo if not provided).
+
+----- 3.2 List -----
+  GET /insuranceclaim/getall?page&limit&assetId&status&incident_type&from&to
+
+----- 3.3 Summary -----
+  GET /insuranceclaim/summary[?assetId=<>]
+  Aggregation by status:
+    [ { _id: "<status>", count, claimed_total, approved_total, settled_total } ]
+
+----- 3.6 Transition -----
+  POST /insuranceclaim/transition/:claimId
+  Body:
+    {
+      "toStatus": "SURVEY"|"DOCUMENTS_SUBMITTED"|"APPROVED"|"SETTLED"|"REJECTED"|"WITHDRAWN",
+      "reason": "...",                       // for REJECTED
+      "approved_amount": 200000,             // for APPROVED
+      "settled_amount": 195000,              // for SETTLED (defaults to approved_amount)
+      "settlement_date": "2026-05-10"        // for SETTLED (defaults now)
+    }
+  Allowed transitions (server):
+    REPORTED            → SURVEY | WITHDRAWN | REJECTED
+    SURVEY              → DOCUMENTS_SUBMITTED | REJECTED | WITHDRAWN
+    DOCUMENTS_SUBMITTED → APPROVED | REJECTED
+    APPROVED            → SETTLED
+    SETTLED / REJECTED / WITHDRAWN → terminal
+
+----- 3.7 Add Document -----
+  POST /insuranceclaim/document/:claimId
+  Body: { doc_type, doc_number, file_url }
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LIST PAGE
+  Route   : /insuranceclaim
+  Title   : "Insurance Claims"
+  Source  : GET /insuranceclaim/getall
+  Columns :
+    - Claim ID                 (link)
+    - Asset                    asset_id · name (link)
+    - Incident Type            chip
+    - Incident Date
+    - Insurer
+    - Policy #
+    - Claimed                  MoneyInput-format
+    - Approved
+    - Settled
+    - Status                   StatusBadge (REPORTED yellow, SURVEY blue,
+                                            DOCUMENTS_SUBMITTED purple,
+                                            APPROVED green, SETTLED gray-green,
+                                            REJECTED / WITHDRAWN gray)
+    - Days Open                (now - incident_date when not terminal)
+    - WO Linked                link or "—"
+    - Actions                  (View, Edit, Transition)
+  Filters :
+    - asset (AssetPicker, kind=MACHINERY)
+    - status
+    - incident_type
+    - date range (incident_date)
+  Toolbar :
+    + File Claim                (canCreate)
+    + Open Claims (badge with count of non-terminal)
+    + Export CSV
+  Top KPI strip: 4 tiles from /insuranceclaim/summary
+    Open count | Total claimed | Total approved | Total settled (FY)
+
+4.2  DETAIL PAGE
+  Route   : /insuranceclaim/:claimId
+  Source  : GET /insuranceclaim/getbyid/:claimId
+  Layout  : header + 4 tabs
+
+    HEADER STRIP
+      Claim ID + incident_type chip + status badge (large)
+      Asset link + asset_name
+      Action menu (status-aware):
+        REPORTED            → Send to Survey | Withdraw | Reject
+        SURVEY              → Submit Documents | Reject | Withdraw
+        DOCUMENTS_SUBMITTED → Approve | Reject
+        APPROVED            → Settle
+        terminal            → Print | Audit only
+
+    TAB 1 — INCIDENT
+      Incident type, date, location, description
+      FIR (filed yes/no, number, police station)
+      Days since incident
+      Surveyor: name, contact, survey date
+
+    TAB 2 — POLICY & AMOUNTS
+      Insurer, policy #, policy start/end (countdown if expiring)
+      Claimed | Deductible | Approved | Settled (large numbers, MoneyInput-format)
+      Settlement date (when SETTLED)
+      Rejection reason (when REJECTED)
+
+    TAB 3 — DOCUMENTS
+      Table: doc_type | doc_number | uploaded_at | file link
+      "+ Add Document" → modal with PhotoUpload/FileUpload + doc_type select
+      Standard doc_type list: FIR / Survey Report / Estimate / Invoice /
+                              Photos / Discharge Voucher / Other
+
+    TAB 4 — REPAIR LINK
+      related_work_order_ref:
+        if set → show WO summary card (status, actual_cost, downtime),
+                 button "Open WO"
+        if unset → button "+ Link Work Order" → opens search-and-pick modal
+                   that searches /workorderasset/getall?assetId=<this>
+        also: button "+ Create Corrective WO from this claim" — pre-fills
+                 a new WO with kind=ACCIDENT and description from claim
+
+  Audit drawer trigger.
+
+4.3  CREATE FORM  (modal)
+  Sections:
+    Asset & Incident
+      Asset*               AssetPicker(kind=MACHINERY)
+      Incident Type*       dropdown
+      Incident Date*       date
+      Incident Location    text
+      Description          textarea
+    Policy
+      Insurer Name         text (auto-suggest from common insurers)
+      Policy Number*       text (defaults from asset.compliance.insurancePolicyNo)
+      Policy Start / End   date pair
+    FIR (visible if incident_type ∈ {ACCIDENT, THEFT, VANDALISM, THIRD_PARTY})
+      [ ] FIR Filed
+        ─ if checked:
+          FIR Number*
+          Police Station*
+    Surveyor
+      Surveyor Name
+      Surveyor Contact
+      Survey Date
+    Amounts
+      Claimed Amount       MoneyInput
+      Deductible           MoneyInput (from policy)
+    Notes                  textarea
+  Submit: POST /insuranceclaim/create
+
+4.4  TRANSITION DIALOG  (status-aware)
+  • REPORTED → SURVEY:
+      Surveyor Name*, Surveyor Contact*, Survey Date*
+  • SURVEY → DOCUMENTS_SUBMITTED:
+      Notes (recap which docs submitted)
+  • DOCUMENTS_SUBMITTED → APPROVED:
+      Approved Amount*    MoneyInput
+      Notes
+  • APPROVED → SETTLED:
+      Settled Amount      MoneyInput (defaults to approved_amount)
+      Settlement Date     date (default now)
+      Discharge Voucher   file upload (auto-attaches as document)
+      Notes
+  • Any → REJECTED:
+      Rejection Reason*
+  • Any → WITHDRAWN:
+      Reason*
+  Submit: POST /insuranceclaim/transition/:claimId
+
+4.5  CLAIMS DASHBOARD WIDGET
+  Source: GET /insuranceclaim/summary
+  Card per status with count + total amounts. Click → list filtered.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+
+   ┌───────────┐
+   │ REPORTED  │
+   └─────┬─────┘
+         │ Send to Survey
+         ▼
+   ┌─────────┐
+   │ SURVEY  │  ── Reject ─► REJECTED
+   └─────┬───┘  ── Withdraw ─► WITHDRAWN
+         │ Submit Documents
+         ▼
+   ┌─────────────────────┐
+   │ DOCUMENTS_SUBMITTED │ ── Reject ─► REJECTED
+   └─────────┬───────────┘
+             │ Approve
+             ▼
+       ┌──────────┐
+       │ APPROVED │
+       └─────┬────┘
+             │ Settle
+             ▼
+        ┌─────────┐
+        │ SETTLED │  (terminal)
+        └─────────┘
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+None today. Recommend adding when a claim sits in SURVEY > 14d
+or DOCUMENTS_SUBMITTED > 30d (escalation pattern).
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                       | required permission
+  ---------------------------------|--------------------------
+  /insuranceclaim list             | asset.insurance_claim.read
+  + File Claim                     | asset.insurance_claim.create
+  Edit                             | asset.insurance_claim.edit
+  Transition                       | asset.insurance_claim.edit
+  Add Document                     | asset.insurance_claim.edit
+  Link WO / Create WO from claim   | asset.work_order.create
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- MachineryAsset (file 02): asset_ref + denormalised assetId, asset_name
+- WorkOrder (file 10): related_work_order_ref optionally links to a WO that
+  did the actual repair — reconcile claim-vs-actual cost there
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- Policy info on the claim is FROZEN at create time — even if the asset's
+  policy is renewed afterwards, the claim record retains the original.
+  This is intentional for audit clarity.
+- approved_amount can be 0 (full denial). Handle that in UI (don't proceed
+  to SETTLE if approved is 0; instead use REJECTED).
+- settled_amount may be < approved_amount if the insurer applies a
+  surveyor-discount or co-pay. Capture the difference in notes.
+- deductible is informational; it's NOT subtracted from settled_amount
+  automatically. Users should compute claim NET = settled − deductible
+  when reconciling with finance.
+- A claim can exist BEFORE a corrective WO is created. UI should support
+  both orders: file claim first, link WO later (more common when surveyor
+  estimate drives the repair scope).
+- WITHDRAWN ≠ REJECTED. Withdrawn = WE pulled the claim (reason: not worth
+  pursuing). Rejected = INSURER refused. Use the right transition.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with all filters + KPI strip + days-open column
+[ ] Detail with 4 tabs (Incident / Policy & Amounts / Documents / Repair Link)
+[ ] Create form with conditional FIR section
+[ ] Status-aware transition dialog (5 modes)
+[ ] Add document modal
+[ ] Link WO / Create WO from claim flows
+[ ] Print claim sheet
+[ ] Dashboard widget
+[ ] RBAC gates
+
+================================================================================
+END 16 — Insurance Claim
+================================================================================

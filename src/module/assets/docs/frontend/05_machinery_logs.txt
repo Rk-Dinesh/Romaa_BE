@@ -1,0 +1,266 @@
+================================================================================
+  05 — MACHINERY LOGS  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/machinerylogs
+Phase     : 3 (Operations)
+RBAC key  : asset.machinery_logs   (read / create / edit / delete)
+Route base: /machinerylogs
+ID prefix : (auto Mongo _id; logs are time-series)
+
+> UI/VISUAL STYLE NOTE
+>   Match /attendance bulk-entry table for the bulk-log entry grid.
+>   Use the same date-picker, the same numeric input style, and
+>   the same row-add/remove gestures.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Daily operational log per machine. Captures:
+  • Meter readings (HMR / KMs / Units) at start and end of shift
+  • Fuel opening / issued / closing (with auto-derived consumption)
+  • Productivity (length × breadth × depth → quantity, OR direct quantity)
+  • Operator and supervisor sign-off
+  • Project + bid + item context (so daily output can be billed back)
+
+Used downstream by:
+  • Reliability KPI service (operating_hours, fuel, productivity)
+  • Rental Invoice generation (hours_used / kms_used)
+  • Cost-per-hour reports
+  • Productivity dashboards
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: MachineDailyLog
+
+  assetId         ObjectId MachineryAsset REQUIRED INDEXED
+  projectId       String REQUIRED INDEXED        (Tender.tender_id)
+  bid_id          ObjectId Bids REQUIRED INDEXED (the awarded bid)
+  vendorId        String REQUIRED INDEXED         (custom business ID)
+  vendorName      String REQUIRED INDEXED
+  item_id         String                          (BOQ item under the bid)
+  operatorId      String                          ("EMP-001")
+  logDate         Date REQUIRED INDEXED
+
+  startReading    Number REQUIRED                 (HMR/KMs at shift start)
+  endReading      Number REQUIRED                 (HMR/KMs at shift end)
+  netUsage        Number  (auto: end - start)
+
+  machineStart    Date                            (key-on time)
+  machineStop     Date                            (key-off time)
+
+  fuelOpening     Number   (liters in tank at start)
+  fuelIssued      Number   (liters added today)
+  fuelClosing     Number   (liters in tank at end)
+  fuelConsumed    Number   (auto: opening + issued - closing)
+
+  length          Number
+  breadth         Number
+  depth           Number
+  unit            String   ("Cum","Sqm","Mtr","Nos")
+  quantity        Number   (auto if L,B,D set; else manual)
+
+  rent            Number   (per-day rent for rental machines, optional)
+  supervisorSignOff ObjectId User
+  remarks         String
+
+  Compound indexes: (projectId, logDate), (assetId, logDate desc)
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  POST  /machinerylogs/bulk                               [create]
+3.2  GET   /machinerylogs/project/:projectId                 [read]
+3.3  GET   /machinerylogs/getall-logs                        [read]
+
+----- 3.1 Bulk Create -----
+  POST /machinerylogs/bulk
+  Body:
+    { "logs": [ <log object>, <log object>, ... ] }
+  Each log object: see schema. assetId here is the ObjectId, NOT the
+  business string.
+  Auto-derivations (server-side, on each entry):
+    netUsage     = endReading - startReading   (when both set)
+    fuelConsumed = (fuelOpening + fuelIssued) - fuelClosing
+    quantity     = length × breadth × depth     (when all three set and
+                                                 quantity not explicitly set)
+  Insert is unordered; partial failures don't block the rest.
+
+  Response 201:
+    { status: true, message, data: [ <inserted log>, ... ] }
+
+----- 3.2 Project Logs -----
+  GET /machinerylogs/project/:projectId?startDate=&endDate=&assetName=
+  Returns logs for that project, optional date range and asset-name regex.
+  Each row is "flattened":
+    { ..., assetId: <ObjectId string>,
+      bid_id: <ObjectId string>,
+      assetName: <denormalized>,
+      itemName: <looked up from bid.items by item_id> }
+
+----- 3.3 All Logs -----
+  GET /machinerylogs/getall-logs?projectId=&startDate=&endDate=&assetName=
+  Same shape as 3.2 but unscoped (project optional). Useful for cross-project
+  fleet utilization views.
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LOGS LIST PAGE
+  Route   : /machinerylogs
+  Title   : "Machinery Daily Logs"
+  Source  : GET /machinerylogs/getall-logs (+ filters)
+  Columns :
+    - Date              (logDate)
+    - Asset             (assetName, link → /machinery/<assetId-string>)
+    - Project           (link)
+    - Vendor
+    - Operator          (resolve operatorId → name via /employee, lazy)
+    - Start | End | Net Usage  (with unit suffix from asset.trackingMode)
+    - Fuel Open | Issued | Close | Consumed (L)
+    - Quantity + Unit
+    - Rent              (when set)
+    - Supervisor sign-off icon (✓ if present)
+    - Actions           (View, Edit*, Delete*)
+                         * not yet exposed as endpoints — hide for now
+  Filters :
+    - projectId (ProjectPicker)
+    - assetName (text — server-side regex)
+    - date range
+    - vendorId (VendorPicker)
+    - operatorId (EmployeePicker)
+  Toolbar :
+    + Bulk Add Logs    (canCreate, opens BulkLogForm full page)
+    + Export CSV
+    + Today's Logs Shortcut
+
+4.2  PROJECT LOGS VIEW  (drill-in from project)
+  Route   : /tender/:tenderId/machinery-logs
+  Source  : GET /machinerylogs/project/:tenderId
+  Same table as 4.1 with projectId filter pre-applied.
+
+4.3  BULK LOG ENTRY FORM  (the workhorse)
+  Route   : /machinerylogs/new
+  Layout  : full-page editable grid (mirror /attendance bulk entry)
+  Top filters (one-time, applied to every row):
+    Project*           ProjectPicker (sets projectId on every row)
+    Bid*               BidPicker (loads bids for that project)
+    Log Date*          single date picker (logDate)
+    Vendor             VendorPicker (defaults to row's asset.vendorId)
+  Grid columns (one row per machine being logged):
+    Asset*             AssetPicker(kind="MACHINERY", projectId=above)
+                       — auto-fills vendor and unit
+    Operator           EmployeePicker (filters: classFilter from asset's
+                       category for operator-cert validation hint —
+                       optional UI assist; backend doesn't enforce on logs)
+    Start Reading*     number
+    End Reading*       number  → auto-fills Net Usage column
+    Machine Start      time picker
+    Machine Stop       time picker
+    Fuel Open          number
+    Fuel Issued        number
+    Fuel Closing       number  → auto-fills Fuel Consumed column
+    Length / Breadth / Depth  numeric (productivity)
+    Unit               text/dropdown (Cum, Sqm, Mtr, Nos)
+    Quantity           number (auto if L*B*D, editable)
+    Rent               MoneyInput (optional)
+    Item               BOQItemPicker — populated from selected bid's items
+                       (item_id is sent to server)
+    Remarks            text
+    Supervisor Sign-off  UserPicker → drops the supervisor's _id
+  Row actions:
+    Add Row | Duplicate Row | Remove Row
+  Bulk paste: support CSV-pasted block (split on tab/comma, validate, populate)
+  Save All  → POST /machinerylogs/bulk { logs: [...] }
+              X-Idempotency-Key on the parent submission
+  On success: toast with "X logs saved", navigate to /machinerylogs filtered
+              to today.
+
+  Inline validation per row:
+    - End ≥ Start
+    - Fuel Closing ≤ Fuel Open + Fuel Issued (warn if violated; server
+      computes consumed regardless)
+    - Quantity ≥ 0
+    - Operator picker: optional advisory check against /operatorcert/verify
+      (file 12) — if not certified for asset_class, show amber warning
+      "Operator not certified — proceed?" but allow save.
+
+4.4  LOG DETAIL DRAWER  (read-only)
+  Trigger: clicking "View" in the list row
+  Slide-in drawer showing all fields with computed deltas highlighted.
+  Includes: link to asset detail, project detail, bid detail.
+
+4.5  PRODUCTIVITY WIDGET (dashboard)
+  Source: aggregate /machinerylogs/getall-logs over current month
+  Card per asset_class showing total quantity moved + total operating hours.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+None — append-only data entry. Edits/deletes are NOT exposed via endpoints.
+If a log needs correction, today's only path is to add a counter-log with
+negative quantities OR fix in DB. UI should NOT pretend edit works.
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+None directly. Indirectly: KPI cron runs at 05:30 daily and refreshes
+KPI snapshots from these logs.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                       | required permission
+  ---------------------------------|-------------------------
+  /machinerylogs list              | asset.machinery_logs.read
+  + Bulk Add Logs                  | asset.machinery_logs.create
+  Edit / Delete (when added)       | asset.machinery_logs.edit/.delete
+  Productivity widget              | asset.machinery_logs.read
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- AssetKpiSnapshot (file 15) sums netUsage and fuelConsumed by period.
+- RentalInvoice (file 17) pulls hours_used / kms_used from these logs.
+- The bid + item linkage allows reverse-billing the machine cost back to
+  a BOQ line for cost-overrun reports (NOT yet implemented in the asset
+  module — consumed by /reports/machine_productivity).
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- assetId in this collection is OBJECTID (ref to MachineryAsset). Do NOT pass
+  the business string "EX-01" — pass the _id. The list endpoint flattens
+  the populated asset and returns the ObjectId as a string in the same
+  field name; this is for display only.
+- bid_id is also ObjectId (ref to Bids). Use BidPicker to select.
+- The bulk endpoint uses { ordered: false } — so a single bad row won't
+  abort the rest. The response.data array will contain only the inserted
+  rows; check length vs request length to detect partial failures.
+- No edit/delete endpoints — design today is "append only". Supervisor
+  sign-off is the audit trail.
+- The autocomputed `quantity = L × B × D` assumes a rectangular volume
+  (e.g. excavator pit). For non-volume work (km traveled, units lifted),
+  set quantity directly and leave L/B/D blank.
+- Operator certification check is FRONTEND-ADVISORY ONLY today (the backend
+  doesn't enforce on log creation). If you want hard enforcement, call
+  /operatorcert/verify before save and block on absence.
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with all filters + project drill-in
+[ ] Bulk entry form: top-level filters + grid + row actions
+[ ] Auto-derivations (netUsage, fuelConsumed, quantity)
+[ ] Inline validations + amber operator-cert warning
+[ ] CSV paste support
+[ ] Productivity widget on dashboard
+[ ] Detail drawer with computed deltas
+[ ] No edit/delete UI (append-only)
+[ ] Idempotency on bulk submit
+[ ] RBAC gates
+
+================================================================================
+END 05 — Machinery Logs
+================================================================================

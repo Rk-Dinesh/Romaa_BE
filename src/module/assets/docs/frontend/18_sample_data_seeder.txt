@@ -1,0 +1,458 @@
+================================================================================
+  18 — SAMPLE DATA SEEDER  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/sampleData
+Phase     : Cross-cutting (admin tool — build alongside Phase 1 settings UI)
+RBAC key  : settings.master   (read / create / delete)
+Route base: /asset-sample
+Purpose   : One-click load + wipe of demo data across all 17 asset modules
+
+> UI/VISUAL STYLE NOTE
+>   This is an admin-only utility. Mirror the chrome of the existing
+>   /settings/master pages — same card style, same destructive-action
+>   confirmation modal pattern as /assetcategory's "Re-run Seed", and
+>   same toast pattern.
+>   Place the UI under Settings → Asset Sample Data (NOT in any user-facing
+>   sidebar group).
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+A single admin endpoint set that:
+  • Seeds ~120 realistic sample documents across 14 asset collections so
+    the frontend team can demo / test every page without manual data entry.
+  • Tracks every seeded doc's ObjectId in a SampleDataManifest collection.
+  • Wipes only sample data when called — guaranteed safe because wipe
+    walks the manifest, not a query against live data.
+
+Use cases:
+  • Frontend developer just cloned the repo and wants demo data.
+  • QA wants a clean reset between test runs.
+  • Sales wants to demo the system to a prospect.
+  • Customer wants to start live data entry — wipe and proceed.
+
+--------------------------------------------------------------------------------
+2. WHAT THE SEED CREATES
+--------------------------------------------------------------------------------
+~120 documents across 14 collections:
+
+  MachineryAsset           5    (excavator, tipper, transit mixer, mobile
+                                 crane, wheel loader)
+  TaggedAsset              6    (2 laptops, total station, drill, grinder, drone)
+  BulkInventory            6    (helmet, shoes, harness, shuttering plate,
+                                 plywood, fencing)
+  BulkInventoryTransaction ~10  (RECEIPT for opening stock + ISSUE for issuances)
+  MachineDailyLog          30   (5 machines × 6 days)
+  PmPlan                   5    (1 per machine)
+  WorkOrder                4    (DRAFT / IN_PROGRESS / COMPLETED / APPROVED)
+  InspectionTemplate       2    (excavator pre-shift, vehicle weekly)
+  AssetInspection          3    (PASS / PASS / FAIL_NON_CRITICAL)
+  OperatorCertification    5    (5 sample employees with various licenses)
+  AssetCalibration         2    (total station + drone)
+  MaintenanceLog           2    (historical service + breakdown rows)
+  AssetIssuance            5    (TAGGED / BULK / MACHINERY mix; some returned)
+  InsuranceClaim           2    (SURVEY + APPROVED)
+  RentalAgreement          2    (1 INCOMING + 1 OUTGOING)
+  RentalInvoice            2    (1 per agreement)
+  AssetKpiSnapshot         ~5   (auto-computed after seed via KPI service)
+
+Collections deliberately NOT seeded:
+  • AssetCategoryMaster   — already seeded by the default category seed
+  • FuelTelemetryLog      — depends on the live Diztek third-party API
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  GET   /asset-sample/status                    [settings.master.read]
+3.2  POST  /asset-sample/seed                      [settings.master.create]
+3.3  POST  /asset-sample/wipe                      [settings.master.delete]
+
+----- 3.1 Status -----
+  GET /asset-sample/status
+  Response (not loaded):
+    { "status": true, "data": { "loaded": false } }
+  Response (loaded):
+    { "status": true,
+      "data": {
+        "loaded": true,
+        "batch_id": "asset-default-sample",
+        "seeded_at": "2026-04-29T12:35:00.000Z",
+        "total_docs": 121,
+        "counts": {
+          "MachineryAsset": 5, "TaggedAsset": 6, "BulkInventory": 6,
+          "BulkInventoryTransaction": 11, "MachineDailyLog": 30,
+          "PmPlan": 5, "WorkOrder": 4,
+          "InspectionTemplate": 2, "AssetInspection": 3,
+          "OperatorCertification": 5, "AssetCalibration": 2,
+          "MaintenanceLog": 2, "AssetIssuance": 5,
+          "InsuranceClaim": 2, "RentalAgreement": 2, "RentalInvoice": 2,
+          "AssetKpiSnapshot": 5
+        }
+      } }
+
+----- 3.2 Seed -----
+  POST /asset-sample/seed
+  Body:
+    {}                                 // none required
+  Response 201:
+    { "status": true,
+      "message": "Sample data loaded",
+      "data": {
+        "seeded": true,
+        "batch_id": "asset-default-sample",
+        "total_docs": 121,
+        "counts": { ...same shape as status... }
+      } }
+  Errors:
+    409 ALREADY_LOADED   sample data is already loaded — wipe first
+    403 DISABLED         ASSET_SAMPLE_DATA_ENABLED=false in env
+    400 MISSING_CATEGORY required asset category not in master — run
+                         /assetcategory/seed first
+    Standard 401 / 403 for auth / RBAC
+
+----- 3.3 Wipe -----
+  POST /asset-sample/wipe
+  Body (REQUIRED):
+    { "confirm": "WIPE-SAMPLE-DATA" }
+  Response 200 (when sample exists):
+    { "status": true,
+      "message": "Sample data wiped",
+      "data": {
+        "wiped": true,
+        "deleted": {
+          "AssetKpiSnapshot": 5, "AssetInspection": 3, ...,
+          "MachineryAsset": 5
+        }
+      } }
+  Response 200 (no sample loaded):
+    { "status": true,
+      "message": "No sample data to wipe",
+      "data": { "wiped": false, "reason": "no sample data loaded",
+                "deleted": {} } }
+  Errors:
+    400  Confirmation required — wrong / missing confirm phrase
+
+--------------------------------------------------------------------------------
+4. UI PLACEMENT
+--------------------------------------------------------------------------------
+This is an ADMIN tool. Do NOT add it to any module's sidebar entry.
+
+  Settings  →  Asset Sample Data       (route: /settings/asset-sample-data)
+            │
+            └─ tile / sub-page rendering the dashboard described in §5
+
+Sidebar gating: only show the entry when useCan("settings", "master", "read").
+
+If your project's settings layout has a tab/section structure, drop it in
+"Master Data" or "Developer Tools" — wherever destructive-utility actions
+already live.
+
+--------------------------------------------------------------------------------
+5. UI: ONE PAGE, THREE STATES
+--------------------------------------------------------------------------------
+Build a SINGLE page that pivots on the loaded status.
+
+  Route   : /settings/asset-sample-data
+  Title   : "Asset Sample Data"
+  Source  : useQuery(["asset-sample","status"], () => api.get("/asset-sample/status"))
+
+  STATE A — NOT LOADED  (data.loaded === false)
+  ──────────────────────────────────────────────
+    Top banner card:
+      Headline:  "No sample data is currently loaded."
+      Body:      "Click below to populate ~120 demo records across 14
+                  asset collections. Useful for FE development, QA test
+                  runs, and customer demos. You can wipe it later
+                  with one click."
+      CTA:       [ Load Sample Data ]   ← canCreate gates this
+
+    On click:
+      Show a confirmation modal:
+        Title:    "Load asset sample data?"
+        Body:     Bullet list of what will be created (counts per type).
+        CTA:      [ Cancel ]  [ Load Sample Data ]
+        Loading:  spinner on the CTA while POST is pending (~5–10 seconds
+                  the first time — KPI compute runs after seed)
+      On success: toast "Sample data loaded — N docs created", refetch
+                  status query → page flips to STATE B.
+      On 409:     toast "Sample data already loaded. Wipe first." →
+                  refetch query.
+      On 400 MISSING_CATEGORY:
+                  toast with link to /assetcategory and a "Re-run
+                  Categories Seed" button.
+
+  STATE B — LOADED  (data.loaded === true)
+  ────────────────────────────────────────
+    Top banner card (green / info color):
+      Headline:  "Sample data is loaded."
+      Sub-text:  "Seeded at <relative time>, batch_id: <batch_id>"
+
+    Grid of count tiles (one per collection from `counts`):
+      MachineryAsset        5
+      TaggedAsset           6
+      BulkInventory         6
+      ...etc
+      AssetKpiSnapshot      5
+      ─ Total docs: 121
+
+    Action bar:
+      [ Refresh ]    refetch status
+      [ Wipe Sample Data ]   ← canDelete gates this (red / destructive style)
+
+    On wipe click:
+      Show a DESTRUCTIVE confirmation modal:
+        Title:     "Wipe sample data?"
+        Body:      "This will delete every sample document across all
+                    collections. Your live data is NOT affected (wipe
+                    only deletes by manifest)."
+        Required input:  text field labeled "Type WIPE-SAMPLE-DATA to confirm"
+                          (button stays disabled until exact match)
+        CTA:       [ Cancel ]  [ Wipe Sample Data ]   ← red button
+        Loading:   spinner on CTA, sub-text "Deleting…"
+      On success: toast "Sample data wiped — N docs removed", refetch →
+                  page flips to STATE A.
+      On 400 (missing confirm): toast (shouldn't happen with the gated
+                  input — defensive only).
+
+  STATE C — LOADING / ERROR  (status query state)
+  ───────────────────────────────────────────────
+    Loading skeleton during initial fetch.
+    On query error: error banner with retry button.
+    On RBAC denied (403 from status): "You don't have permission to
+                  manage sample data" — no other UI rendered.
+
+--------------------------------------------------------------------------------
+6. FRONTEND CODE — TanStack Query hooks
+--------------------------------------------------------------------------------
+Place these in src/api/asset/sampleData.api.js + src/hooks/asset/useAssetSampleData.js
+(matching the file convention used elsewhere in the FE).
+
+  // src/api/asset/sampleData.api.js
+  import { apiClient } from "@/services/api";
+
+  export const sampleDataApi = {
+    status: () => apiClient.get("/asset-sample/status").then(r => r.data),
+    seed:   () => apiClient.post("/asset-sample/seed").then(r => r.data),
+    wipe:   () => apiClient.post("/asset-sample/wipe",
+                                  { confirm: "WIPE-SAMPLE-DATA" }
+                  ).then(r => r.data),
+  };
+
+  // src/hooks/asset/useAssetSampleData.js
+  import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+  import { sampleDataApi } from "@/api/asset/sampleData.api";
+  import { toast } from "@/components/ui/toast";   // existing toast helper
+
+  const KEY = ["asset", "sample-data", "status"];
+
+  export const useAssetSampleStatus = () =>
+    useQuery({
+      queryKey: KEY,
+      queryFn: sampleDataApi.status,
+      staleTime: 30_000,
+    });
+
+  export const useSeedAssetSample = () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: sampleDataApi.seed,
+      onSuccess: (res) => {
+        toast.success(`Sample data loaded — ${res.data.total_docs} docs created`);
+        qc.invalidateQueries({ queryKey: KEY });
+        // Also invalidate every asset list query so the demo data
+        // shows up immediately:
+        qc.invalidateQueries({ queryKey: ["asset"] });
+      },
+      onError: (err) => {
+        const msg = err.response?.data?.message || "Seed failed";
+        toast.error(msg);
+      },
+    });
+  };
+
+  export const useWipeAssetSample = () => {
+    const qc = useQueryClient();
+    return useMutation({
+      mutationFn: sampleDataApi.wipe,
+      onSuccess: (res) => {
+        toast.success(`Sample data wiped — ${
+          Object.values(res.data.deleted || {}).reduce((a,b) => a+b, 0)
+        } docs removed`);
+        qc.invalidateQueries({ queryKey: KEY });
+        qc.invalidateQueries({ queryKey: ["asset"] });
+      },
+      onError: (err) => {
+        const msg = err.response?.data?.message || "Wipe failed";
+        toast.error(msg);
+      },
+    });
+  };
+
+The page component just composes these:
+
+  // src/pages/settings/AssetSampleDataPage.jsx
+  import { useAssetSampleStatus, useSeedAssetSample, useWipeAssetSample }
+    from "@/hooks/asset/useAssetSampleData";
+  import { useCan } from "@/hooks/useCan";
+
+  export default function AssetSampleDataPage() {
+    const { data, isLoading } = useAssetSampleStatus();
+    const seed = useSeedAssetSample();
+    const wipe = useWipeAssetSample();
+    const canCreate = useCan("settings", "master", "create");
+    const canDelete = useCan("settings", "master", "delete");
+
+    if (isLoading) return <Skeleton />;
+    if (!data) return null;
+
+    if (!data.data.loaded) {
+      return (
+        <NotLoadedBanner
+          onLoad={() => seed.mutate()}
+          loading={seed.isPending}
+          disabled={!canCreate}
+        />
+      );
+    }
+    return (
+      <LoadedView
+        status={data.data}
+        onWipe={() => wipe.mutate()}
+        wiping={wipe.isPending}
+        disabled={!canDelete}
+      />
+    );
+  }
+
+--------------------------------------------------------------------------------
+7. WORKFLOW
+--------------------------------------------------------------------------------
+
+  Frontend dev / QA / sales-demo flow:
+
+    1. Navigate to /settings/asset-sample-data
+       └─ status query fires, returns { loaded: false }
+    2. Click "Load Sample Data"
+       └─ confirmation modal → POST /asset-sample/seed
+       └─ seed runs (~5–10s; KPI compute included)
+       └─ status refetches → page flips to STATE B
+    3. Navigate to any asset module — data is there, demo / test
+    4. When done, return to /settings/asset-sample-data
+    5. Click "Wipe Sample Data", type confirm phrase, click red button
+       └─ POST /asset-sample/wipe { confirm: "WIPE-SAMPLE-DATA" }
+       └─ status refetches → page flips back to STATE A
+    6. Live data entry begins
+
+--------------------------------------------------------------------------------
+8. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                            | required permission
+  --------------------------------------|--------------------------------
+  Sidebar entry "Asset Sample Data"     | settings.master.read
+  Status page                           | settings.master.read
+  "Load Sample Data" button             | settings.master.create
+  "Wipe Sample Data" button             | settings.master.delete
+
+  Backend will independently enforce — UI gate is for UX only.
+
+--------------------------------------------------------------------------------
+9. CROSS-MODULE INTERACTIONS
+--------------------------------------------------------------------------------
+- AssetCategoryMaster: must be seeded BEFORE running this. The default
+  master seed runs automatically on backend boot, so this is normally fine.
+  If the seed fails with MISSING_CATEGORY, surface a one-click "Run
+  Categories Seed" link → POST /assetcategory/seed → retry.
+- After seeding, every asset list page in the FE should re-fetch
+  automatically because we invalidate the ["asset"] query namespace.
+- KPI snapshots are computed AFTER doc inserts so the reliability
+  dashboard has data immediately.
+
+--------------------------------------------------------------------------------
+10. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- Calling /seed twice in a row returns 409 ALREADY_LOADED. UI must show
+  "wipe first" toast and refetch the status query.
+- The wipe endpoint requires the EXACT phrase "WIPE-SAMPLE-DATA". The
+  modal must enforce equality check before enabling the button —
+  otherwise users will paste "wipe-sample-data" in lowercase and get a
+  confusing 400.
+- Mid-flight failure during seed (e.g. DB connection blip) auto-rolls
+  back the partial inserts. The status query will show loaded=false on
+  next call.
+- Sample IDs use distinguishable prefixes: assetId="EX-S01", item_id=
+  "BLK-S01", work_order_no="WO-S001", etc. So sample data is also
+  visually identifiable in any list view.
+- Sample employees ("EMP-SAMPLE-01"..."EMP-SAMPLE-05") and contractors
+  ("CON-S001") are referenced only as STRING IDs — they don't actually
+  exist in the Employee / Contractor collections. UI components that
+  resolve names from those collections will show "EMP-SAMPLE-01" raw
+  (graceful) — DO NOT hide rows with unresolved refs.
+- Sample vendors ("VEN-S001", "VEN-S002") and clients ("CLI-S001") are
+  also reference-only strings; same caveat.
+- Sample projectId is "TND-S001" — likewise a string-only sample.
+- The /asset-sample/wipe endpoint will NEVER touch a doc not in the
+  manifest. If a user manually creates a doc using a sample-style ID
+  ("EX-S01") AFTER wipe, that doc is THEIR live data and survives.
+- The env var ASSET_SAMPLE_DATA_ENABLED=false fully disables /seed in
+  production. UI should call /status anyway and just hide the Load
+  button if /seed returns 403 (catch the error, set local
+  "disabled-in-env" flag).
+
+--------------------------------------------------------------------------------
+11. EXAMPLE: FULL MODAL CODE
+--------------------------------------------------------------------------------
+  function WipeConfirmModal({ open, onClose, onConfirm, loading }) {
+    const [phrase, setPhrase] = useState("");
+    const PHRASE = "WIPE-SAMPLE-DATA";
+
+    return (
+      <Modal open={open} onClose={onClose} title="Wipe sample data?">
+        <p>This will delete every sample document across all collections.</p>
+        <p>Your <b>live data is NOT affected</b> — wipe only deletes by manifest.</p>
+
+        <label>Type <code>{PHRASE}</code> to confirm:</label>
+        <input
+          value={phrase}
+          onChange={(e) => setPhrase(e.target.value)}
+          placeholder={PHRASE}
+        />
+
+        <div className="actions">
+          <Button onClick={onClose} variant="ghost">Cancel</Button>
+          <Button
+            onClick={onConfirm}
+            disabled={phrase !== PHRASE || loading}
+            loading={loading}
+            variant="destructive"
+          >
+            Wipe Sample Data
+          </Button>
+        </div>
+      </Modal>
+    );
+  }
+
+--------------------------------------------------------------------------------
+12. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] Add /settings/asset-sample-data route
+[ ] Add sidebar entry under Settings → Master Data, gated by settings.master.read
+[ ] Build src/api/asset/sampleData.api.js with status / seed / wipe
+[ ] Build src/hooks/asset/useAssetSampleData.js with three hooks
+[ ] Page composes both states (NOT LOADED / LOADED)
+[ ] Confirmation modal for seed (informational)
+[ ] Destructive confirmation modal for wipe (typed phrase)
+[ ] Loading state on both buttons
+[ ] Toast on success and error
+[ ] Invalidate ["asset"] query namespace on success (so all asset
+    pages refresh with fresh data)
+[ ] Handle 409 ALREADY_LOADED gracefully with refetch + toast
+[ ] Handle 400 MISSING_CATEGORY with link to /assetcategory/seed
+[ ] Handle 403 DISABLED (production) with disabled state + tooltip
+[ ] RBAC gate the buttons via useCan
+[ ] Visual smoke test: seed → all 17 asset pages show data → wipe → all
+    pages return to empty-state
+
+================================================================================
+END 18 — Sample Data Seeder
+================================================================================

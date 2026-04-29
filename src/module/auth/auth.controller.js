@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import * as AuthService from "./auth.service.js";
 import RoleService from "../role/role.service.js";
 import UserService from "../user/user.service.js";
+import EmployeeModel from "../hr/employee/employee.model.js";
 import { ErrorMessage } from "../../common/App.message.js";
 import { getUserToUserTokenDto } from "../../common/App.helperFunction.js";
 import { setCookieConfig } from "../../config/cookies.js";
@@ -150,6 +151,20 @@ export const refreshToken = async (req, res) => {
   } catch (error) {
     logger.error("Error refreshing token: " + error);
     res.status(500).json({ status: false, message: "An unexpected error occurred while refreshing your session. Please sign in again" });
+  }
+};
+
+export const updateOnboardingStatus = async (req, res) => {
+  try {
+    await EmployeeModel.findByIdAndUpdate(
+      req.user._id,
+      { $set: { hasSeenOnboarding: true } },
+      { new: true, runValidators: false }
+    );
+    res.status(200).json({ status: true });
+  } catch (error) {
+    logger.error(`Error updating onboarding status: ${error.message}`);
+    res.status(500).json({ status: false, message: error.message });
   }
 };
 

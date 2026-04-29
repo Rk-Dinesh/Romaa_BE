@@ -1,0 +1,300 @@
+================================================================================
+  12 — OPERATOR CERTIFICATION  (Frontend UI & API Integration Guide)
+================================================================================
+Module    : assets/operatorcert
+Phase     : 4 (Maintenance & Reliability)
+RBAC key  : asset.operator_cert   (read / create / edit / delete)
+Route base: /operatorcert
+ID prefix : OPC  (e.g. OPC001)
+
+> UI/VISUAL STYLE NOTE
+>   Mirror /employee certifications/training tab for the cert detail
+>   layout if one exists; otherwise mirror /document upload for the
+>   license-file widget and /vendor profile cards for the row chrome.
+
+--------------------------------------------------------------------------------
+1. PURPOSE
+--------------------------------------------------------------------------------
+Register of operator licenses / certifications. Each cert authorises an
+employee to operate ONE asset class (Machinery / Vehicle / StationaryPlant /
+Tool / Other), optionally narrowed by category and sub-category.
+
+Examples:
+  • Heavy Vehicle Driver License → asset_class=Vehicle, category=Transport
+  • Crane Operator Class-1       → asset_class=Machinery, category=Lifting,
+                                    sub_category=Mobile Crane
+  • Forklift Certification       → asset_class=Machinery, category=Lifting,
+                                    sub_category=Forklift
+  • Welder 3G                    → asset_class=StationaryPlant, category=Fabrication,
+                                    sub_category=Welding Machine
+
+The service exposes:
+  • assertAuthorized() — throws OPERATOR_NOT_CERTIFIED (403) if the employee
+                         lacks an ACTIVE cert for the asset class.
+  • findValid()        — returns the active cert if one exists.
+
+These are HELPERS for other services. Today, hard enforcement is opt-in:
+  • MachineryLog and AssetIssuance(MACHINERY) currently ADVISORY only —
+    UI calls /operatorcert/verify before submit and warns/blocks per UX
+    decision (see file 05, file 06).
+  • If you want strict enforcement, change those services to call
+    assertAuthorized() and remove the UI bypass.
+
+--------------------------------------------------------------------------------
+2. DATA MODEL
+--------------------------------------------------------------------------------
+Collection: OperatorCertification
+
+  cert_id              String UNIQUE INDEXED  ("OPC001")
+  employee_id          String INDEXED REQUIRED  ("EMP-001")
+  employee_name        String
+
+  cert_type            String REQUIRED        free-form, e.g.
+                                                "HV LICENSE","CRANE OP CLASS-1",
+                                                "FORKLIFT","EXCAVATOR",
+                                                "WELDER 3G","ELECTRICIAN"
+  license_number       String REQUIRED
+  issuing_authority    String
+
+  asset_class          enum INDEXED REQUIRED:
+                         Machinery | Vehicle | StationaryPlant | Tool | Other
+  asset_category       String                 ("Earthmoving","Lifting","Transport")
+  asset_sub_category   String                 ("Excavator","Mobile Crane","Tipper")
+
+  issue_date           Date REQUIRED
+  expiry_date          Date INDEXED REQUIRED
+  document_url         String                 (S3 — scanned license)
+
+  status               enum INDEXED default ACTIVE:
+                         ACTIVE | EXPIRED | REVOKED | SUSPENDED
+  revoked_reason       String
+
+  notes
+  created_by / updated_by / timestamps
+
+  Compound indexes: (employee_id, asset_class, status), (expiry_date, status)
+
+--------------------------------------------------------------------------------
+3. API REFERENCE
+--------------------------------------------------------------------------------
+3.1  POST /operatorcert/create                       [create]
+3.2  GET  /operatorcert/getall                       [read]
+3.3  GET  /operatorcert/verify                       [read]   (helper)
+3.4  GET  /operatorcert/getbyid/:certId              [read]
+3.5  PUT  /operatorcert/update/:certId               [edit]
+3.6  POST /operatorcert/revoke/:certId               [edit]
+
+  No DELETE — revoke instead. Daily cron flips ACTIVE→EXPIRED for past expiries.
+
+----- 3.1 Create -----
+  POST /operatorcert/create
+  Body:
+    {
+      "employee_id": "EMP-001",
+      "employee_name": "Karim",
+      "cert_type": "CRANE OP CLASS-1",
+      "license_number": "CRC/2024/12345",
+      "issuing_authority": "DGFASLI",
+      "asset_class": "Machinery",
+      "asset_category": "Lifting",
+      "asset_sub_category": "Mobile Crane",
+      "issue_date": "2024-06-10",
+      "expiry_date": "2027-06-10",
+      "document_url": "<S3 link>",
+      "notes": "..."
+    }
+
+----- 3.2 List -----
+  GET /operatorcert/getall?page&limit&employee_id&asset_class
+                         &status&expiring_in_days
+  - expiring_in_days=30: forces status=ACTIVE and expiry_date ≤ now+30d
+
+----- 3.3 Verify -----
+  GET /operatorcert/verify?employee_id=EMP-001&asset_class=Machinery
+                          [&asset_category=Lifting]
+  Returns the most-recent ACTIVE non-expired cert that authorises the
+  employee for that asset class (and optional category). Returns null if
+  none — UI uses this for advisory checks.
+
+----- 3.6 Revoke -----
+  POST /operatorcert/revoke/:certId
+  Body: { "reason": "..." }
+  Sets status=REVOKED, revoked_reason; does NOT delete the row.
+
+--------------------------------------------------------------------------------
+4. PAGES & UI
+--------------------------------------------------------------------------------
+
+4.1  LIST PAGE
+  Route   : /operatorcert
+  Title   : "Operator Certifications"
+  Source  : GET /operatorcert/getall (+ filters)
+  Columns :
+    - Cert ID
+    - Employee                 link to /employee/:emp_id (resolve name)
+    - Cert Type
+    - License #
+    - Authorises               "<asset_class>" + (category) + (sub_category)
+                                shown as colored chip stack
+    - Issue Date
+    - Expiry Date              red ≤7d, amber ≤30d
+    - Status                   StatusBadge (ACTIVE/EXPIRED/REVOKED/SUSPENDED)
+    - Document                 link / icon (download)
+    - Actions                  (Edit, Revoke)
+  Filters :
+    - employee_id (EmployeePicker)
+    - asset_class
+    - status
+    - expiring_in_days toggle (7 / 30 / 60)
+  Toolbar :
+    + New Certification        (canCreate)
+    + Expiring Soon            (badge with count)
+    + Export CSV
+
+4.2  DETAIL DRAWER
+  Trigger : Edit / View row action
+  Layout  : 2-section drawer
+    Identity:
+      Employee link, Cert Type, License #, Issuing Authority
+      Authorises chip stack (asset_class · category · sub_category)
+    Validity:
+      Issue Date, Expiry Date (countdown)
+      Status badge
+      Revoked reason (if REVOKED)
+      Document file link (with thumbnail if image)
+    Action bar: Edit | Revoke
+    Audit drawer trigger.
+
+4.3  CREATE / EDIT FORM  (modal)
+  Sections:
+    Employee*            EmployeePicker
+                          (auto-fills employee_name)
+    Cert Type*           text
+    License Number*      text
+    Issuing Authority    text
+    Authorisation Scope
+      Asset Class*       dropdown Machinery|Vehicle|StationaryPlant|Tool|Other
+      Asset Category     <AssetCategoryPicker classFilter=<asset_class>>
+                         OPTIONAL — narrows authorisation
+      Asset Sub-category passed by AssetCategoryPicker
+    Validity
+      Issue Date*        date
+      Expiry Date*       date  (must be > issue_date)
+    Document
+      License File       file uploader → S3 → URL
+    Notes                textarea
+  Submit: POST /operatorcert/create  /  PUT /operatorcert/update/:certId
+
+4.4  REVOKE DIALOG
+  Reason*                textarea
+  POST /operatorcert/revoke/:certId
+  Note: row stays in list with REVOKED badge — surfaces in audit reports.
+
+4.5  EXPIRING-SOON PAGE / WIDGET
+  Route   : /operatorcert?expiring_in_days=30
+  Source  : GET /operatorcert/getall?expiring_in_days=30
+  Card with table: employee | cert_type | expiry | days_left
+  "Renew" link → opens create form pre-filled with the same scope, expecting
+  a new license number and date range.
+
+4.6  EMPLOYEE PROFILE TAB
+  Cross-link in /employee/:emp_id detail page:
+    Tab "Certifications" — table of certs for that employee.
+    "+ New Certification" pre-fills employee_id.
+
+4.7  AUTHORIZATION CHECK ON FORMS  (cross-module helper)
+  Used by:
+    • AssetIssuance create (kind=MACHINERY): before submit, GET
+      /operatorcert/verify?employee_id=<recipient>&asset_class=<asset_class>
+      If null result and the chosen asset_class is in the "regulated" list
+      (Machinery / Vehicle), show inline error blocking submit:
+        "Recipient is not certified for this asset class. Either add a
+         certification or assign a different operator."
+    • MachineryLog bulk entry: amber warning per row when operator picked
+      lacks a cert for the row's asset.
+    • Inspection submit: surface as info, not block.
+
+--------------------------------------------------------------------------------
+5. WORKFLOWS
+--------------------------------------------------------------------------------
+
+  status state machine:
+
+    [create] ─► ACTIVE
+    ACTIVE ── expiry_date < now (cron daily 05:30) ──► EXPIRED
+    ACTIVE ── manual revoke ──────────────────────────► REVOKED  (reason captured)
+    ACTIVE ── manual suspension (PUT update status) ──► SUSPENDED (rare; UI not exposed)
+
+  Renewal flow:
+    1. Old cert with the same (employee_id, asset_class, [category, sub_category])
+       is EXPIRED or near-expiring.
+    2. User clicks "Renew" → opens create form pre-filled with the same scope.
+    3. New cert created → old one becomes superseded (no automatic linkage,
+       but findValid() picks the most-recent matching active one).
+
+--------------------------------------------------------------------------------
+6. NOTIFICATIONS
+--------------------------------------------------------------------------------
+- The 05:30 daily cron sweeps EXPIRED certs (via OperatorCertService.sweepExpired).
+  Today no notification is emitted. Adding one is recommended: pattern from
+  the calibration cron (file 07) is reusable.
+
+--------------------------------------------------------------------------------
+7. PERMISSIONS MATRIX
+--------------------------------------------------------------------------------
+  UI element                  | required permission
+  ----------------------------|--------------------------
+  /operatorcert list          | asset.operator_cert.read
+  + New Certification         | asset.operator_cert.create
+  Edit                        | asset.operator_cert.edit
+  Revoke                      | asset.operator_cert.edit
+  Verify endpoint (cross-mod) | asset.operator_cert.read
+                                (verify call piggybacks on the user's perm;
+                                 if missing, treat as advisory-fail-open)
+
+--------------------------------------------------------------------------------
+8. CROSS-MODULE HOOKS
+--------------------------------------------------------------------------------
+- AssetIssuance (file 06): UI advisory check before MACHINERY issue
+- MachineDailyLog (file 05): UI advisory warning per log row
+- Inspection (file 11): info only
+
+--------------------------------------------------------------------------------
+9. EDGE CASES & GOTCHAS
+--------------------------------------------------------------------------------
+- The same operator can hold multiple certs spanning different classes
+  (e.g. one HV License for Vehicles + one Crane Op cert for Machinery
+  Lifting). findValid() filters by asset_class + optional category, so
+  precision matters in the create form.
+- An expired cert remains in the system but won't satisfy assertAuthorized.
+  Renew = create new; don't edit the expired one's dates — the audit trail
+  matters for safety / liability.
+- The cron flipping ACTIVE → EXPIRED runs at 05:30; until then, the row
+  may show ACTIVE with expiry in the past. UI should also do a client-side
+  comparison and visually treat it as effectively expired.
+- Categories in the cert (asset_category, asset_sub_category) are STRINGS
+  free-typed at create — they're not validated against AssetCategoryMaster.
+  For consistency, use AssetCategoryPicker on create (file 01) to pick from
+  the master and copy the strings.
+- The verify endpoint returns the most-RECENT matching cert by expiry —
+  if an operator has overlapping valid certs (e.g. multiple categories),
+  verify returns one; UI should call without `asset_category` first, then
+  with category to narrow. For block/allow decisions, treat any non-null
+  result as "authorised".
+
+--------------------------------------------------------------------------------
+10. DEV CHECKLIST
+--------------------------------------------------------------------------------
+[ ] List with all filters + expiring-soon shortcut
+[ ] Create / Edit form with AssetCategoryPicker for scope
+[ ] Revoke dialog
+[ ] Cert detail drawer
+[ ] Employee profile tab
+[ ] Cross-module verify helper hook (useOperatorCertVerify)
+[ ] Issuance / Logs forms call verify advisory
+[ ] Renew flow (create from existing cert)
+[ ] RBAC gates
+
+================================================================================
+END 12 — Operator Certification
+================================================================================
