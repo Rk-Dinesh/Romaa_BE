@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   addProposalToTender,
   getEmdByTender,
@@ -13,6 +14,7 @@ import {
 } from "./emd.controller.js";
 
 const emdrouter = Router();
+emdrouter.use(verifyJWT);
 
 // Add proposal to a tender
 emdrouter.post("/addproposal/:tender_id", addProposalToTender);

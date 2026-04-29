@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   createContractor,
   getAllContractors,
@@ -22,6 +23,7 @@ import {
 } from "./contractor.controller.js";
 
 const contractorRoute = Router();
+contractorRoute.use(verifyJWT);
 
 // Dashboard
 contractorRoute.get("/dashboard-stats", getDashboardStats);

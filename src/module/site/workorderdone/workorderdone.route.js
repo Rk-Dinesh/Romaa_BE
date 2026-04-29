@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   createWorkDone,
   bulkCreateWorkDone,
@@ -9,6 +10,7 @@ import {
 } from "./workorderdone.controller.js";
 
 const workOrderDoneRouter = Router();
+workOrderDoneRouter.use(verifyJWT);
 
 workOrderDoneRouter.post('/api/create', createWorkDone);
 workOrderDoneRouter.post('/api/bulk-create', bulkCreateWorkDone);

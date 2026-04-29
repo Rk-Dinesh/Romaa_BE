@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   createBid,
   getAllBids,
@@ -15,6 +16,7 @@ import {
 
 const upload = multer({ dest: "uploads/" });
 const bidRouter = Router();
+bidRouter.use(verifyJWT);
 
 
 bidRouter.post("/add", createBid); //not in use

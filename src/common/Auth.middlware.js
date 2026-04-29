@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import EmployeeModel from "../module/hr/employee/employee.model.js";
+import { getContext } from "./requestContext.js";
 
 
 // --- 1. Authentication Middleware (Who are you?) ---
@@ -28,6 +29,16 @@ export const verifyJWT = async (req, res, next) => {
 
     // Attach user to request object
     req.user = user;
+
+    // Backfill the request-scoped context so downstream audit logs / services
+    // can resolve actor info without threading req through every layer.
+    const ctx = getContext();
+    if (ctx) {
+      ctx.userId   = user._id;
+      ctx.userName = user.name || user.email || "";
+      ctx.tenantId = user.tenant_id || ctx.tenantId || "";
+    }
+
     next();
     
   } catch (error) {

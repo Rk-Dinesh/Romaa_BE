@@ -1,6 +1,7 @@
 import cron from "node-cron";
 import EmployeeModel from "../src/module/hr/employee/employee.model.js";
 import LeaveBalanceHistoryService from "../src/module/hr/leave/leaveBalanceHistory.service.js";
+import { runAsSystem } from "../src/common/requestContext.js";
 
 // --- Leave entitlements reset every Jan 1 ---
 const ANNUAL_ENTITLEMENTS = {
@@ -16,7 +17,7 @@ const PL_CARRY_FORWARD_CAP = 30;
 
 export const startYearEndLeaveResetCron = () => {
   // Runs at 23:55 on December 31 every year
-  cron.schedule("55 23 31 12 *", async () => {
+  cron.schedule("55 23 31 12 *", () => runAsSystem("yearEndLeaveReset", async () => {
     const year = new Date().getFullYear();
     console.log(`🗓️  [CRON] Year-End Leave Reset starting for ${year}...`);
 
@@ -117,5 +118,5 @@ export const startYearEndLeaveResetCron = () => {
     } catch (err) {
       console.error("❌ [CRON] Year-End Leave Reset job failed:", err);
     }
-  });
+  }));
 };

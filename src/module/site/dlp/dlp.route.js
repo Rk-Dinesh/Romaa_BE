@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   bulkCreateReports,
   createReport,
@@ -13,6 +14,7 @@ import {
 } from "./dlp.controller.js";
 
 const dlpRouter = Router();
+dlpRouter.use(verifyJWT);
 
 // POST   /dlp/api/create
 dlpRouter.post("/api/create", createReport);

@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   createVendor,
   getAllVendors,
@@ -12,6 +13,7 @@ import {
 } from "./vendor.controller.js";
 
 const vendorRoute = Router();
+vendorRoute.use(verifyJWT);
 
 // Create
 vendorRoute.post("/addvendor", createVendor);

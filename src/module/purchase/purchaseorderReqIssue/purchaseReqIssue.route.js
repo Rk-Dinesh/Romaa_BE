@@ -1,7 +1,9 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import { approveVendorQuotation, createPurchaseRequest, getAllByProjectIdSelectedVendorWithQuotation, getAllByNewRequest, getAllPurchaseByProjectId, getAllPurchaseBySelectedVendor, getPurchaseByProjectAndRequestId, getQuotationApproved, getQuotationRequested, getVendorQuotationByQuotationId, postVendorQuotationWithTenderCheck, updateStatus, getAllByQuotationRequested, rejectVendor, getAllByQuotationApproved, updateStatusRequest, getAllByMaterialReceived } from "./purchaseReqIssue.controller.js";
 
 const purhcaseRequestrouter = Router();
+purhcaseRequestrouter.use(verifyJWT);
 
 
 purhcaseRequestrouter.post('/api/create', createPurchaseRequest   );

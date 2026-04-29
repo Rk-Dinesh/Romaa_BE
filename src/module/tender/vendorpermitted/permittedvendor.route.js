@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   addPermittedVendors,
   getPermittedVendors,
@@ -8,6 +9,7 @@ import {
 } from "./permittedvendor.controller.js";
 
 const permittedrouter = Router();
+permittedrouter.use(verifyJWT);
 
 // Add vendors to tender
 permittedrouter.post("/add", addPermittedVendors);

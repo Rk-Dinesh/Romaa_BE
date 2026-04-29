@@ -1,7 +1,9 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import { createWorkOrderRequest, getAllByNewRequest, getQuotationRequested, approveContractorQuotation, rejectContractor, postContractorQuotationWithTenderCheck, getWorkOrderByProjectAndRequestId, getQuotationApproved, getAllByQuotationApproved, getAllByWorkOrderIssuedForWorkDone, getAllByWorkOrderIssuedForWorkDoneMaterial, updateStatusRequest } from "./workorderReqIssue.controller.js";
 
 const workOrderRequestrouter = Router();
+workOrderRequestrouter.use(verifyJWT);
 
 workOrderRequestrouter.post('/api/create', createWorkOrderRequest   );
 workOrderRequestrouter.get('/api/getbyIdNewRequest/:projectId', getAllByNewRequest);

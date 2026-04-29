@@ -1,8 +1,10 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../../common/Auth.middlware.js";
 import { uploadBillingEstimateCSV, getDetailedSteelEstimate } from "./steelestimate.controller.js";
 import multer from "multer";
 
 const steelestimaterouter = Router();
+steelestimaterouter.use(verifyJWT);
 
 const upload = multer({ dest: "uploads/" });
 

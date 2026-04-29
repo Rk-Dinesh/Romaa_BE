@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   createBoq,
   getAllBoqs,
@@ -18,6 +19,7 @@ import {
 } from "./boq.controller.js";
 
 const boqrouter = Router();
+boqrouter.use(verifyJWT);
 const upload = multer({ dest: "uploads/" });
 
 // BoQ CRUD

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
-import { 
+import { verifyJWT } from "../../../common/Auth.middlware.js";
+import {
     getDailySchedule, 
     getSchedule, 
     getScheduleforcsv, 
@@ -10,6 +11,7 @@ import {
 } from "./schedule.controller.js";
 
 const schedulerouter = Router();
+schedulerouter.use(verifyJWT);
 const upload = multer({ dest: "uploads/" });
 
 schedulerouter.post("/upload-csv", upload.single("file"), uploadScheduleCSV);

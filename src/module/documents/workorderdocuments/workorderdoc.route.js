@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import { getDocumentByTenderIdAndCodeAndWorkOrder, getDocumentByTenderIdAndCodeAndWorkOrderaws, getWorkOrderDocument, uploadDocument, uploadMultipleDocuments } from './workorderdoc.controller.js';
 
 
@@ -7,6 +8,7 @@ import { getDocumentByTenderIdAndCodeAndWorkOrder, getDocumentByTenderIdAndCodeA
 const upload = multer({ storage: multer.memoryStorage() });
 
 const workOrderDocRouter = express.Router();
+workOrderDocRouter.use(verifyJWT);
 
 // POST route for uploading a document
 workOrderDocRouter.post('/upload', upload.single('file'), uploadDocument);

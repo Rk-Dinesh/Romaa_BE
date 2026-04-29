@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../common/Auth.middlware.js";
 import {
   createClient,
   getClientById,
@@ -12,6 +13,7 @@ import {
 } from "./client.controller.js";
 
 const clientRoute = Router();
+clientRoute.use(verifyJWT);
 
 // Create
 clientRoute.post("/addclient", createClient);

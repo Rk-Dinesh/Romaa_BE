@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   addMaterialReceived,
   addMaterialIssued,
@@ -14,6 +15,7 @@ import {
 } from "./material.controller.js";
 
 const materialRouter = Router();
+materialRouter.use(verifyJWT);
 
 materialRouter.post("/addMaterialReceived", addMaterialReceived);
 materialRouter.post("/addMaterialIssued", addMaterialIssued);

@@ -1,9 +1,9 @@
 import express from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import { createBulkLogs, getAllLogs, getProjectLogs } from "./machinerylogs.controller.js";
 
-// import { verifyToken } from "../middleware/authMiddleware.js"; // Uncomment if you have auth
-
 const machinerylogrouter = express.Router();
+machinerylogrouter.use(verifyJWT);
 
 machinerylogrouter.post("/bulk", createBulkLogs); 
 machinerylogrouter.get("/project/:projectId", getProjectLogs);

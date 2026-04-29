@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   addContractWorkers,
   getContractWorkers,
@@ -8,6 +9,7 @@ import {
 } from "./contractworker.controller.js";
 
 const permittedcontractworkerrouter = Router();
+permittedcontractworkerrouter.use(verifyJWT);
 
 permittedcontractworkerrouter.post("/add", addContractWorkers);
 permittedcontractworkerrouter.get("/gettender/:tender_id", getContractWorkers);

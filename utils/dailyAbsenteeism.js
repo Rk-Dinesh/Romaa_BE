@@ -3,6 +3,7 @@ import EmployeeModel from "../src/module/hr/employee/employee.model.js";
 import UserAttendanceModel from "../src/module/hr/userAttendance/userAttendance.model.js";
 import CalendarService from "../src/module/hr/holidays/holiday.service.js";
 import LeaveRequestModel from "../src/module/hr/leave/leaverequest.model.js";
+import { runAsSystem } from "../src/common/requestContext.js";
 import { SHIFT_RULES } from "./shiftRules.js";
 
 // FIX (Bug 1): Returns a real Date offset to IST wall-clock, not a locale string.
@@ -18,7 +19,7 @@ const HALF_DAY_THRESHOLD_HRS = 4;
 
 export const startAbsenteeismCron = () => {
   // Run every day at 23:59 (11:59 PM)
-  cron.schedule("59 23 * * *", async () => {
+  cron.schedule("59 23 * * *", () => runAsSystem("absenteeism", async () => {
     console.log("⏳ [CRON] Starting Daily Attendance Finalizer...");
 
     const now   = new Date();
@@ -218,5 +219,5 @@ export const startAbsenteeismCron = () => {
     } catch (err) {
       console.error("❌ [CRON] Job Failed:", err);
     }
-  });
+  }));
 };

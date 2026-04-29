@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   createReport,
   getReportsByTender,
@@ -10,6 +11,7 @@ import {
 } from "./workdone.controller.js";
 
 const workdoneRouter = Router();
+workdoneRouter.use(verifyJWT);
 
 // POST   /workdone/api/create
 workdoneRouter.post("/api/create", createReport);

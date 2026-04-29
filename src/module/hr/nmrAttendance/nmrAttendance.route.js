@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   createAttendance,
   createFromDLP,
@@ -11,6 +12,7 @@ import {
 } from "./nmrAttendance.controller.js";
 
 const nmrAttendanceRouter = Router();
+nmrAttendanceRouter.use(verifyJWT);
 
 // POST  /nmrattendance/api/create
 nmrAttendanceRouter.post("/api/create", createAttendance);

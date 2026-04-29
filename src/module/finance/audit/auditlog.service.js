@@ -9,7 +9,7 @@ export default class AuditLogService {
     try {
       await AuditLogModel.create({
         entity_type, entity_id, entity_no: entity_no || "",
-        action, actor_id: actor_id ?? ctx.userId, actor_name: actor_name || "",
+        action, actor_id: actor_id ?? ctx.userId ?? null, actor_name: actor_name || ctx.userName || "",
         changes: changes || null, meta: meta || null,
         correlation_id: correlation_id || ctx.correlationId || "",
         ip_address:     ip_address     || ctx.ipAddress     || "",

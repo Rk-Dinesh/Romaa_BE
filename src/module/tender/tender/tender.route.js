@@ -1,5 +1,6 @@
 import { Router } from "express";
 import multer from "multer";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   createTender,
   getAllTenders,
@@ -39,6 +40,7 @@ import {
 const upload = multer({ storage: multer.memoryStorage() });
 
 const tenderrouter = Router();
+tenderrouter.use(verifyJWT);
 
 // CRUD
 tenderrouter.post("/addtender", createTender);

@@ -1,5 +1,6 @@
 import express from "express";
-import { createMachineryAsset, 
+import { verifyJWT } from "../../../common/Auth.middlware.js";
+import { createMachineryAsset,
     getMachineryAsset, 
     updateMachineryAsset,
     getAssetDashboard,
@@ -13,6 +14,7 @@ import { createMachineryAsset,
 
 
 const machineryrouter = express.Router();
+machineryrouter.use(verifyJWT);
 
 machineryrouter.post("/createasset", createMachineryAsset);
 machineryrouter.get("/getbyid/:assetId", getMachineryAsset);

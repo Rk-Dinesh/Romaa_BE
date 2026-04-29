@@ -1,11 +1,13 @@
 import express from 'express';
 import multer from 'multer';
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import { getDocumentByTenderIdAndCode, getDocumentByTenderIdAndCodeaws, getTenderDocument, uploadDocument, uploadMultipleDocuments } from './SiteDrawing.controller.js';
 
 // Use multer memory storage (so file is available in req.file.buffer)
 const upload = multer({ storage: multer.memoryStorage() });
 
 const SiteDrawingRouter = express.Router();
+SiteDrawingRouter.use(verifyJWT);
 
 // POST route for uploading a document
 SiteDrawingRouter.post('/upload', upload.single('file'), uploadDocument);

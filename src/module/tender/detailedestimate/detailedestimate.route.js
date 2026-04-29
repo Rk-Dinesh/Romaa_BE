@@ -1,10 +1,12 @@
 import { Router } from "express";
 import multer from "multer";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import { addPhaseBreakdownToAbstractController, addPhaseBreakdownToDetailedController, bulkInsertCustomHeadingsController, bulkInsertCustomHeadingsControllerNew, deleteAbstractDataByNametypeController, deleteHeadingController, detailedEstimateCustomHeading, extractHeadingInpairs, freezeDetailedEstimateController, getBillOfQtyController, getCustomHeadingsByTenderAndNameTypeController, getGeneralAbstractController } from "./detailedestimate.controller.js";
 
 const upload = multer({ dest: "uploads/" });
 
 const detailedestrouter = Router();
+detailedestrouter.use(verifyJWT);
 
 detailedestrouter.post("/addheading", detailedEstimateCustomHeading); 
 detailedestrouter.get("/extractheadings", extractHeadingInpairs);

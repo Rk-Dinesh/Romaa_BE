@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { verifyJWT } from "../../../common/Auth.middlware.js";
 import {
   addPenalty,
   getPenalties,
@@ -8,6 +9,7 @@ import {
 } from "./penalities.controller.js";
 
 const penaltyRouter = Router();
+penaltyRouter.use(verifyJWT);
 
 // Add a penalty for a tender
 penaltyRouter.post("/add", addPenalty);

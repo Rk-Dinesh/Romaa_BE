@@ -21,18 +21,18 @@ const roleRoute = Router();
 roleRoute.post("/create",verifyJWT, createRole);
 
 // List all Roles
-roleRoute.get("/list", getAllRoles);
+roleRoute.get("/list", verifyJWT, getAllRoles);
 
 // List all Roles for User Dropdown
-roleRoute.get("/listForDropdown", getAllRolesForUserDropdown);
+roleRoute.get("/listForDropdown", verifyJWT, getAllRolesForUserDropdown);
 
 // Get specific Role Details
-roleRoute.get("/getbyId/:role_id", getRoleById);
+roleRoute.get("/getbyId/:role_id", verifyJWT, getRoleById);
 
 // Update Role Permissions/Name
-roleRoute.put("/update/:role_id", updateRole);
+roleRoute.put("/update/:role_id", verifyJWT, updateRole);
 
 // Delete (Soft Delete) Role
-roleRoute.delete("/delete/:role_id", deleteRole);
+roleRoute.delete("/delete/:role_id", verifyJWT, deleteRole);
 
 export default roleRoute;

@@ -112,7 +112,7 @@ import SiteDrawingRouter from "./src/module/documents/sitedrawingdocuments/SiteD
 import currencyRouter from "./src/module/finance/currency/currency.route.js";
 import { correlationIdMiddleware } from "./src/common/correlationId.js";
 import { ERROR_CODES } from "./src/common/errorCodes.js";
-import { requestContextMiddleware } from "./src/common/requestContext.js";
+import { requestContextMiddleware, runAsSystem } from "./src/common/requestContext.js";
 import { etagMiddleware } from "./src/common/etag.js";
 import { rlsMiddleware } from "./src/common/rowLevelSecurity.js";
 import { idempotencyMiddleware } from "./src/common/idempotency.js";
@@ -147,38 +147,38 @@ startYearEndLeaveResetCron();
 startFuelSyncCron();
 
 // Daily: process journal entries scheduled for auto-reversal
-cron.schedule("0 1 * * *", async () => {
+cron.schedule("0 1 * * *", () => runAsSystem("autoReversal", async () => {
   try {
     await JournalEntryService.processAutoReversals();
     logger.info("Auto-reversal cron: completed");
   } catch (err) {
     logger.error("Auto-reversal cron error:", err.message);
   }
-});
+}));
 
 // Daily 02:00: fire all due recurring voucher templates
-cron.schedule("0 2 * * *", async () => {
+cron.schedule("0 2 * * *", () => runAsSystem("recurringVoucher", async () => {
   try {
     const result = await RecurringVoucherService.runDue();
     logger.info(`Recurring voucher cron: fired=${result.fired} failed=${result.failed}`);
   } catch (err) {
     logger.error("Recurring voucher cron error:", err.message);
   }
-});
+}));
 
 // Daily 03:30: archive audit rows older than AUDIT_RETENTION_DAYS (default 90)
 // Moves both app_audit_logs and finance_audit_logs to *_archive siblings.
-cron.schedule("30 3 * * *", async () => {
+cron.schedule("30 3 * * *", () => runAsSystem("auditRetention", async () => {
   try {
     const result = await runAllAuditArchives();
     logger.info(`Audit retention cron: app=${result.app.archived} finance=${result.finance.archived}`);
   } catch (err) {
     logger.error("Audit retention cron error:", err.message);
   }
-});
+}));
 
 // Monthly on 1st at 03:00: post depreciation for the PREVIOUS calendar month
-cron.schedule("0 3 1 * *", async () => {
+cron.schedule("0 3 1 * *", () => runAsSystem("depreciation", async () => {
   try {
     const prev = new Date();
     prev.setDate(1);
@@ -188,11 +188,11 @@ cron.schedule("0 3 1 * *", async () => {
   } catch (err) {
     logger.error("Depreciation cron error:", err.message);
   }
-});
+}));
 
 // Daily 06:00: flip ISSUED → OVERDUE for any asset issuance past its expected
 // return date, and notify the asset.issuance audience about the new overdue list.
-cron.schedule("0 6 * * *", async () => {
+cron.schedule("0 6 * * *", () => runAsSystem("assetIssuanceOverdue", async () => {
   try {
     const sweep = await AssetIssuanceService.markOverdue();
     logger.info(`Asset issuance overdue sweep: marked=${sweep.modified}`);
@@ -217,12 +217,12 @@ cron.schedule("0 6 * * *", async () => {
   } catch (err) {
     logger.error("Asset issuance overdue cron error:", err.message);
   }
-});
+}));
 
 // Daily 06:30: notify asset.calibration audience about calibrations due in the
 // next 30 days (or already overdue). Uses upsert-by-day in NotificationService —
 // safe to run daily; duplicate banners aren't a concern at this volume.
-cron.schedule("30 6 * * *", async () => {
+cron.schedule("30 6 * * *", () => runAsSystem("calibrationDue", async () => {
   try {
     const due = await AssetCalibrationService.getDueReport(30);
     if (!due || due.length === 0) {
@@ -254,7 +254,7 @@ cron.schedule("30 6 * * *", async () => {
   } catch (err) {
     logger.error("Calibration-due cron error:", err.message);
   }
-});
+}));
 
 //middleware
 
