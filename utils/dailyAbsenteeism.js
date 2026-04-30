@@ -26,15 +26,11 @@ export const startAbsenteeismCron = () => {
     const today = new Date(Date.UTC(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0));
 
     try {
-      // 1. GLOBAL HOLIDAY CHECK
-      const dayStatus      = await CalendarService.checkDayStatus(today);
-      const isGlobalHoliday = !dayStatus.isWorkingDay;
-
       // FIX (Bug 2): Exclude soft-deleted employees
       const employees = await EmployeeModel.find({
         status: "Active",
         isDeleted: { $ne: true },
-      }).select("_id shiftType");
+      }).select("_id shiftType department");
 
       let stats = { processed: 0, absent: 0, autoCheckout: 0, onLeave: 0 };
 
@@ -65,6 +61,10 @@ export const startAbsenteeismCron = () => {
           let penaltyApplied = false;
           const rule = SHIFT_RULES[emp.shiftType] || SHIFT_RULES["General"];
 
+          // B12: per-employee holiday re-check honours department scoping.
+          const empDayStatus = await CalendarService.checkDayStatus(today, emp.department);
+          const isHolidayForEmp = !empDayStatus.isWorkingDay;
+
           if (approvedLeave) {
             stats.onLeave++;
             finalStatus = "On Leave";
@@ -76,9 +76,9 @@ export const startAbsenteeismCron = () => {
               finalStatus = "Absent";
               remarks     = "Absent on Permission Day (No Punch)";
             }
-          } else if (isGlobalHoliday) {
+          } else if (isHolidayForEmp) {
             finalStatus = "Holiday";
-            remarks     = `Holiday: ${dayStatus.reason}`;
+            remarks     = `Holiday: ${empDayStatus.reason}`;
             // workType stays "Regular" — employee did NOT work today
           } else {
             stats.absent++;

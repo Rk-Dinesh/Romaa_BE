@@ -69,6 +69,11 @@ import CalendarRoute from "./src/module/hr/holidays/holiday.route.js";
 import LeaveRoute from "./src/module/hr/leave/leaverequest.route.js";
 import GeofenceRoute from "./src/module/hr/geofence/geofence.route.js";
 import PayrollRoute from "./src/module/hr/payroll/payroll.route.js";
+import WeeklyOffPolicyRoute from "./src/module/hr/weeklyOffPolicy/weeklyOffPolicy.route.js";
+import LeavePolicyRoute    from "./src/module/hr/leavePolicy/leavePolicy.route.js";
+import DepartmentRoute     from "./src/module/hr/department/department.route.js";
+import { startMonthlyAccrualCron } from "./utils/monthlyLeaveAccrual.js";
+import { startLeaveReminderCron, startLeaveEscalationCron } from "./utils/leaveSlaCron.js";
 import { startAbsenteeismCron } from "./utils/dailyAbsenteeism.js";
 import { startYearEndLeaveResetCron } from "./utils/yearEndLeaveReset.js";
 import cron from "node-cron";
@@ -157,6 +162,9 @@ connectDB().then(() => {
 });
 startAbsenteeismCron();
 startYearEndLeaveResetCron();
+startMonthlyAccrualCron();
+startLeaveReminderCron();
+startLeaveEscalationCron();
 startFuelSyncCron();
 
 // Daily: process journal entries scheduled for auto-reversal
@@ -439,6 +447,9 @@ app.use("/calendar", CalendarRoute);
 app.use("/leave", LeaveRoute);
 app.use("/geofence", GeofenceRoute);
 app.use("/payroll", PayrollRoute);
+app.use("/weeklyoff", WeeklyOffPolicyRoute);
+app.use("/leavepolicy", LeavePolicyRoute);
+app.use("/department", DepartmentRoute);
 app.use("/hsn", hsnSacRouter);
 app.use("/assetcategory", assetCategoryRouter);
 app.use("/notification", notificationRoute);

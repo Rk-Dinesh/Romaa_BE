@@ -31,7 +31,59 @@ class EmployeeService {
       employeeId: employeeId, // Assign generated ID
     });
 
-    return await employee.save();
+    const saved = await employee.save();
+
+    // LP5: pro-rate annual entitlements for mid-year hires.
+    // Quietly skipped for any leave type whose policy rule is not
+    // proRataForNewJoiners or whose refillType isn't ANNUAL_RESET.
+    try {
+      await EmployeeService.applyProRataOnHire(saved);
+    } catch (err) {
+      // Never block registration on pro-rata wiring — just log.
+      // eslint-disable-next-line no-console
+      console.warn("[employee] pro-rata on hire failed:", err.message);
+    }
+
+    return saved;
+  }
+
+  // Compute and credit pro-rated balances for a freshly-hired employee
+  // based on the resolved LeavePolicy and dateOfJoining.
+  static async applyProRataOnHire(employee) {
+    if (!employee?.dateOfJoining) return;
+    const LeavePolicyService = (await import("../leavePolicy/leavePolicy.service.js")).default;
+    const LeaveBalanceHistoryService = (await import("../leave/leaveBalanceHistory.service.js")).default;
+
+    const policy = await LeavePolicyService.resolveForEmployee(employee);
+    const types  = ["CL", "SL", "PL", "Maternity", "Paternity", "Bereavement"];
+    const doj = new Date(employee.dateOfJoining);
+    const monthsRemaining = Math.max(1, 12 - doj.getMonth()); // include join month
+    const updates = {};
+    const history = [];
+
+    for (const t of types) {
+      const rule = LeavePolicyService.getRule(policy, t);
+      if (!rule || !rule.proRataForNewJoiners) continue;
+      if (!["ANNUAL_RESET", "MONTHLY_ACCRUAL", "QUARTERLY_ACCRUAL", "TENURE_BASED"].includes(rule.refillType)) continue;
+
+      const entitlement = LeavePolicyService.getEntitlement(rule, employee);
+      if (!entitlement) continue;
+
+      const prorated = Math.round((entitlement * monthsRemaining / 12) * 100) / 100;
+      updates[`leaveBalance.${t}`] = prorated;
+      history.push({
+        employeeId: employee._id,
+        leaveType:  t,
+        amount:     prorated,
+        balanceBefore: 0,
+        reason: `Pro-rata on hire (${monthsRemaining} mo / 12 of ${entitlement})`,
+      });
+    }
+
+    if (Object.keys(updates).length > 0) {
+      await EmployeeModel.findByIdAndUpdate(employee._id, { $set: updates });
+      for (const h of history) await LeaveBalanceHistoryService.logProRata(h).catch(() => {});
+    }
   }
 
   // --- 2. Login Logic ---
@@ -205,6 +257,131 @@ class EmployeeService {
     return await EmployeeModel.find({ role: { $ne: null }, isDeleted: { $ne: true } })
       .select("employeeId name email")
       .lean();
+  }
+
+  // --- Self-service profile update ---
+  // Employees can edit only safe profile fields (no role / status / payroll basic / leaveBalance).
+  static async updateMyProfile(employeeObjectId, body) {
+    const allowed = [
+      "phone", "address", "emergencyContact", "photoUrl", "idProof",
+    ];
+    const update = {};
+    for (const k of allowed) {
+      if (body[k] !== undefined) update[k] = body[k];
+    }
+    // Bank/PAN/UAN are payroll-sensitive; allow only specific sub-fields.
+    if (body.payroll) {
+      const payrollAllowed = ["accountHolderName", "bankName", "accountNumber", "ifscCode", "uanNumber", "panNumber"];
+      const sub = {};
+      for (const k of payrollAllowed) if (body.payroll[k] !== undefined) sub[`payroll.${k}`] = body.payroll[k];
+      Object.assign(update, sub);
+    }
+    if (Object.keys(update).length === 0) {
+      throw new Error("No editable fields provided");
+    }
+    return await EmployeeModel.findByIdAndUpdate(employeeObjectId, { $set: update }, { new: true })
+      .select("-password -refreshToken");
+  }
+
+  // --- Manager: list of direct reports + today's attendance status ---
+  static async getMyTeam(managerObjectId) {
+    const team = await EmployeeModel.find({ reportsTo: managerObjectId, isDeleted: { $ne: true } })
+      .select("employeeId name email designation department photoUrl status shiftType")
+      .lean();
+    if (team.length === 0) return [];
+
+    const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+    const UserAttendanceModel = (await import("../userAttendance/userAttendance.model.js")).default;
+    const teamIds = team.map((t) => t._id);
+    const todayAtt = await UserAttendanceModel.find({
+      employeeId: { $in: teamIds },
+      date: today,
+    }).select("employeeId status firstIn lastOut netWorkHours flags").lean();
+    const byId = new Map(todayAtt.map((a) => [String(a.employeeId), a]));
+
+    return team.map((m) => {
+      const a = byId.get(String(m._id));
+      return {
+        ...m,
+        today: a
+          ? {
+              status: a.status,
+              firstIn: a.firstIn,
+              lastOut: a.lastOut,
+              netWorkHours: a.netWorkHours,
+              isLate: !!a.flags?.isLateEntry,
+            }
+          : { status: "Not Punched Yet" },
+      };
+    });
+  }
+
+  // --- A3: Resolve the active manager for a reportsTo chain.
+  // If the direct manager has set a delegation that's still active, return
+  // the delegate. Walks one hop only — refuses to chain so we don't loop.
+  static async resolveActiveManager(reportsToId) {
+    if (!reportsToId) return null;
+    const direct = await EmployeeModel.findById(reportsToId)
+      .select("_id delegateTo delegateUntil status isDeleted").lean();
+    if (!direct) return null;
+    const now = Date.now();
+    const delegationActive =
+      direct.delegateTo &&
+      direct.delegateUntil &&
+      new Date(direct.delegateUntil).getTime() > now;
+    if (delegationActive) {
+      // Validate the delegate is still active too
+      const delegate = await EmployeeModel.findById(direct.delegateTo)
+        .select("_id status isDeleted").lean();
+      if (delegate && delegate.status === "Active" && !delegate.isDeleted) {
+        return delegate._id;
+      }
+    }
+    return direct._id;
+  }
+
+  // --- A3: setMyDelegation — employee assigns / clears their out-of-office delegate ---
+  static async setMyDelegation(myObjectId, { delegateTo, delegateUntil }) {
+    if (delegateTo && String(delegateTo) === String(myObjectId)) {
+      throw new Error("Cannot delegate to yourself");
+    }
+    if (delegateTo) {
+      const target = await EmployeeModel.findById(delegateTo).select("_id status isDeleted").lean();
+      if (!target || target.isDeleted || target.status !== "Active") {
+        throw new Error("Delegate target is not an active employee");
+      }
+    }
+    const update = {
+      delegateTo:    delegateTo || null,
+      delegateUntil: delegateUntil ? new Date(delegateUntil) : null,
+    };
+    return await EmployeeModel.findByIdAndUpdate(myObjectId, { $set: update }, { new: true })
+      .select("delegateTo delegateUntil");
+  }
+
+  static async clearMyDelegation(myObjectId) {
+    return await EmployeeModel.findByIdAndUpdate(
+      myObjectId,
+      { $set: { delegateTo: null, delegateUntil: null } },
+      { new: true },
+    ).select("delegateTo delegateUntil");
+  }
+
+  // --- Comp-Off balance: list valid (unused & unexpired) credits ---
+  static async getCompOffBalance(employeeObjectId) {
+    const emp = await EmployeeModel.findById(employeeObjectId).select("leaveBalance.compOff").lean();
+    if (!emp) throw new Error("Employee not found");
+    const now = Date.now();
+    const credits = (emp.leaveBalance?.compOff || []).map((c) => ({
+      ...c,
+      isExpired: !c.isUsed && new Date(c.expiryDate).getTime() < now,
+    }));
+    const valid = credits.filter((c) => !c.isUsed && !c.isExpired);
+    return {
+      totalValid: valid.length,
+      validCredits: valid,
+      allCredits: credits,
+    };
   }
 
   static async updateEmployeeAccess(employeeId, { role, status, password, accessMode }) {

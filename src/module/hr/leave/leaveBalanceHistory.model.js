@@ -28,6 +28,10 @@ const leaveBalanceHistorySchema = new mongoose.Schema(
         "CarryForward",  // PL carried into new year
         "Expiry",        // CompOff credits expired
         "ManualAdjust",  // HR manually corrected balance
+        "Accrual",       // Monthly/quarterly accrual (e.g. PL +2/mo)
+        "ProRata",       // Mid-year hire pro-rated entitlement
+        "Encashed",      // Excess balance converted to a payroll encashment voucher
+        "EventGrant",    // Life-event triggered grant (Maternity/Paternity/Bereavement)
       ],
       required: true,
     },

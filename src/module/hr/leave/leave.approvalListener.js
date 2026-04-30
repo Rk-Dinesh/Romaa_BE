@@ -14,9 +14,17 @@ const SOURCE_TYPE = "LeaveRequest";
 // its per-actor role gating — the approval engine has already enforced the
 // hierarchy, so by the time we land here, all required approvers have signed.
 async function finalizeApproval({ source_ref, actor_id }) {
-  const leave = await LeaveRequestModel.findById(source_ref);
-  if (!leave) return logger.warn(`Leave approval listener: request ${source_ref} not found`);
-  if (["HR Approved", "Cancelled", "Rejected"].includes(leave.status)) return;
+  // B10: atomically claim the request before mutating anything. If the legacy
+  // /leave/action endpoint is also processing it, our update returns null and
+  // we exit cleanly — no double balance debit.
+  // H5: HOD Approved is also an eligible source — the engine treats all three
+  // intermediate states as "ready for terminal sign-off".
+  const leave = await LeaveRequestModel.findOneAndUpdate(
+    { _id: source_ref, status: { $in: ["Pending", "Manager Approved", "HOD Approved"] } },
+    { $set: { status: "Processing" } },
+    { new: true },
+  );
+  if (!leave) return; // already finalized or being finalized elsewhere
 
   const employee = await EmployeeModel.findById(leave.employeeId);
   if (!employee) return logger.warn(`Leave approval listener: employee ${leave.employeeId} not found`);
@@ -45,13 +53,17 @@ async function finalizeApproval({ source_ref, actor_id }) {
     }).catch(() => {});
   }
 
-  // Pre-fill attendance for the approved window.
+  // Pre-fill attendance for the approved window — department-aware (G7).
   try {
+    const empForDept = await EmployeeModel.findById(leave.employeeId).select("department").lean();
+    const dayMap = await CalendarService.checkDayStatusRange(leave.fromDate, leave.toDate, empForDept?.department || null);
+
     const bulk = [];
     let cursor = new Date(leave.fromDate);
     const end  = new Date(leave.toDate);
     while (cursor <= end) {
-      const dayStatus = await CalendarService.checkDayStatus(cursor);
+      const key = cursor.toISOString().split("T")[0];
+      const dayStatus = dayMap.get(key) || { isWorkingDay: true };
       if (dayStatus.isWorkingDay) {
         bulk.push({
           updateOne: {
@@ -90,9 +102,12 @@ async function finalizeApproval({ source_ref, actor_id }) {
 }
 
 async function finalizeRejection({ source_ref, actor_id, comment }) {
-  const leave = await LeaveRequestModel.findById(source_ref);
+  const leave = await LeaveRequestModel.findOneAndUpdate(
+    { _id: source_ref, status: { $nin: ["Rejected", "Cancelled", "HR Approved", "Processing"] } },
+    { $set: { status: "Processing" } },
+    { new: true },
+  );
   if (!leave) return;
-  if (["Rejected", "Cancelled", "HR Approved"].includes(leave.status)) return;
 
   leave.status          = "Rejected";
   leave.rejectionReason = comment || "Rejected via approval engine";

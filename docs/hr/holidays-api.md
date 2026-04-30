@@ -1,113 +1,173 @@
-# Holiday Calendar API
+# Holiday Calendar
 
-Base path: `/calendar`
+Base path: `/calendar` — HR-managed list of public, regional, and weekend holidays. Read by every HR module to decide "is today a working day?".
 
-Read endpoints are public. Write endpoints require JWT + `hr.holidays.*` permission.
+See [README.md](README.md) for shared conventions.
 
 ---
 
-## Endpoints
+## 1. Data model
 
-### GET `/calendar/list`
-All holidays for a year (full objects).
-
-**Query:** `?year=2026` (defaults to current year)
-
-**Response:**
-```json
+```jsonc
+// One document per UTC-midnight date — date is unique
 {
-  "status": true,
-  "data": [
-    { "_id": "...", "date": "2026-01-26T00:00:00.000Z", "name": "Republic Day", "type": "National" },
-    { "_id": "...", "date": "2026-01-01T00:00:00.000Z", "name": "New Year", "type": "National" }
-  ]
+  date,                          // UTC midnight
+  name,                          // "Republic Day"
+  type: "National" | "Regional" | "Optional" | "Weekend",
+  description,                   // "Sunday", "2nd/4th Saturday", or free text
+  applicableDepartments: [String]   // empty = applies to everyone; otherwise scoped
 }
 ```
 
----
-
-### GET `/calendar/listall`
-Slim list (id + date + name only) — use for dropdowns / calendar widgets.
-
-**Query:** `?year=2026`
+The `applicableDepartments` array, when non-empty, restricts the holiday to those departments. `CalendarService.checkDayStatus(date, employeeDepartment)` honours this filter — employees outside the listed departments still work that day.
 
 ---
+
+## 2. Endpoint catalog
+
+### Public reads
+
+| Method | Path | Use |
+|---|---|---|
+| GET | `/calendar/list?year=2026` | full holiday list for the year |
+| GET | `/calendar/listall?year=2026` | thin variant — only `{ _id, date, name }` |
+
+### HR (`hr.attendance.*`)
+
+| Method | Path | Permission |
+|---|---|---|
+| POST | `/calendar/add` | `create` |
+| PUT | `/calendar/update/:id` | `edit` |
+| DELETE | `/calendar/delete/:id` | `delete` |
+| POST | `/calendar/uploadcsv` | `create` (multipart `file`) |
+
+---
+
+## 3. Detailed specs
+
+### GET `/calendar/list?year=2026`
+
+```jsonc
+{ "status": true, "data": [
+  { "_id", "date":"2026-01-01T00:00:00Z", "name":"New Year", "type":"National",
+    "description":"...", "applicableDepartments":[], ... },
+  ...
+] }
+```
+
+Sorted ascending by date.
+
+UI: feeds the year picker on the Calendar page and the date-picker on the Apply-Leave form. Frontend caches per-year on first load.
+
+### GET `/calendar/listall?year=2026`
+
+Thin projection. Use this for date-picker grey-out logic when you don't need full details.
 
 ### POST `/calendar/add`
-Add a single holiday. Permission: `hr.holidays.create`
 
-**Request body:**
-```json
+```jsonc
 {
   "date": "2026-08-15",
   "name": "Independence Day",
   "type": "National",
-  "description": "National public holiday"
+  "description": "Govt holiday"
 }
+// 201 — emits a "Holiday Added" notification to all employees
+// 409 — date already taken
 ```
 
-`type` enum: `National` | `Regional` | `Optional` | `Weekend`
-
-**Response `201`:**
-```json
-{ "status": true, "message": "Holiday added to calendar successfully", "data": { ... } }
-```
-
----
+UI: HR Calendar admin → "Add holiday" modal. Year-picker, date-picker, name + type radio + optional description.
 
 ### PUT `/calendar/update/:id`
-Update an existing holiday. Permission: `hr.holidays.edit`
 
-**Request body** (any subset of fields):
-```json
-{ "name": "Corrected Name", "type": "Regional" }
-```
-
----
+Partial update. Same fields as `/add`. `409` if you change the date and another row already exists on that day.
 
 ### DELETE `/calendar/delete/:id`
-Remove a holiday. Permission: `hr.holidays.delete`
 
----
+Hard delete (no audit/soft delete on holidays). UI should confirm.
 
 ### POST `/calendar/uploadcsv`
-Bulk-import holidays from a CSV or XLSX file. Permission: `hr.holidays.create`
 
-**Form-data:** `file` — `.csv` or `.xlsx`
-
-**CSV format:**
 ```
+multipart/form-data
+field: file (CSV with columns DATE, NAME, TYPE, DESCRIPTION — case-insensitive)
+```
+
+The importer:
+1. Inserts/updates one row per CSV line.
+2. **Auto-fills** every Sunday and every 2nd/4th Saturday for each year that appears in the CSV with `type=Weekend` rows so the holiday calendar is "complete" without HR having to type 52 Sundays.
+3. Reports `{ totalProcessed, successCount, failedCount, errors }`.
+
+UI: HR Calendar admin → "Import CSV". Drag-and-drop area, sample file download link, after-upload result panel showing the counts + any errors with line numbers.
+
+CSV format:
+
+```csv
 DATE,NAME,TYPE,DESCRIPTION
 2026-01-26,Republic Day,National,
 2026-08-15,Independence Day,National,
-```
-
-- Dates matching Sunday or 2nd/4th Saturday are automatically overridden as `Weekly Off / Weekend`.
-- All missing Sundays and 2nd/4th Saturdays for the detected year(s) are auto-filled.
-
-**Response:**
-```json
-{
-  "status": true,
-  "data": {
-    "totalProcessed": 312,
-    "successCount": 312,
-    "failedCount": 0,
-    "errors": []
-  }
-}
+2026-10-02,Gandhi Jayanti,National,
+2026-04-09,Tamil New Year,Regional,Tamil Nadu
 ```
 
 ---
 
-## Working Day Logic
+## 4. UI design ideas
 
-The system treats the following as **non-working days**:
-1. **Sunday** — always off
-2. **2nd and 4th Saturday** — off (standard construction industry rule)
-3. **Any date in the Holiday collection** — named holiday
+### HR Calendar page
 
-This logic is used by:
-- Leave application (to skip non-working days in totalDays calculation)
-- Attendance punch-in (to detect Holiday Work and award Comp-Off)
-- Daily absenteeism cron (skips non-working days)
+```
+┌──────────────────────────────────────────────────┐
+│  Holidays — 2026             [Year: 2026 v]      │
+│  [+ Add holiday] [Import CSV] [Export]           │
+├──────────────────────────────────────────────────┤
+│  Jan                                             │
+│   01  New Year             National              │
+│   26  Republic Day         National              │
+│  Feb                                             │
+│   13  Maha Shivratri       National              │
+│   ...                                            │
+│  Apr                                             │
+│   09  Tamil New Year       Regional   [TN]       │
+│  ...                                             │
+└──────────────────────────────────────────────────┘
+```
+
+- Group by month accordion. Filter pills: National / Regional / Optional / Weekend.
+- Row actions: Edit, Delete.
+- Department-scoped holidays show a small chip with the department name.
+- Toggle to hide weekend (auto-filled) rows so HR sees only the named holidays they entered.
+
+### Year-at-a-glance widget
+
+For dashboards: a 12-row × 31-column grid where each cell is a tiny square colored by holiday type. Tooltip shows the holiday name on hover. Useful for spotting clusters and gaps.
+
+### Apply-Leave form integration
+
+When the user opens the leave form:
+
+1. Fetch `/calendar/list?year=<year of fromDate>` (cache per year).
+2. Fetch `/weeklyoff/preview?department=<emp.department>&fromdate=<start>&todate=<end>`.
+3. Merge both into a `Set` of "non-working" date strings; pass to the date-picker so those days render greyed out (and don't count toward `totalDays`).
+
+### Quick-add for HR
+
+A keyboard-friendly modal: type the date in `YYYY-MM-DD`, tab to name, tab to type, Enter to save. Sticky "Save & add another" button for sprees.
+
+---
+
+## 5. Integration notes / gotchas
+
+- The CSV importer auto-creates weekly weekend rows (Sunday + 2nd/4th Sat). If the same dates appear in the CSV, the CSV value wins (it overrides "Weekly Off" with whatever name the CSV gave).
+- `applicableDepartments` is **opt-in** — empty array = global holiday. To target a department, the array must contain that department's exact `Employee.department` string. Recommend a multi-select dropdown driven by `/department/list` so values stay consistent.
+- The Holiday model is **department-scoped via string match**. The Department directory exists separately for HOD lookups; the link between them is the string `name`.
+- Holidays don't soft-delete — be careful with the "Delete" confirmation. Deleted holidays disappear from `checkDayStatus` immediately, which may flip future absentee-cron output.
+- The `type:"Weekend"` rows seeded by the CSV importer are interchangeable with the runtime decisions made by `WeeklyOffPolicy.evaluate` — backends honour both. Keeping them in the holiday collection is purely so the calendar UI can render them as cells; the per-day decision relies on whichever returns "non-working" first.
+
+---
+
+## 6. Cross-references
+
+- `checkDayStatus(date, department)` is called from punch, leave apply, leave attendance pre-fill, and daily absenteeism cron — see those modules for how each consumes the calendar.
+- Per-department weekly-off rules — see [weekly-off-policy.md](weekly-off-policy.md).
+- Department directory — see [department.md](department.md).

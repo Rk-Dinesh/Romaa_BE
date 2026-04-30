@@ -1,5 +1,6 @@
 import HolidayModel from "./holiday.model.js";
 import NotificationService from "../../notifications/notification.service.js";
+import WeeklyOffPolicyService from "../weeklyOffPolicy/weeklyOffPolicy.service.js";
 
 class CalendarService {
   
@@ -61,29 +62,70 @@ class CalendarService {
 
   // --- 3. CORE CHECK: IS TODAY A WORKING DAY? ---
   // Used by Cron Jobs & Attendance Logic
-  static async checkDayStatus(dateInput) {
+  // department (optional) — if provided:
+  //   - the per-department WeeklyOffPolicy is consulted (falls back to
+  //     "DEFAULT" then to legacy hardcoded Sun + 2nd/4th Sat)
+  //   - named holidays scoped via Holiday.applicableDepartments are filtered
+  static async checkDayStatus(dateInput, department = null) {
     const targetDate = new Date(dateInput);
     targetDate.setUTCHours(0, 0, 0, 0);
 
-    const dayOfWeek = targetDate.getDay(); // 0=Sun, 6=Sat
-
-    // A. Sunday → always off
-    if (dayOfWeek === 0) {
-      return { isWorkingDay: false, reason: "Weekly Off (Sunday)" };
-    }
-
-    // B. 2nd / 4th Saturday → off
-    if (CalendarService.isSecondOrFourthSaturday(targetDate)) {
-      return { isWorkingDay: false, reason: "Weekly Off (2nd/4th Saturday)" };
+    // A/B. Weekly-off rules — HR-controlled per department.
+    const policy = await WeeklyOffPolicyService.resolveForDepartment(department);
+    const verdict = WeeklyOffPolicyService.evaluate(targetDate, policy);
+    if (verdict.isOff) {
+      return { isWorkingDay: false, reason: verdict.reason };
     }
 
     // C. Named holiday in DB
     const holiday = await HolidayModel.findOne({ date: targetDate });
     if (holiday) {
+      const scoped = holiday.applicableDepartments && holiday.applicableDepartments.length > 0;
+      if (scoped && department && !holiday.applicableDepartments.includes(department)) {
+        // Holiday declared for other departments — this employee still works.
+        return { isWorkingDay: true, reason: "Regular Working Day" };
+      }
       return { isWorkingDay: false, reason: holiday.name };
     }
 
     return { isWorkingDay: true, reason: "Regular Working Day" };
+  }
+
+  // Batch variant for callers that need to check a date range without
+  // running an N+1 query (e.g. LeaveService.applyLeave). Returns a Map
+  // of `YYYY-MM-DD` → { isWorkingDay, reason }.
+  // Resolves the WeeklyOffPolicy ONCE for the whole range.
+  static async checkDayStatusRange(fromDate, toDate, department = null) {
+    const start = new Date(fromDate); start.setUTCHours(0, 0, 0, 0);
+    const end   = new Date(toDate);   end.setUTCHours(0, 0, 0, 0);
+
+    // Single DB call for holidays
+    const holidays = await HolidayModel.find({
+      date: { $gte: start, $lte: end },
+    }).lean();
+    const holidayMap = new Map();
+    for (const h of holidays) {
+      const scoped = h.applicableDepartments && h.applicableDepartments.length > 0;
+      if (scoped && department && !h.applicableDepartments.includes(department)) continue;
+      holidayMap.set(new Date(h.date).toISOString().split("T")[0], h);
+    }
+
+    // Single resolution of the weekly-off policy
+    const policy = await WeeklyOffPolicyService.resolveForDepartment(department);
+
+    const result = new Map();
+    for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
+      const key = d.toISOString().split("T")[0];
+      const verdict = WeeklyOffPolicyService.evaluate(d, policy);
+      if (verdict.isOff) {
+        result.set(key, { isWorkingDay: false, reason: verdict.reason });
+      } else if (holidayMap.has(key)) {
+        result.set(key, { isWorkingDay: false, reason: holidayMap.get(key).name });
+      } else {
+        result.set(key, { isWorkingDay: true, reason: "Regular Working Day" });
+      }
+    }
+    return result;
   }
 
   // --- 4a. DELETE HOLIDAY ---

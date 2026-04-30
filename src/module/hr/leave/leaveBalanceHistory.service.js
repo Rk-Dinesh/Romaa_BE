@@ -45,6 +45,69 @@ class LeaveBalanceHistoryService {
     });
   }
 
+  // --- Convenience: log monthly/quarterly accrual ---
+  static async logAccrual({ employeeId, leaveType, amount, balanceBefore, performedBy, reason }) {
+    return LeaveBalanceHistoryService.log({
+      employeeId, leaveType,
+      changeType: "Accrual",
+      amount,
+      balanceBefore,
+      balanceAfter: balanceBefore + amount,
+      reason: reason || "Periodic accrual",
+      performedBy: performedBy || null,
+    });
+  }
+
+  // --- Convenience: log pro-rated grant on hire ---
+  static async logProRata({ employeeId, leaveType, amount, balanceBefore, performedBy, reason }) {
+    return LeaveBalanceHistoryService.log({
+      employeeId, leaveType,
+      changeType: "ProRata",
+      amount,
+      balanceBefore,
+      balanceAfter: balanceBefore + amount,
+      reason: reason || "Pro-rated entitlement on hire",
+      performedBy: performedBy || null,
+    });
+  }
+
+  // --- Convenience: log a life-event grant ---
+  static async logEventGrant({ employeeId, leaveType, amount, balanceBefore, performedBy, reason }) {
+    return LeaveBalanceHistoryService.log({
+      employeeId, leaveType,
+      changeType: "EventGrant",
+      amount,
+      balanceBefore,
+      balanceAfter: balanceBefore + amount,
+      reason: reason || "Life-event grant",
+      performedBy: performedBy || null,
+    });
+  }
+
+  // --- Convenience: log encashment debit ---
+  static async logEncashed({ employeeId, leaveType, amount, balanceBefore, performedBy, reason }) {
+    return LeaveBalanceHistoryService.log({
+      employeeId, leaveType,
+      changeType: "Encashed",
+      amount,
+      balanceBefore,
+      balanceAfter: balanceBefore - amount,
+      reason: reason || "Excess balance encashed",
+      performedBy: performedBy || null,
+    });
+  }
+
+  // --- Sum YTD accruals — used by monthly cron to enforce annual cap ---
+  static async sumAccrualYTD(employeeId, leaveType, year = new Date().getFullYear()) {
+    const start = new Date(Date.UTC(year, 0, 1));
+    const end   = new Date(Date.UTC(year, 11, 31, 23, 59, 59));
+    const out = await LeaveBalanceHistoryModel.aggregate([
+      { $match: { employeeId, leaveType, changeType: "Accrual", createdAt: { $gte: start, $lte: end } } },
+      { $group: { _id: null, total: { $sum: "$amount" } } },
+    ]);
+    return out[0]?.total || 0;
+  }
+
   // --- Get history for an employee (paginated, optional leaveType filter) ---
   static async getHistory(employeeId, { leaveType, changeType, page = 1, limit = 30 } = {}) {
     const query = { employeeId };

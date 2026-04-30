@@ -123,6 +123,69 @@ export const getRegularizationList = async (req, res) => {
   }
 };
 
+export const getTodaySummary = async (_req, res) => {
+  try {
+    const data = await UserAttendanceService.getTodaySummary();
+    res.status(200).json({ status: true, data });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+};
+
+export const getRegularizationById = async (req, res) => {
+  try {
+    const data = await UserAttendanceService.getRegularizationById(req.params.id);
+    res.status(200).json({ status: true, data });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ status: false, message: err.message });
+  }
+};
+
+export const getLateReport = async (req, res) => {
+  try {
+    const result = await UserAttendanceService.getLateReport(req.query);
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
+    });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+};
+
+export const getAbsenteeReport = async (req, res) => {
+  try {
+    const result = await UserAttendanceService.getAbsenteeReport(req.query);
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
+    });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+};
+
+export const getOvertimeReport = async (req, res) => {
+  try {
+    const result = await UserAttendanceService.getOvertimeReport(req.query);
+    res.status(200).json({
+      status: true,
+      currentPage: result.page,
+      totalPages: Math.ceil(result.total / result.limit),
+      totalCount: result.total,
+      data: result.data,
+    });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+};
+
 export const getAttendanceByDateAndEmployeeId = async (req, res) => {
   try {
     const { date, employeeId } = req.query;

@@ -89,6 +89,34 @@ export const updateTax = async (req, res) => {
   }
 };
 
+export const getPayslip = async (req, res) => {
+  try {
+    // G1: ownership / permission gate — payslip exposes bank account, IFSC,
+    // PAN and UAN. Caller must own the record OR have hr.payroll.read.
+    const RoleModel = (await import("../../role/role.model.js")).default;
+    const { PayrollModel } = await import("./payroll.model.js");
+    const owner = await PayrollModel.findById(req.params.id).select("employeeId").lean();
+    if (!owner) return res.status(404).json({ status: false, message: "Payroll record not found" });
+
+    const isOwner = String(owner.employeeId) === String(req.user._id);
+    if (!isOwner) {
+      let allowed = false;
+      if (req.user?.role) {
+        const role = await RoleModel.findById(req.user.role).lean();
+        allowed = !!role?.permissions?.hr?.payroll?.read;
+      }
+      if (!allowed) {
+        return res.status(403).json({ status: false, message: "Not authorized to view this payslip" });
+      }
+    }
+
+    const data = await PayrollService.getPayslip(req.params.id);
+    res.status(200).json({ status: true, data });
+  } catch (err) {
+    res.status(err.statusCode || 500).json({ status: false, message: err.message });
+  }
+};
+
 export const exportBankExcel = async (req, res) => {
   try {
     const { month, year } = req.query;

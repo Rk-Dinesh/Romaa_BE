@@ -1,5 +1,20 @@
 import { Router } from "express";
-import { performPunch, uploadDocument, applyRegularization, actionRegularization, getMyAttendanceStats, getDailyReport, getMonthlyReport, getAttendanceByDateAndEmployeeId, getRegularizationList } from "./userAttendance.controller.js";
+import {
+  performPunch,
+  uploadDocument,
+  applyRegularization,
+  actionRegularization,
+  getMyAttendanceStats,
+  getDailyReport,
+  getMonthlyReport,
+  getAttendanceByDateAndEmployeeId,
+  getRegularizationList,
+  getTodaySummary,
+  getRegularizationById,
+  getLateReport,
+  getAbsenteeReport,
+  getOvertimeReport,
+} from "./userAttendance.controller.js";
 import multer from "multer";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 
@@ -21,5 +36,12 @@ AttendanceRoute.post("/action-regularization",  verifyJWT, verifyPermission("hr"
 AttendanceRoute.get("/get-daily-report",         verifyJWT, verifyPermission("hr", "attendance", "read"), getDailyReport);
 AttendanceRoute.get("/get-monthly-report",       verifyJWT, verifyPermission("hr", "attendance", "read"), getMonthlyReport);
 AttendanceRoute.get("/regularization-list",      verifyJWT, verifyPermission("hr", "attendance", "read"), getRegularizationList);
+AttendanceRoute.get("/regularization/:id",       verifyJWT, verifyPermission("hr", "attendance", "read"), getRegularizationById);
+
+// HR dashboard tiles + analytical reports
+AttendanceRoute.get("/today-summary",            verifyJWT, verifyPermission("hr", "attendance", "read"), getTodaySummary);
+AttendanceRoute.get("/late-report",              verifyJWT, verifyPermission("hr", "attendance", "read"), getLateReport);
+AttendanceRoute.get("/absentee-report",          verifyJWT, verifyPermission("hr", "attendance", "read"), getAbsenteeReport);
+AttendanceRoute.get("/overtime-report",          verifyJWT, verifyPermission("hr", "attendance", "read"), getOvertimeReport);
 
 export default AttendanceRoute;

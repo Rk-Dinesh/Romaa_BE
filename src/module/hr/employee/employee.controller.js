@@ -360,6 +360,68 @@ export const forgotPassword = async (req, res) => {
   }
 };
 
+// Self-service profile (employee edits a whitelist of own fields)
+export const updateMyProfile = async (req, res) => {
+  try {
+    const data = await EmployeeService.updateMyProfile(req.user._id, req.body);
+    res.status(200).json({ status: true, message: "Profile updated", data });
+  } catch (error) {
+    res.status(400).json({ status: false, message: error.message });
+  }
+};
+
+// Manager — list direct reports with today's attendance snapshot
+export const getMyTeam = async (req, res) => {
+  try {
+    const data = await EmployeeService.getMyTeam(req.user._id);
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
+// A3 — set out-of-office delegation
+export const setMyDelegation = async (req, res) => {
+  try {
+    const data = await EmployeeService.setMyDelegation(req.user._id, req.body);
+    res.status(200).json({ status: true, message: "Delegation updated", data });
+  } catch (err) {
+    res.status(400).json({ status: false, message: err.message });
+  }
+};
+
+export const clearMyDelegation = async (req, res) => {
+  try {
+    const data = await EmployeeService.clearMyDelegation(req.user._id);
+    res.status(200).json({ status: true, message: "Delegation cleared", data });
+  } catch (err) {
+    res.status(500).json({ status: false, message: err.message });
+  }
+};
+
+// Employee/HR — comp-off ledger
+// G3: cross-user reads (?employeeId=) require hr.leave.read.
+export const getCompOffBalance = async (req, res) => {
+  try {
+    const empId = req.query.employeeId || req.user._id;
+    if (String(empId) !== String(req.user._id)) {
+      const RoleModel = (await import("../../role/role.model.js")).default;
+      let allowed = false;
+      if (req.user?.role) {
+        const role = await RoleModel.findById(req.user.role).lean();
+        allowed = !!role?.permissions?.hr?.leave?.read;
+      }
+      if (!allowed) {
+        return res.status(403).json({ status: false, message: "Not authorized to view another employee's comp-off balance" });
+      }
+    }
+    const data = await EmployeeService.getCompOffBalance(empId);
+    res.status(200).json({ status: true, data });
+  } catch (error) {
+    res.status(500).json({ status: false, message: error.message });
+  }
+};
+
 export const updateOnboardingStatus = async (req, res) => {
   try {
     const updated = await EmployeeModel.findByIdAndUpdate(

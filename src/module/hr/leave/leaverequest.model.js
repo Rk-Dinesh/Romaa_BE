@@ -61,9 +61,15 @@ const leaveRequestSchema = new mongoose.Schema(
     },
 
     // --- Workflow Status ---
+    // "Processing" is a transient state held while an approver/finalizer
+    // mutates balance + attendance — it stops a parallel finalizer from
+    // double-debiting. Rolled back to the previous state on error.
+    // "HOD Approved" is the optional middle stage between Manager Approved
+    // and HR Approved — only entered when the active LeavePolicyRule sets
+    // requiresHODApproval: true AND the employee's Department has a headId.
     status: {
       type: String,
-      enum: ["Pending", "Manager Approved", "HR Approved", "Rejected", "Cancelled", "Revoked"],
+      enum: ["Pending", "Processing", "Manager Approved", "HOD Approved", "HR Approved", "Rejected", "Cancelled", "Revoked"],
       default: "Pending",
     },
 
@@ -71,11 +77,11 @@ const leaveRequestSchema = new mongoose.Schema(
     // Tracks the lifecycle: Applied -> Manager OK -> HR OK
     workflowLogs: [
       {
-        action: { type: String, enum: ["Applied", "Approved", "Rejected", "Cancelled"] },
+        action: { type: String, enum: ["Applied", "Approved", "Rejected", "Cancelled", "Escalated", "Reminded"] },
         actionBy: { type: Schema.Types.ObjectId, ref: "Employee" }, // User ID or Manager ID
         actionDate: { type: Date, default: Date.now },
         remarks: { type: String }, // e.g., "Approved, but ensure site handover."
-        role: { type: String } // "Employee", "Manager", "HR"
+        role: { type: String } // "Employee", "Manager", "HR", "System"
       }
     ],
 

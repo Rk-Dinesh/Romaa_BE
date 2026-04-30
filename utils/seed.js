@@ -7,6 +7,9 @@ import FinanceSettingsModel from "../src/module/finance/settings/financesettings
 import ApprovalRuleModel, { APPROVER_STRATEGY } from "../src/module/approval/approvalrule.model.js";
 import AssetCategoryService from "../src/module/master/assetcategory/assetcategory.service.js";
 import IdcodeServices from "../src/module/idcode/idcode.service.js";
+import DepartmentModel from "../src/module/hr/department/department.model.js";
+import WeeklyOffPolicyModel from "../src/module/hr/weeklyOffPolicy/weeklyOffPolicy.model.js";
+import LeavePolicyModel from "../src/module/hr/leavePolicy/leavePolicy.model.js";
 
 // --- 1. Smart Permission Generator ---
 // Derives the "all-true" permission tree directly from RoleModel.schema.
@@ -128,6 +131,15 @@ export const seedDatabase = async () => {
 
     // --- H. Register ID code prefixes for new asset modules (idempotent) ---
     await seedAssetIdCodes();
+
+    // --- I. HR — Departments (idempotent) ---
+    await seedDepartments();
+
+    // --- J. HR — Default Weekly-Off Policy (idempotent) ---
+    await seedWeeklyOffPolicy();
+
+    // --- K. HR — Default Leave Policy (idempotent) ---
+    await seedLeavePolicy();
 
   } catch (error) {
     console.error("❌ Seeding Failed:", error.message);
@@ -375,5 +387,193 @@ const seedCurrencies = async () => {
     console.log(`🚀 Seeded ${DEFAULT_CURRENCIES.length} currencies (INR as base).`);
   } catch (error) {
     console.error("❌ Currency seeding failed:", error.message);
+  }
+};
+
+// ── HR — Departments ─────────────────────────────────────────────────────────
+// Construction-and-projects company defaults. headId is left null — HR fills
+// in HOD via /department/upsert once employees are tagged. Idempotent.
+const DEFAULT_DEPARTMENTS = [
+  { name: "Engineering",        code: "ENG", description: "Software + hardware engineering teams" },
+  { name: "Site Operations",    code: "OPS", description: "Field operations, construction sites" },
+  { name: "Finance",            code: "FIN", description: "Accounting, payroll, treasury" },
+  { name: "HR & Admin",         code: "HRA", description: "Human resources and administration" },
+  { name: "Procurement",        code: "PRC", description: "Purchase, vendor management" },
+  { name: "Project Management", code: "PM",  description: "Project planning and delivery" },
+  { name: "Quality Control",    code: "QC",  description: "Quality assurance and audits" },
+  { name: "Safety",             code: "EHS", description: "Environment, health, and safety" },
+];
+
+const seedDepartments = async () => {
+  try {
+    let created = 0;
+    for (const d of DEFAULT_DEPARTMENTS) {
+      const existing = await DepartmentModel.findOne({ name: d.name });
+      if (existing) continue;
+      await DepartmentModel.create({ ...d, headId: null, isActive: true });
+      created += 1;
+    }
+    console.log(`✅ HR Departments seeded (${created} new, ${DEFAULT_DEPARTMENTS.length - created} existing).`);
+  } catch (error) {
+    console.error("❌ Department seed failed:", error.message);
+  }
+};
+
+// ── HR — Default Weekly-Off Policy ───────────────────────────────────────────
+// Mirrors the legacy hardcoded fallback (Sunday + 2nd/4th Saturday off) so
+// behaviour is explicit and editable from /weeklyoff/upsert. Per-department
+// overrides are HR's job after this seeds. Idempotent.
+const seedWeeklyOffPolicy = async () => {
+  try {
+    const existing = await WeeklyOffPolicyModel.findOne({ department: "DEFAULT" });
+    if (existing) {
+      console.log("✅ Weekly-off policy (DEFAULT) already exists.");
+      return;
+    }
+    await WeeklyOffPolicyModel.create({
+      department: "DEFAULT",
+      weeklyOffs: [
+        { dow: 0, label: "Sunday" },
+        { dow: 6, weeks: [2, 4], label: "2nd & 4th Saturday" },
+      ],
+      isActive: true,
+      notes:
+        "Default 6-day work week — Sunday + 2nd/4th Saturday off. " +
+        "HR can override per department via /weeklyoff/upsert.",
+    });
+    console.log("🚀 Seeded DEFAULT weekly-off policy (Sun + 2nd/4th Sat).");
+  } catch (error) {
+    console.error("❌ Weekly-off policy seed failed:", error.message);
+  }
+};
+
+// ── HR — Default Leave Policy ────────────────────────────────────────────────
+// Mirrors LeavePolicyService.FALLBACK_RULES so the active policy at the
+// "DEFAULT" scope produces the same numbers the hardcoded fallback would —
+// HR can then clone this row per department via /leavepolicy/upsert and
+// tweak refill modes, accrual, blackouts, HOD requirements, etc.
+//
+// Idempotent: only inserts when no active DEFAULT policy exists. If you
+// need to refresh the seeded rules, deactivate the row in the UI first.
+const buildDefaultLeavePolicy = () => ({
+  policyName: "Standard",
+  scope: "DEFAULT",
+  effectiveFrom: new Date(`${new Date().getFullYear()}-01-01T00:00:00Z`),
+  effectiveTo: null,
+  isActive: true,
+  notes:
+    "Baseline leave policy mirroring FALLBACK_RULES. " +
+    "Clone this row per department via /leavepolicy/upsert and tweak rules as needed.",
+  rules: [
+    {
+      leaveType: "CL",
+      refillType: "ANNUAL_RESET",
+      annualEntitlement: 12,
+      carryForwardCap: 0,
+      encashable: false,
+      probationEligible: false,
+      proRataForNewJoiners: true,
+      maxConsecutiveDays: 3,
+      requiresManagerApproval: true,
+      requiresHRApproval: true,
+      autoApproveUnderDays: 1,
+    },
+    {
+      leaveType: "SL",
+      refillType: "ANNUAL_RESET",
+      annualEntitlement: 12,
+      carryForwardCap: 0,
+      encashable: false,
+      probationEligible: true,
+      proRataForNewJoiners: true,
+      docsRequiredAfterDays: 3,
+      requiresManagerApproval: true,
+      requiresHRApproval: true,
+    },
+    {
+      leaveType: "PL",
+      refillType: "MONTHLY_ACCRUAL",
+      annualEntitlement: 24,
+      accrualPerPeriod: 2,
+      carryForwardCap: 30,
+      encashable: true,
+      encashmentBasis: "BASIC",
+      probationEligible: false,
+      proRataForNewJoiners: true,
+      minNoticeDays: 7,
+      maxConsecutiveDays: 30,
+      requiresManagerApproval: true,
+      requiresHRApproval: true,
+      escalationAfterHours: 48,
+    },
+    {
+      leaveType: "Maternity",
+      refillType: "ANNUAL_RESET",
+      annualEntitlement: 84,
+      carryForwardCap: 0,
+      encashable: false,
+      proRataForNewJoiners: true,
+      requiresManagerApproval: false,
+      requiresHRApproval: true,
+    },
+    {
+      leaveType: "Paternity",
+      refillType: "ANNUAL_RESET",
+      annualEntitlement: 15,
+      carryForwardCap: 0,
+      encashable: false,
+      proRataForNewJoiners: true,
+      requiresManagerApproval: true,
+      requiresHRApproval: true,
+    },
+    {
+      leaveType: "Bereavement",
+      refillType: "ANNUAL_RESET",
+      annualEntitlement: 5,
+      carryForwardCap: 0,
+      encashable: false,
+      proRataForNewJoiners: true,
+      requiresManagerApproval: true,
+      requiresHRApproval: false,
+    },
+    {
+      leaveType: "CompOff",
+      refillType: "EARNED",
+      validityDays: 60,
+      requiresManagerApproval: true,
+      requiresHRApproval: false,
+    },
+    {
+      leaveType: "Permission",
+      refillType: "MONTHLY_RESET",
+      monthlyCap: 3,
+      requiresManagerApproval: true,
+      requiresHRApproval: false,
+      autoApproveUnderDays: 0,
+    },
+    {
+      leaveType: "LWP",
+      refillType: "MANUAL_ONLY",
+      requiresManagerApproval: true,
+      requiresHRApproval: true,
+    },
+  ],
+});
+
+const seedLeavePolicy = async () => {
+  try {
+    const existing = await LeavePolicyModel.findOne({ scope: "DEFAULT", isActive: true });
+    if (existing) {
+      console.log("✅ Leave policy (DEFAULT) already exists.");
+      return;
+    }
+    const policy = buildDefaultLeavePolicy();
+    await LeavePolicyModel.create({ ...policy, createdBy: null, updatedBy: null });
+    console.log(
+      `🚀 Seeded DEFAULT leave policy with ${policy.rules.length} rules ` +
+      `(CL, SL, PL, Maternity, Paternity, Bereavement, CompOff, Permission, LWP).`
+    );
+  } catch (error) {
+    console.error("❌ Leave policy seed failed:", error.message);
   }
 };

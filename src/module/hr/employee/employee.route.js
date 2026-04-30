@@ -18,7 +18,12 @@ import {
   resetPasswordWithOTP,
   mobileLogin,
   getAssignedEmployees,
-  updateOnboardingStatus
+  updateOnboardingStatus,
+  updateMyProfile,
+  getMyTeam,
+  getCompOffBalance,
+  setMyDelegation,
+  clearMyDelegation,
 } from "./employee.controller.js";
 import { verifyJWT, verifyPermission } from "../../../common/Auth.middlware.js";
 import { createRateLimiter } from "../../../common/rateLimiter.js";
@@ -37,6 +42,13 @@ employeeRoute.post("/forgot-password",        otpLimiter, forgotPassword);
 employeeRoute.post("/reset-password-with-otp", otpLimiter, resetPasswordWithOTP);
 employeeRoute.post("/reset-password", verifyJWT, resetPassword);
 employeeRoute.patch("/update-onboarding-status", verifyJWT, updateOnboardingStatus);
+
+// --- Employee self-service ---
+employeeRoute.put("/me/profile",        verifyJWT, updateMyProfile);
+employeeRoute.get("/me/team",           verifyJWT, getMyTeam);
+employeeRoute.get("/me/compoff-balance", verifyJWT, getCompOffBalance);
+employeeRoute.put("/me/delegation",      verifyJWT, setMyDelegation);
+employeeRoute.delete("/me/delegation",   verifyJWT, clearMyDelegation);
 
 // --- Employee CRUD (HR protected) ---
 employeeRoute.post("/register",  verifyJWT, verifyPermission("hr", "employee", "create"), createEmployee);

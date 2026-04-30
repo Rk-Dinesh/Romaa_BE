@@ -43,18 +43,27 @@ class AttendanceService {
       longitude,
       siteLatitude,
       siteLongitude,
+      accuracy,
+      isMock,                  // Android mock-location flag from the device
+      confidenceScore,         // Face-match confidence % from the mobile SDK
       address,
       photoUrl,
       attendanceType = "Office",
       shiftType = "General",
       deviceId,
       deviceModel,
+      deviceOS,
       ipAddress,
       geofenceId,
       geofenceSiteId,
       remarks,
       testDate, // Optional: For testing
     } = data;
+
+    // B11: Reject mock-GPS punches outright. Auditors care about this.
+    if (isMock === true) {
+      throw new AppError("Mock GPS detected. Punch rejected.", 403);
+    }
 
     // 1. Time Setup
     const now = testDate ? new Date(testDate) : new Date();
@@ -146,7 +155,9 @@ class AttendanceService {
     // ---------------------------------------------------------
     if (!attendance) {
       const rule = SHIFT_RULES[shiftType] || SHIFT_RULES["General"];
-      const dayStatus = await CalendarService.checkDayStatus(today);
+      // B12: department-aware holiday check
+      const employeeForHoliday = await EmployeeModel.findById(employeeId).select("department").lean();
+      const dayStatus = await CalendarService.checkDayStatus(today, employeeForHoliday?.department);
       const isHolidayWork = !dayStatus.isWorkingDay;
 
       let initialStatus = "Present";
@@ -311,11 +322,16 @@ class AttendanceService {
         lat: latitude,
         lng: longitude,
         address,
+        accuracy: typeof accuracy === "number" ? accuracy : undefined,
         distanceFromSite: distance,
-        isMock: false,
+        isMock: false, // checked-and-blocked above; kept false for audit
       },
-      device: { deviceId, model: deviceModel, ip: ipAddress },
-      verification: { method: verificationMethod, photoUrl },
+      device: { deviceId, model: deviceModel, os: deviceOS, ip: ipAddress },
+      verification: {
+        method: verificationMethod,
+        photoUrl,
+        confidenceScore: typeof confidenceScore === "number" ? confidenceScore : undefined,
+      },
       remarks: remarks,
     };
 
@@ -369,19 +385,55 @@ class AttendanceService {
 
     // ---------------------------------------------------------
     // 8. HOLIDAY COMP-OFF
+    // B1 fix: also push the credit into Employee.leaveBalance.compOff[] so it
+    // is actually consumable when the employee later applies a CompOff leave.
+    // Idempotent — keyed on the calendar date so re-saving the same day will
+    // not create duplicate credits.
     // ---------------------------------------------------------
     if (attendance.workType === "Holiday Work") {
-      if (attendance.netWorkHours >= 8) {
+      let creditAmount = 0;
+      if (attendance.netWorkHours >= 8) creditAmount = 1;
+      else if (attendance.netWorkHours >= 4) creditAmount = 0.5;
+
+      if (creditAmount > 0) {
         attendance.rewards.isCompOffEligible = true;
-        attendance.rewards.compOffCredit += 1;
+        // Recompute total from absolute hours (not +=) so re-saves stay consistent.
+        attendance.rewards.compOffCredit = creditAmount;
+        attendance.rewards.expiryDate = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000);
         attendance.rewards.approvalStatus = "Auto-Approved";
-      } else if (attendance.netWorkHours >= 4) {
-        attendance.rewards.isCompOffEligible = true;
-        attendance.rewards.compOffCredit += 0.5;
-        attendance.rewards.approvalStatus = "Auto-Approved";
+
+        const earnedDate  = new Date(today);
+        const expiryDate  = new Date(today.getTime() + 60 * 24 * 60 * 60 * 1000);
+        const reason      = `Holiday work on ${earnedDate.toISOString().split("T")[0]} (${creditAmount} day)`;
+
+        // Idempotency: only insert if no credit already exists for this earnedDate.
+        await EmployeeModel.updateOne(
+          {
+            _id: employeeId,
+            "leaveBalance.compOff.earnedDate": { $ne: earnedDate },
+          },
+          {
+            $push: {
+              "leaveBalance.compOff": { earnedDate, expiryDate, isUsed: false, reason },
+            },
+          },
+        );
+
+        // Notify the employee.
+        NotificationService.notify({
+          title: "Comp-Off credited",
+          message: `You earned ${creditAmount} Comp-Off for working on ${earnedDate.toLocaleDateString("en-GB")}. Valid until ${expiryDate.toLocaleDateString("en-GB")}.`,
+          audienceType: "user",
+          users: [employeeId],
+          category: "approval",
+          priority: "low",
+          module: "hr",
+          actionUrl: "/hr/leave",
+          actionLabel: "View Leave",
+        }).catch(() => {});
       } else {
         attendance.rewards.isCompOffEligible = false;
-        attendance.rewards.compOffCredit += 0;
+        attendance.rewards.compOffCredit = 0;
         attendance.rewards.approvalStatus = "Rejected";
       }
     }
@@ -505,10 +557,12 @@ class AttendanceService {
       status: "Pending",
       reasonCategory: category,
       userReason: reason,
+      // B3 fix: persist proposed times in dedicated fields so the approver
+      // can apply them deterministically.
+      proposedInTime:  category === "Missed Punch" ? correctedInTime  : undefined,
+      proposedOutTime: category === "Missed Punch" ? correctedOutTime : undefined,
       originalData: backup,
       correctedAt: new Date(),
-      // Store proposed times temporarily in remarks or a generic field if schema is strict
-      // Ideally schema should have: proposedInTime: Date, proposedOutTime: Date
     };
 
     // Specific Handling Logic (Stored in Reason for Manager Context)
@@ -589,60 +643,145 @@ class AttendanceService {
       }
 
       // =========================================================
-      // B. WORK ON LEAVE (Updated Logic)
+      // B. WORK ON LEAVE — B4 fix: refund a single day, never delete
+      //    the parent leave when it spans multiple days.
       // =========================================================
       else if (category === "Work on Leave") {
         attendance.status = "Present";
 
-        // 1. Find the specific Leave Request active on this date
         const leaveRequest = await LeaveRequestModel.findOne({
           employeeId: employeeId,
-          status: { $in: ["Manager Approved", "HR Approved"] }, // Only look for approved leaves
+          status: { $in: ["Manager Approved", "HR Approved"] },
           fromDate: { $lte: targetDate },
           toDate: { $gte: targetDate },
+          isCancelled: false,
         });
 
         if (leaveRequest) {
-          const typeToCredit = leaveRequest.leaveType; // e.g., "CL", "SL", "PL"
+          const typeToCredit = leaveRequest.leaveType;
+          const refundForDay =
+            leaveRequest.requestType?.includes("Half") || leaveRequest.totalDays === 0.5
+              ? 0.5
+              : 1;
 
-          // Calculate days to refund (Handle half-day requests correctly)
-          // If it spans multiple days, we only refund 1 day for this specific attendance regularization
-          // However, usually "Work on Leave" implies the whole request is void for this day.
-          // Safe bet: Default to 1 for Full Day, 0.5 for Half Day.
-          let creditAmount = 1;
-          if (
-            leaveRequest.requestType.includes("Half") ||
-            leaveRequest.totalDays === 0.5
-          ) {
-            creditAmount = 0.5;
+          // 1. Refund balance (only for balance-tracked types)
+          const BALANCE_TYPES = ["CL", "SL", "PL", "Maternity", "Paternity", "Bereavement"];
+          if (BALANCE_TYPES.includes(typeToCredit)) {
+            const empBefore = await EmployeeModel.findById(employeeId).select(`leaveBalance.${typeToCredit}`).lean();
+            const before    = empBefore?.leaveBalance?.[typeToCredit] ?? 0;
+
+            await EmployeeModel.findByIdAndUpdate(employeeId, {
+              $inc: { [`leaveBalance.${typeToCredit}`]: refundForDay },
+            });
+
+            // History row
+            const LeaveBalanceHistoryService = (await import("../leave/leaveBalanceHistory.service.js")).default;
+            await LeaveBalanceHistoryService.logCredit({
+              employeeId,
+              leaveType: typeToCredit,
+              amount: refundForDay,
+              balanceBefore: before,
+              leaveRequestId: leaveRequest._id,
+              performedBy: adminId,
+              reason: `Work-on-Leave regularized for ${targetDate.toISOString().split("T")[0]} — ${refundForDay} ${typeToCredit} refunded`,
+            }).catch(() => {});
           }
 
-          // 2. Increment the Leave Balance in Employee Model
-          // Assuming EmployeeModel has `leaveBalance` object: { CL: 10, SL: 5, ... }
-          const updateQuery = {};
-          updateQuery[`leaveBalance.${typeToCredit}`] = creditAmount;
+          // 2. Decide whether to cancel or keep the leave.
+          //    Use UTC midnight for comparison to avoid TZ drift.
+          const fromMid = new Date(leaveRequest.fromDate); fromMid.setUTCHours(0,0,0,0);
+          const toMid   = new Date(leaveRequest.toDate);   toMid.setUTCHours(0,0,0,0);
 
-          await EmployeeModel.findByIdAndUpdate(employeeId, {
-            $inc: updateQuery,
+          const isSingleDayLeave = fromMid.getTime() === toMid.getTime();
+
+          if (isSingleDayLeave) {
+            // Whole leave is void — cancel it (preserves the audit trail)
+            leaveRequest.status        = "Cancelled";
+            leaveRequest.isCancelled   = true;
+            leaveRequest.cancelledAt   = new Date();
+            leaveRequest.cancellationReason = "Worked on leave day — auto-cancelled via regularization";
+            leaveRequest.workflowLogs.push({
+              action: "Cancelled",
+              actionBy: adminId,
+              role: "System",
+              remarks: `Regularization approved on ${targetDate.toISOString().split("T")[0]}`,
+            });
+          } else if (targetDate.getTime() === fromMid.getTime()) {
+            // Worked on the first day → shrink window forward by one day
+            const newFrom = new Date(fromMid);
+            newFrom.setUTCDate(newFrom.getUTCDate() + 1);
+            leaveRequest.fromDate = newFrom;
+            leaveRequest.totalDays = Math.max(0, leaveRequest.totalDays - refundForDay);
+          } else if (targetDate.getTime() === toMid.getTime()) {
+            // Worked on the last day → shrink window backward by one day
+            const newTo = new Date(toMid);
+            newTo.setUTCDate(newTo.getUTCDate() - 1);
+            leaveRequest.toDate = newTo;
+            leaveRequest.totalDays = Math.max(0, leaveRequest.totalDays - refundForDay);
+          } else {
+            // Middle-of-range: keep the window, just decrement totalDays and
+            // log the worked date in nonWorkingDays so reporting is accurate.
+            // (We deliberately do NOT split into two leaves to preserve the
+            // single source-of-record semantics the rest of the app expects.)
+            leaveRequest.totalDays = Math.max(0, leaveRequest.totalDays - refundForDay);
+            leaveRequest.nonWorkingDays = leaveRequest.nonWorkingDays || [];
+            leaveRequest.nonWorkingDays.push({
+              date: new Date(targetDate),
+              reason: "Worked on leave (regularized)",
+            });
+          }
+
+          leaveRequest.workflowLogs.push({
+            action: "Approved",
+            actionBy: adminId,
+            role: "Regularization",
+            remarks: `Day ${targetDate.toISOString().split("T")[0]} reclaimed via Work-on-Leave regularization`,
           });
+          await leaveRequest.save();
 
-          // 3. Delete the Leave Request (Since they worked, the leave is void)
-          // Note: If a leave request spans 3 days (Mon-Wed) and they work on Tuesday,
-          // deleting the whole request might be wrong.
-          // Ideally, we split the leave, but for simplicity/standard use cases:
-          await LeaveRequestModel.findByIdAndDelete(leaveRequest._id);
-
-          attendance.remarks += ` | Worked on Leave (Request Deleted, ${creditAmount} ${typeToCredit} Re-credited)`;
+          attendance.remarks += ` | Worked on Leave (${refundForDay} ${typeToCredit} re-credited; leave window adjusted)`;
         } else {
-          attendance.remarks +=
-            " | Worked on Leave (No active leave found to refund)";
+          attendance.remarks += " | Worked on Leave (no active leave found to refund)";
         }
       }
 
-      // C. MISSED PUNCH (Standard Logic)
+      // C. MISSED PUNCH — B3 fix: actually apply the proposed in/out times
+      //    instead of hardcoding 9 hours.
       else if (category === "Missed Punch") {
         attendance.status = "Present";
-        attendance.netWorkHours = 9;
+
+        const proposedIn  = attendance.regularization.proposedInTime;
+        const proposedOut = attendance.regularization.proposedOutTime;
+        const dayBase = new Date(attendance.date);
+
+        if (proposedIn && proposedOut) {
+          const inDate  = AttendanceService.getTimeOnDate(dayBase, proposedIn);
+          const outDate = AttendanceService.getTimeOnDate(dayBase, proposedOut);
+
+          if (inDate && outDate && outDate > inDate) {
+            attendance.firstIn      = attendance.firstIn || inDate;
+            attendance.istFirstIn   = AttendanceService.getISTWallTime(inDate);
+            attendance.lastOut      = outDate;
+            attendance.istLastOut   = AttendanceService.getISTWallTime(outDate);
+            attendance.totalDuration = Math.round((outDate - inDate) / 60000);
+            attendance.netWorkHours  = parseFloat(((outDate - inDate) / 3_600_000).toFixed(2));
+
+            // Append a synthetic timeline entry so reports show the correction
+            attendance.timeline.push({
+              punchType: "Out",
+              timestamp: outDate,
+              istTimestamp: AttendanceService.getISTWallTime(outDate),
+              location: { lat: 0, lng: 0, address: "Manual Regularization" },
+              verification: { method: "Manual" },
+              remarks: `Regularized punch (in ${proposedIn}, out ${proposedOut})`,
+            });
+          } else {
+            // Bad data fallback — use a conservative full-day
+            attendance.netWorkHours = 9;
+          }
+        } else {
+          attendance.netWorkHours = 9;
+        }
         attendance.remarks += " | Punch Regularized";
       }
 
@@ -802,12 +941,21 @@ static async getEmployeeMonthlyStats(employeeId, month, year) {
   }
 
   // GET REGULARIZATION LIST — paginated list of all regularization requests
-  static async getRegularizationList({ page, limit, search, fromdate, todate } = {}) {
+  // B13 fix: normalize boundaries to UTC midnight / end-of-day so records on
+  // the boundary date are not silently excluded.
+  static async getRegularizationList({ page, limit, search, fromdate, todate, status } = {}) {
     const query = { "regularization.isApplied": true };
+    if (status) query["regularization.status"] = status;
     if (fromdate || todate) {
       query.date = {};
-      if (fromdate) query.date.$gte = new Date(fromdate);
-      if (todate)   query.date.$lte = new Date(todate);
+      if (fromdate) {
+        const fd = new Date(fromdate); fd.setUTCHours(0, 0, 0, 0);
+        query.date.$gte = fd;
+      }
+      if (todate) {
+        const td = new Date(todate); td.setUTCHours(23, 59, 59, 999);
+        query.date.$lte = td;
+      }
     }
 
     const pg   = Math.max(1, parseInt(page)  || 1);
@@ -1006,6 +1154,193 @@ static async getEmployeeMonthlyStats(employeeId, month, year) {
       totalPermissions,
       dailyLog,
     };
+  }
+
+  // ── HR DASHBOARD: Today's snapshot for the topbar / dashboard tiles ──
+  static async getTodaySummary() {
+    const today = new Date(); today.setUTCHours(0, 0, 0, 0);
+    const tomorrow = new Date(today); tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
+
+    const [headcount, todayDocs, pendingLeaves, pendingRegularizations] = await Promise.all([
+      EmployeeModel.countDocuments({ isDeleted: { $ne: true }, status: "Active" }),
+      UserAttendanceModel.find({ date: { $gte: today, $lt: tomorrow } })
+        .select("status flags permissionDurationMins").lean(),
+      // Lazy-load to avoid circular import
+      (await import("../leave/leaverequest.model.js")).default
+        .countDocuments({ status: { $in: ["Pending", "Manager Approved"] } }),
+      UserAttendanceModel.countDocuments({
+        "regularization.isApplied": true,
+        "regularization.status": "Pending",
+      }),
+    ]);
+
+    const counters = {
+      present:    todayDocs.filter((d) => d.status === "Present").length,
+      halfDay:    todayDocs.filter((d) => d.status === "Half-Day").length,
+      onLeave:    todayDocs.filter((d) => d.status === "On Leave").length,
+      absent:     todayDocs.filter((d) => d.status === "Absent").length,
+      holiday:    todayDocs.filter((d) => d.status === "Holiday").length,
+      late:       todayDocs.filter((d) => d.flags?.isLateEntry).length,
+      onPermission: todayDocs.filter((d) => d.permissionDurationMins > 0).length,
+    };
+
+    return {
+      headcount,
+      ...counters,
+      notPunchedYet: Math.max(0, headcount - todayDocs.length),
+      pendingLeaves,
+      pendingRegularizations,
+    };
+  }
+
+  // ── Detail of a single regularization request (for drilldown modal) ──
+  static async getRegularizationById(id) {
+    const doc = await UserAttendanceModel.findById(id)
+      .populate("employeeId", "name employeeId designation department photoUrl phone email")
+      .populate("regularization.correctedBy", "name employeeId")
+      .lean();
+    if (!doc || !doc.regularization?.isApplied) {
+      throw new AppError("Regularization request not found", 404);
+    }
+    return doc;
+  }
+
+  // ── Late-comers report — paginated leaderboard for a date range ──
+  static async getLateReport({ fromdate, todate, page, limit, search } = {}) {
+    const start = fromdate ? new Date(fromdate) : new Date();
+    start.setUTCHours(0, 0, 0, 0);
+    const end = todate ? new Date(todate) : new Date();
+    end.setUTCHours(23, 59, 59, 999);
+
+    const pg  = Math.max(1, parseInt(page)  || 1);
+    const lim = Math.max(1, Math.min(100, parseInt(limit) || 20));
+
+    const match = { date: { $gte: start, $lte: end }, "flags.isLateEntry": true };
+
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matchingEmps = await EmployeeModel.find({
+        $or: [{ name: { $regex: s, $options: "i" } }, { employeeId: { $regex: s, $options: "i" } }],
+      }).select("_id").lean();
+      match.employeeId = { $in: matchingEmps.map((e) => e._id) };
+    }
+
+    const pipeline = [
+      { $match: match },
+      { $group: { _id: "$employeeId", lateCount: { $sum: 1 }, days: { $push: "$date" } } },
+      { $sort: { lateCount: -1 } },
+      { $facet: {
+        data: [
+          { $skip: (pg - 1) * lim }, { $limit: lim },
+          { $lookup: { from: "employees", localField: "_id", foreignField: "_id", as: "employee" } },
+          { $unwind: "$employee" },
+          { $project: {
+              employeeId:   "$employee.employeeId",
+              name:         "$employee.name",
+              department:   "$employee.department",
+              designation:  "$employee.designation",
+              lateCount: 1,
+              days: 1,
+          } },
+        ],
+        total: [{ $count: "count" }],
+      } },
+    ];
+    const [out] = await UserAttendanceModel.aggregate(pipeline);
+    return { data: out.data, total: out.total[0]?.count || 0, page: pg, limit: lim };
+  }
+
+  // ── Absentee report — same shape, filters status == Absent ──
+  static async getAbsenteeReport({ fromdate, todate, page, limit, search } = {}) {
+    const start = fromdate ? new Date(fromdate) : new Date();
+    start.setUTCHours(0, 0, 0, 0);
+    const end = todate ? new Date(todate) : new Date();
+    end.setUTCHours(23, 59, 59, 999);
+
+    const pg  = Math.max(1, parseInt(page)  || 1);
+    const lim = Math.max(1, Math.min(100, parseInt(limit) || 20));
+
+    const match = { date: { $gte: start, $lte: end }, status: "Absent" };
+
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matchingEmps = await EmployeeModel.find({
+        $or: [{ name: { $regex: s, $options: "i" } }, { employeeId: { $regex: s, $options: "i" } }],
+      }).select("_id").lean();
+      match.employeeId = { $in: matchingEmps.map((e) => e._id) };
+    }
+
+    const pipeline = [
+      { $match: match },
+      { $group: { _id: "$employeeId", absentCount: { $sum: 1 }, days: { $push: "$date" } } },
+      { $sort: { absentCount: -1 } },
+      { $facet: {
+        data: [
+          { $skip: (pg - 1) * lim }, { $limit: lim },
+          { $lookup: { from: "employees", localField: "_id", foreignField: "_id", as: "employee" } },
+          { $unwind: "$employee" },
+          { $project: {
+              employeeId:   "$employee.employeeId",
+              name:         "$employee.name",
+              department:   "$employee.department",
+              designation:  "$employee.designation",
+              absentCount: 1, days: 1,
+          } },
+        ],
+        total: [{ $count: "count" }],
+      } },
+    ];
+    const [out] = await UserAttendanceModel.aggregate(pipeline);
+    return { data: out.data, total: out.total[0]?.count || 0, page: pg, limit: lim };
+  }
+
+  // ── Overtime register — totals per employee for a date range ──
+  static async getOvertimeReport({ fromdate, todate, page, limit, search } = {}) {
+    const start = fromdate ? new Date(fromdate) : new Date();
+    start.setUTCHours(0, 0, 0, 0);
+    const end = todate ? new Date(todate) : new Date();
+    end.setUTCHours(23, 59, 59, 999);
+
+    const pg  = Math.max(1, parseInt(page)  || 1);
+    const lim = Math.max(1, Math.min(100, parseInt(limit) || 20));
+
+    const match = { date: { $gte: start, $lte: end }, overtimeHours: { $gt: 0 } };
+
+    if (search) {
+      const s = search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const matchingEmps = await EmployeeModel.find({
+        $or: [{ name: { $regex: s, $options: "i" } }, { employeeId: { $regex: s, $options: "i" } }],
+      }).select("_id").lean();
+      match.employeeId = { $in: matchingEmps.map((e) => e._id) };
+    }
+
+    const pipeline = [
+      { $match: match },
+      { $group: {
+        _id: "$employeeId",
+        totalOvertimeHours: { $sum: "$overtimeHours" },
+        days: { $sum: 1 },
+      } },
+      { $sort: { totalOvertimeHours: -1 } },
+      { $facet: {
+        data: [
+          { $skip: (pg - 1) * lim }, { $limit: lim },
+          { $lookup: { from: "employees", localField: "_id", foreignField: "_id", as: "employee" } },
+          { $unwind: "$employee" },
+          { $project: {
+              employeeId:   "$employee.employeeId",
+              name:         "$employee.name",
+              department:   "$employee.department",
+              designation:  "$employee.designation",
+              totalOvertimeHours: { $round: ["$totalOvertimeHours", 2] },
+              days: 1,
+          } },
+        ],
+        total: [{ $count: "count" }],
+      } },
+    ];
+    const [out] = await UserAttendanceModel.aggregate(pipeline);
+    return { data: out.data, total: out.total[0]?.count || 0, page: pg, limit: lim };
   }
 
   //get attendeance by date and employee id

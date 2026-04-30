@@ -113,9 +113,13 @@ const userAttendanceSchema = new mongoose.Schema(
     regularization: {
       isApplied: { type: Boolean, default: false },
       status: { type: String, enum: ["Pending", "Approved", "Rejected"], default: "Pending" },
-      reasonCategory: { type: String, enum: ["Missed Punch", "System Glitch", "Work From Home", "Client Visit","on leave"] },
+      reasonCategory: { type: String, enum: ["Missed Punch", "System Glitch", "Work From Home", "Client Visit","on leave","Late Entry","Work on Leave"] },
       userReason: String,
       managerReason: String,
+      // Times the employee proposed for a Missed-Punch correction (HH:mm strings).
+      // Stored separately so actionRegularization('Approved') can apply them deterministically.
+      proposedInTime:  { type: String },
+      proposedOutTime: { type: String },
       originalData: { type: Object }, // Backup of data BEFORE correction
       correctedBy: { type: Schema.Types.ObjectId, ref: "Employee" },
       correctedAt: { type: Date }

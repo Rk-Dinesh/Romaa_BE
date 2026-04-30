@@ -96,11 +96,15 @@ const employeeSchema = new mongoose.Schema(
     department: { 
       type: String 
     },
-    reportsTo: { 
-      type: Schema.Types.ObjectId, 
+    reportsTo: {
+      type: Schema.Types.ObjectId,
       ref: "Employee", // Self-referencing: Links to their Manager for Leave Approvals
-      default: null 
+      default: null
     },
+    // A3: Manager-on-leave delegation. While `delegateUntil > now`, anyone whose
+    // reportsTo == this employee should have their approvals routed to delegateTo.
+    delegateTo:    { type: Schema.Types.ObjectId, ref: "Employee", default: null },
+    delegateUntil: { type: Date, default: null },
     hrStatus: {
       type: String,
       enum: ["Probation", "Confirmed", "Notice Period", "Relieved"],
@@ -176,6 +180,9 @@ employeeSchema.methods.generateRefreshToken = function () {
 
 employeeSchema.index({ isDeleted: 1, status: 1 });
 employeeSchema.index({ isDeleted: 1, role: 1 });
+// G5: speeds up the delegation queries used by getMyPendingApprovals,
+// getPendingLeavesForManager, and the leave-reminder cron.
+employeeSchema.index({ delegateTo: 1, delegateUntil: 1 });
 
 employeeSchema.plugin(auditPlugin, { entity_type: "Employee", entity_no_field: "employeeId" });
 
